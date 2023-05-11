@@ -34,11 +34,11 @@ class FrameStack(FrameStack_):
         return LazyFrames(list(self.frames))
 
 
-def make_env(env_name, seed, render_mode=None):
-    if env_name == 'fourrooms':
+def make_env(name, seed, render_mode=None):
+    if name == 'fourrooms':
         return Fourrooms(), False
 
-    env = gymnasium.make(env_name, render_mode=render_mode)
+    env = gymnasium.make(name, render_mode=render_mode)
     is_atari = hasattr(gymnasium.envs, 'atari') and isinstance(env.unwrapped, gymnasium.envs.atari.atari_env.AtariEnv)
     if is_atari:
         env = AtariPreprocessing(env, grayscale_obs=True, scale_obs=True, terminal_on_life_loss=True)
@@ -63,3 +63,7 @@ def get_torch_device(use_cuda: bool = True):
         print("Using GPU")
     else:
         print("Using CPU")
+
+
+def is_sorted(a: np.array) -> bool:
+    return np.all(a[:-1] <= a[1:])

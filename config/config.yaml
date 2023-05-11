@@ -1,0 +1,27 @@
+name: "Experiment_1"
+cuda: True
+seed: 0
+
+environment:
+  name: "CartPole-v1"
+
+model:
+  termination_regularization: 0.01
+  entropy_regularization: 0.01
+  num_options: 2
+  temperature: 1
+
+training:
+  num_transitions: 100000
+  learning_rate: 0.0005
+  discount_factor: 0.99
+  epsilon:
+    init_value: 1.0
+    decay_mode: 'lin'
+    milestones:
+      10000: 0
+  replay_buffer_length: 10000
+  batch_size: 32
+  freeze_interval: 200
+  replay_period: 4
+  max_episode_length: 10000

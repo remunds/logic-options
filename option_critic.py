@@ -1,67 +1,221 @@
+from math import exp
+from copy import deepcopy
+import time
+import signal
+
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Bernoulli
 
-from math import exp
-
+from experience_replay import ReplayBuffer
+from logger import Logger
 from utils import to_tensor
+from param_schedule import ParamScheduler
+
+MODEL_BASE_PATH = "out/models/"
 
 
-class OptionCriticConv(nn.Module):
+class OptionCritic(nn.Module):
     def __init__(self,
-                 in_features,
+                 state_shape,
                  num_actions,
                  num_options,
+                 is_pixel,
+                 name: str = "",
                  temperature=1.0,
-                 eps_start=1.0,
-                 eps_min=0.1,
-                 eps_decay=int(1e6),
-                 eps_test=0.05,
+                 termination_regularization: float = 0.01,
+                 entropy_regularization: float = 0.01,
                  device='cpu',
                  testing=False):
+        """
 
-        super(OptionCriticConv, self).__init__()
+        :param state_shape:
+        :param num_actions:
+        :param num_options: Number of options to create and learn.
+        :param is_pixel: Whether the state is a pixel matrix or raw object data.
+        :param name:
+        :param temperature: Action distribution softmax temperature
+        :param termination_regularization: Regularization factor to decrease termination probability =>
+            encourage longer options.
+        :param entropy_regularization: Regularization factor to increase policy entropy.
+        :param device:
+        :param testing:
+        """
 
-        self.in_channels = in_features
+        super(OptionCritic, self).__init__()
+
+        self.name = name
+
+        self.in_shape = state_shape
         self.num_actions = num_actions
         self.num_options = num_options
-        self.magic_number = 7 * 7 * 64
         self.device = device
         self.testing = testing
 
+        self.termination_regularization = termination_regularization
+        self.entropy_regularization = entropy_regularization
+
         self.temperature = temperature
-        self.eps_min = eps_min
-        self.eps_start = eps_start
-        self.eps_decay = eps_decay
-        self.eps_test = eps_test
         self.num_steps = 0
 
-        self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.modules.Flatten(),
-            nn.Linear(self.magic_number, 512),
-            nn.ReLU()
-        )
+        self.latent = self._initialize_latent_model(is_pixel)
+        self.latent_dimension = 512 if is_pixel else 64
 
-        self.Q = nn.Linear(512, num_options)  # Policy-Over-Options
-        self.terminations = nn.Linear(512, num_options)  # Option-Termination
-        self.options_W = nn.Parameter(torch.zeros(num_options, 512, num_actions))
+        self.Q = nn.Linear(self.latent_dimension, num_options)  # Policy-Over-Options
+        self.terminations = nn.Linear(self.latent_dimension, num_options)  # Option-Termination
+        self.options_W = nn.Parameter(torch.zeros(num_options, self.latent_dimension, num_actions))
         self.options_b = nn.Parameter(torch.zeros(num_options, num_actions))
 
         self.to(device)
         self.train(not testing)
 
+        self.model_path = MODEL_BASE_PATH + f"{time.strftime('%Y-%m-%d-%H-%M-%S')}-{self.name}/"
+
+        self.continue_practice = True
+
+    def _initialize_latent_model(self, is_pixel):
+        if is_pixel:
+            return nn.Sequential(
+                nn.Conv2d(self.in_shape, 32, kernel_size=8, stride=4),
+                nn.ReLU(),
+                nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                nn.ReLU(),
+                nn.Conv2d(64, 64, kernel_size=3, stride=1),
+                nn.ReLU(),
+                nn.modules.Flatten(),
+                nn.Linear(7 * 7 * 64, 512),
+                nn.ReLU()
+            )
+        else:
+            return nn.Sequential(
+                nn.Linear(self.in_shape, 32),
+                nn.ReLU(),
+                nn.Linear(32, 64),
+                nn.ReLU()
+            )
+
     def _get_latent(self, obs):
         if obs.ndim < 4:
             obs = obs.unsqueeze(0)
         obs = obs.to(self.device)
-        state = self.features(obs)
+        state = self.latent(obs)
         return state
+
+    def practice(self,
+                 env,
+                 num_transitions: int = 4e6,
+                 learning_rate: float = 0.0005,
+                 discount_factor: float = 0.99,
+                 epsilon: dict = None,
+                 replay_buffer_length: int = 10000,
+                 batch_size: int = 32,
+                 freeze_interval: int = 200,
+                 replay_period: int = 4,
+                 max_episode_length: int = 10000,
+                 seed: int = 0):
+        """
+        Let agent interact with environment, observe and learn.
+
+        :param env: The initialized Gymnasium environment
+        :param num_transitions: Number of total environment steps after which to stop practice.
+        :param learning_rate: Alpha
+        :param discount_factor: Gamma
+        :param epsilon: Epsilon parameters
+        :param replay_buffer_length: The maximum number of observations that fit into the experience
+            replay buffer.
+        :param batch_size: Replay batch size
+        :param freeze_interval:
+        :param replay_period: Number of transitions before each SGD update (replay)
+        :param max_episode_length:
+        :param seed:
+        :return:
+        """
+        if epsilon is None:
+            epsilon = ParamScheduler(0, "const")
+        else:
+            epsilon = ParamScheduler(**epsilon)
+
+        # Create a prime network for more stable Q values
+        option_critic_prime = deepcopy(self)
+
+        optim = torch.optim.RMSprop(self.parameters(), lr=learning_rate)
+
+        np.random.seed(seed)  # TODO: deprecated
+        torch.manual_seed(seed)  # TODO: deprecated
+
+        buffer = ReplayBuffer(capacity=replay_buffer_length, seed=seed)
+        logger = Logger(log_dir=self.model_path + "log")
+
+        transition = 0
+
+        # Setup SIGINT handler
+        signal.signal(signal.SIGINT, self.stop_practice)
+
+        # Iterate over episodes
+        while transition < num_transitions and self.continue_practice:
+            ret = 0  # return (= sum of all rewards)
+            option_lengths = {opt: [] for opt in range(self.num_options)}
+
+            state, _ = env.reset()
+            greedy_option = self.choose_option_greedy(state)
+            current_option = 0
+
+            done = False
+            episode_length = 0
+            terminate_option = True
+            current_option_length = 0
+            eps = epsilon.get_value(transition)
+
+            # Iterate over transitions
+            while not done and episode_length < max_episode_length:
+                if terminate_option:
+                    option_lengths[current_option].append(current_option_length)
+                    current_option = np.random.choice(self.num_options) if np.random.rand() < eps else greedy_option
+                    current_option_length = 0
+
+                # Choose action
+                action, logp, entropy = self.get_action(state, current_option)
+
+                # Perform transition
+                next_state, reward, done, _, _ = env.step(action)
+
+                # Save transition
+                buffer.push(state, current_option, reward, next_state, done)
+                ret += reward
+
+                # Train?
+                actor_loss, critic_loss = None, None
+                if len(buffer) > batch_size:
+                    actor_loss = self.actor_loss(state, current_option, logp, entropy,
+                                                 reward, done, next_state, option_critic_prime, discount_factor)
+                    loss = actor_loss
+
+                    if transition % replay_period == 0:
+                        data_batch = buffer.sample(batch_size)
+                        critic_loss = self.critic_loss(option_critic_prime, data_batch, discount_factor)
+                        loss += critic_loss
+
+                    optim.zero_grad()
+                    loss.backward()
+                    optim.step()
+
+                    if transition % freeze_interval == 0:
+                        option_critic_prime.load_state_dict(self.state_dict())
+
+                terminate_option, greedy_option = self.predict_option_termination(next_state, current_option)
+
+                # update global steps etc
+                transition += 1
+                episode_length += 1
+                current_option_length += 1
+                state = next_state
+
+                logger.log_data(transition, actor_loss, critic_loss, entropy.item(), eps)
+
+            logger.log_episode(transition, ret, option_lengths, episode_length, eps)
+
+        torch.save(self, self.model_path + "result.pckl")
 
     def get_Q(self, state):
         return self.Q(state)
@@ -106,150 +260,59 @@ class OptionCriticConv(nn.Module):
             eps = self.eps_test
         return eps
 
+    def stop_practice(self, sig, frame):
+        print("Stopping practice...")
+        self.continue_practice = False
 
-class OptionCriticFeatures(nn.Module):
-    def __init__(self,
-                 in_features,
-                 num_actions,
-                 num_options,
-                 temperature=1.0,
-                 eps_start=1.0,
-                 eps_min=0.1,
-                 eps_decay=int(1e6),
-                 eps_test=0.05,
-                 device='cpu',
-                 testing=False):
+    def critic_loss(self, model_prime, data_batch, discount_factor):
+        obs, options, rewards, next_obs, dones = data_batch
+        batch_idx = torch.arange(len(options)).long()
+        options = torch.LongTensor(options).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        masks = 1 - torch.FloatTensor(dones).to(self.device)
 
-        super(OptionCriticFeatures, self).__init__()
+        # The loss is the TD loss of Q and the update target, so we need to calculate Q
+        states = self._get_latent(to_tensor(obs)).squeeze(0)
+        Q = self.get_Q(states)
 
-        self.in_features = in_features
-        self.num_actions = num_actions
-        self.num_options = num_options
-        self.device = device
-        self.testing = testing
+        # the update target contains Q_next, but for stable learning we use prime network for this
+        next_states_prime = model_prime._get_latent(to_tensor(next_obs)).squeeze(0)
+        next_Q_prime = model_prime.get_Q(next_states_prime)  # detach?
 
-        self.temperature = temperature
-        self.eps_min = eps_min
-        self.eps_start = eps_start
-        self.eps_decay = eps_decay
-        self.eps_test = eps_test
-        self.num_steps = 0
+        # Additionally, we need the beta probabilities of the next state
+        next_states = self._get_latent(to_tensor(next_obs)).squeeze(0)
+        next_termination_probs = self.get_terminations(next_states).detach()
+        next_options_term_prob = next_termination_probs[batch_idx, options]
 
-        self.features = nn.Sequential(
-            nn.Linear(in_features, 32),
-            nn.ReLU(),
-            nn.Linear(32, 64),
-            nn.ReLU()
-        )
+        # Now we can calculate the update target gt
+        gt = rewards + masks * discount_factor * \
+             ((1 - next_options_term_prob) * next_Q_prime[batch_idx, options] + next_options_term_prob *
+              next_Q_prime.max(dim=-1)[0])
 
-        self.Q = nn.Linear(64, num_options)  # Policy-Over-Options
-        self.terminations = nn.Linear(64, num_options)  # Option-Termination
-        self.options_W = nn.Parameter(torch.zeros(num_options, 64, num_actions))
-        self.options_b = nn.Parameter(torch.zeros(num_options, num_actions))
+        # to update Q we want to use the actual network, not the prime
+        td_err = (Q[batch_idx, options] - gt.detach()).pow(2).mul(0.5).mean()
+        return td_err
 
-        self.to(device)
-        self.train(not testing)
+    def actor_loss(self, obs, option, logp, entropy, reward, done, next_obs, model_prime, discount_factor):
+        state = self._get_latent(to_tensor(obs))
+        next_state = self._get_latent(to_tensor(next_obs))
+        next_state_prime = model_prime._get_latent(to_tensor(next_obs))
 
-    def _get_latent(self, obs):
-        if obs.ndim < 4:
-            obs = obs.unsqueeze(0)
-        obs = obs.to(self.device)
-        state = self.features(obs)
-        return state
+        option_term_prob = self.get_terminations(state)[:, option]
+        next_option_term_prob = self.get_terminations(next_state)[:, option].detach()
 
-    def get_Q(self, state):
-        return self.Q(state)
+        Q = self.get_Q(state).detach().squeeze()
+        next_Q_prime = model_prime.get_Q(next_state_prime).detach().squeeze()
 
-    def predict_option_termination(self, state, current_option):
-        latent = self._get_latent(to_tensor(state))
+        # Target update gt
+        gt = reward + (1 - done) * discount_factor * \
+             ((1 - next_option_term_prob) * next_Q_prime[option] + next_option_term_prob * next_Q_prime.max(dim=-1)[0])
 
-        termination = self.terminations(latent)[:, current_option].sigmoid()
-        option_termination = Bernoulli(termination).sample()
-        Q = self.get_Q(latent)
-        next_option = Q.argmax(dim=-1)
-        return bool(option_termination.item()), next_option.item()
+        # The termination loss
+        termination_loss = option_term_prob * (Q[option].detach() - Q.max(dim=-1)[0].detach() +
+                                               self.termination_regularization) * (1 - done)
 
-    def get_terminations(self, state):
-        return self.terminations(state).sigmoid()
-
-    def get_action(self, state, option):
-        latent = self._get_latent(to_tensor(state))
-
-        logits = latent.data @ self.options_W[option] + self.options_b[option]
-        action_dist = (logits / self.temperature).softmax(dim=-1)
-        action_dist = Categorical(action_dist)
-
-        action = action_dist.sample()
-        logp = action_dist.log_prob(action)
-        entropy = action_dist.entropy()
-
-        return action.item(), logp, entropy
-
-    def choose_option_greedy(self, state):
-        latent = self._get_latent(to_tensor(state))
-        Q = self.get_Q(latent)
-        return Q.argmax(dim=-1).item()
-
-    @property
-    def epsilon(self):
-        if not self.testing:
-            eps = self.eps_min + (self.eps_start - self.eps_min) * exp(-self.num_steps / self.eps_decay)
-            self.num_steps += 1
-        else:
-            eps = self.eps_test
-        return eps
-
-
-def critic_loss(model, model_prime, data_batch, args):
-    obs, options, rewards, next_obs, dones = data_batch
-    batch_idx = torch.arange(len(options)).long()
-    options = torch.LongTensor(options).to(model.device)
-    rewards = torch.FloatTensor(rewards).to(model.device)
-    masks = 1 - torch.FloatTensor(dones).to(model.device)
-
-    # The loss is the TD loss of Q and the update target, so we need to calculate Q
-    states = model._get_latent(to_tensor(obs)).squeeze(0)
-    Q = model.get_Q(states)
-
-    # the update target contains Q_next, but for stable learning we use prime network for this
-    next_states_prime = model_prime._get_latent(to_tensor(next_obs)).squeeze(0)
-    next_Q_prime = model_prime.get_Q(next_states_prime)  # detach?
-
-    # Additionally, we need the beta probabilities of the next state
-    next_states = model._get_latent(to_tensor(next_obs)).squeeze(0)
-    next_termination_probs = model.get_terminations(next_states).detach()
-    next_options_term_prob = next_termination_probs[batch_idx, options]
-
-    # Now we can calculate the update target gt
-    gt = rewards + masks * args.gamma * \
-         ((1 - next_options_term_prob) * next_Q_prime[batch_idx, options] + next_options_term_prob *
-          next_Q_prime.max(dim=-1)[0])
-
-    # to update Q we want to use the actual network, not the prime
-    td_err = (Q[batch_idx, options] - gt.detach()).pow(2).mul(0.5).mean()
-    return td_err
-
-
-def actor_loss(obs, option, logp, entropy, reward, done, next_obs, model, model_prime, args):
-    state = model._get_latent(to_tensor(obs))
-    next_state = model._get_latent(to_tensor(next_obs))
-    next_state_prime = model_prime._get_latent(to_tensor(next_obs))
-
-    option_term_prob = model.get_terminations(state)[:, option]
-    next_option_term_prob = model.get_terminations(next_state)[:, option].detach()
-
-    Q = model.get_Q(state).detach().squeeze()
-    next_Q_prime = model_prime.get_Q(next_state_prime).detach().squeeze()
-
-    # Target update gt
-    gt = reward + (1 - done) * args.gamma * \
-         ((1 - next_option_term_prob) * next_Q_prime[option] + next_option_term_prob * next_Q_prime.max(dim=-1)[0])
-
-    # The termination loss
-    termination_loss = option_term_prob * (Q[option].detach() - Q.max(dim=-1)[0].detach() + args.termination_reg) * (
-                1 - done)
-
-    # actor-critic policy gradient with entropy regularization
-    policy_loss = -logp * (gt.detach() - Q[option]) - args.entropy_reg * entropy
-    actor_loss = termination_loss + policy_loss
-    return actor_loss
+        # actor-critic policy gradient with entropy regularization
+        policy_loss = -logp * (gt.detach() - Q[option]) - self.entropy_regularization * entropy
+        actor_loss = termination_loss + policy_loss
+        return actor_loss

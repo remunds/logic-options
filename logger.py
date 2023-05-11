@@ -4,24 +4,25 @@ import time
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
-class Logger():
-    def __init__(self, logdir, run_name):
-        self.log_name = logdir + '/' + run_name
+
+class Logger:
+    def __init__(self, log_dir):
+        self.target_path = log_dir
         self.tf_writer = None
         self.start_time = time.time()
         self.n_eps = 0
 
-        if not os.path.exists(self.log_name):
-            os.makedirs(self.log_name)
+        if not os.path.exists(self.target_path):
+            os.makedirs(self.target_path)
 
-        self.writer = SummaryWriter(self.log_name)
+        self.writer = SummaryWriter(self.target_path)
 
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s %(message)s',
             handlers=[
                 logging.StreamHandler(),
-                logging.FileHandler(self.log_name + '/logger.log'),
+                logging.FileHandler(self.target_path + '/logger.log'),
                 ],
             datefmt='%Y/%m/%d %I:%M:%S %p'
             )
@@ -47,6 +48,6 @@ class Logger():
         self.writer.add_scalar(tag="epsilon",scalar_value=epsilon, global_step=step)
 
 if __name__=="__main__":
-    logger = Logger(logdir='runs/', run_name='test_model-test_env')
+    logger = Logger(log_dir='runs/', run_name='test_model-test_env')
     steps = 200 ; reward = 5 ; option_lengths = {opt: np.random.randint(0,5,size=(5)) for opt in range(5)} ; ep_steps = 50
     logger.log_episode(steps, reward, option_lengths, ep_steps)
