@@ -1,17 +1,19 @@
-import numpy as np
 import argparse
-import torch
 from copy import deepcopy
+import time
+import signal
+import os
+
+import numpy as np
+import torch
 
 from option_critic import OptionCriticFeatures, OptionCriticConv
 from option_critic import critic_loss as critic_loss_fn
 from option_critic import actor_loss as actor_loss_fn
-
 from experience_replay import ReplayBuffer
-from utils import make_env, to_tensor, get_torch_device
+from utils import make_env, get_torch_device
 from logger import Logger
 
-import time
 
 parser = argparse.ArgumentParser(description="Option Critic PyTorch")
 parser.add_argument('--env', default='CartPole-v1', help='ROM to run')
@@ -39,10 +41,18 @@ parser.add_argument('--cuda', type=bool, default=True, help='Enable CUDA trainin
 parser.add_argument('--seed', type=int, default=0, help='Random seed for numpy, torch, random.')
 parser.add_argument('--logdir', type=str, default='runs', help='Directory for logging statistics')
 parser.add_argument('--exp', type=str, default=None, help='optional experiment name')
-parser.add_argument('--switch-goal', type=bool, default=False, help='switch goal after 2k eps')
+
+
+continue_training = True
+
+MODELS_PATH = "out/models/"
 
 
 def run(args):
+    # Create directories
+    if not os.path.exists(MODELS_PATH):
+        os.makedirs(MODELS_PATH)
+
     # Setup environment
     env, is_atari = make_env(args.env, args.seed)
 
@@ -73,59 +83,53 @@ def run(args):
     run_name = f"{time.strftime('%Y-%m-%d-%H-%M-%S')}-{OptionCriticFeatures.__name__}-{args.env}-{args.exp}"
     logger = Logger(logdir=args.logdir, run_name=run_name)
 
-    steps = 0
-    if args.switch_goal: print(f"Current goal {env.goal}")
-    while steps < args.max_steps_total:
+    transition = 0
 
-        rewards = 0
+    # Setup SIGINT handler
+    signal.signal(signal.SIGINT, stop_training)
+
+    # Iterate over episodes
+    while transition < args.max_steps_total and continue_training:
+        ret = 0  # return (sum of all rewards)
         option_lengths = {opt: [] for opt in range(args.num_options)}
 
-        obs, _ = env.reset()
-        state = option_critic.get_state(to_tensor(obs))
-        greedy_option = option_critic.greedy_option(state)
+        state, _ = env.reset()
+        greedy_option = option_critic.choose_option_greedy(state)
         current_option = 0
 
-        # Goal switching experiment: run for 1k episodes in fourrooms, switch goals and run for another
-        # 2k episodes. In option-critic, if the options have some meaning, only the policy-over-options
-        # should be finedtuned (this is what we would hope).
-        if args.switch_goal and logger.n_eps == 1000:
-            torch.save({'model_params': option_critic.state_dict(),
-                        'goal_state': env.goal},
-                       f'models/option_critic_seed={args.seed}_1k')
-            env.switch_goal()
-            print(f"New goal {env.goal}")
-
-        if args.switch_goal and logger.n_eps > 2000:
-            torch.save({'model_params': option_critic.state_dict(),
-                        'goal_state': env.goal},
-                       f'models/option_critic_seed={args.seed}_2k')
-            break
-
         done = False
-        ep_steps = 0
-        option_termination = True
-        curr_op_len = 0
-        while not done and ep_steps < args.max_steps_ep:
+        episode_length = 0
+        terminate_option = True
+        current_option_length = 0
+        epsilon = None
+
+        # Iterate over transitions
+        while not done and episode_length < args.max_steps_ep:
             epsilon = option_critic.epsilon
 
-            if option_termination:
-                option_lengths[current_option].append(curr_op_len)
+            if terminate_option:
+                option_lengths[current_option].append(current_option_length)
                 current_option = np.random.choice(args.num_options) if np.random.rand() < epsilon else greedy_option
-                curr_op_len = 0
+                current_option_length = 0
 
+            # Choose action
             action, logp, entropy = option_critic.get_action(state, current_option)
 
-            next_obs, reward, done, _, _ = env.step(action)
-            buffer.push(obs, current_option, reward, next_obs, done)
-            rewards += reward
+            # Perform transition
+            next_state, reward, done, _, _ = env.step(action)
 
+            # Save transition
+            buffer.push(state, current_option, reward, next_state, done)
+            ret += reward
+
+            # Train?
             actor_loss, critic_loss = None, None
             if len(buffer) > args.batch_size:
-                actor_loss = actor_loss_fn(obs, current_option, logp, entropy,
-                                           reward, done, next_obs, option_critic, option_critic_prime, args)
+                actor_loss = actor_loss_fn(state, current_option, logp, entropy,
+                                           reward, done, next_state, option_critic, option_critic_prime, args)
                 loss = actor_loss
 
-                if steps % args.update_frequency == 0:
+                if transition % args.update_frequency == 0:
                     data_batch = buffer.sample(args.batch_size)
                     critic_loss = critic_loss_fn(option_critic, option_critic_prime, data_batch, args)
                     loss += critic_loss
@@ -134,23 +138,28 @@ def run(args):
                 loss.backward()
                 optim.step()
 
-                if steps % args.freeze_interval == 0:
+                if transition % args.freeze_interval == 0:
                     option_critic_prime.load_state_dict(option_critic.state_dict())
 
-            state = option_critic.get_state(to_tensor(next_obs))
-            option_termination, greedy_option = option_critic.predict_option_termination(state, current_option)
+            terminate_option, greedy_option = option_critic.predict_option_termination(next_state, current_option)
 
             # update global steps etc
-            steps += 1
-            ep_steps += 1
-            curr_op_len += 1
-            obs = next_obs
+            transition += 1
+            episode_length += 1
+            current_option_length += 1
+            state = next_state
 
-            logger.log_data(steps, actor_loss, critic_loss, entropy.item(), epsilon)
+            logger.log_data(transition, actor_loss, critic_loss, entropy.item(), epsilon)
 
-        logger.log_episode(steps, rewards, option_lengths, ep_steps, epsilon)
+        logger.log_episode(transition, ret, option_lengths, episode_length, epsilon)
 
-    torch.save(option_critic, "models/result.pckl")
+    torch.save(option_critic, MODELS_PATH + "result.pckl")
+
+
+def stop_training(sig, frame):
+    print("Stopping training...")
+    global continue_training
+    continue_training = False
 
 
 if __name__ == "__main__":

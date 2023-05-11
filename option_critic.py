@@ -56,7 +56,7 @@ class OptionCriticConv(nn.Module):
         self.to(device)
         self.train(not testing)
 
-    def get_state(self, obs):
+    def _get_latent(self, obs):
         if obs.ndim < 4:
             obs = obs.unsqueeze(0)
         obs = obs.to(self.device)
@@ -67,10 +67,11 @@ class OptionCriticConv(nn.Module):
         return self.Q(state)
 
     def predict_option_termination(self, state, current_option):
-        termination = self.terminations(state)[:, current_option].sigmoid()
+        latent = self._get_latent(to_tensor(state))
+        termination = self.terminations(latent)[:, current_option].sigmoid()
         option_termination = Bernoulli(termination).sample()
 
-        Q = self.get_Q(state)
+        Q = self.get_Q(latent)
         next_option = Q.argmax(dim=-1)
         return bool(option_termination.item()), next_option.item()
 
@@ -78,7 +79,10 @@ class OptionCriticConv(nn.Module):
         return self.terminations(state).sigmoid()
 
     def get_action(self, state, option):
-        logits = state.data @ self.options_W[option] + self.options_b[option]
+        """Given an environment state, samples an action of the specified option policy."""
+        latent = self._get_latent(to_tensor(state))
+
+        logits = latent.data @ self.options_W[option] + self.options_b[option]
         action_dist = (logits / self.temperature).softmax(dim=-1)
         action_dist = Categorical(action_dist)
 
@@ -88,8 +92,9 @@ class OptionCriticConv(nn.Module):
 
         return action.item(), logp, entropy
 
-    def greedy_option(self, state):
-        Q = self.get_Q(state)
+    def choose_option_greedy(self, state):
+        latent = self._get_latent(to_tensor(state))
+        Q = self.get_Q(latent)
         return Q.argmax(dim=-1).item()
 
     @property
@@ -145,7 +150,7 @@ class OptionCriticFeatures(nn.Module):
         self.to(device)
         self.train(not testing)
 
-    def get_state(self, obs):
+    def _get_latent(self, obs):
         if obs.ndim < 4:
             obs = obs.unsqueeze(0)
         obs = obs.to(self.device)
@@ -156,9 +161,11 @@ class OptionCriticFeatures(nn.Module):
         return self.Q(state)
 
     def predict_option_termination(self, state, current_option):
-        termination = self.terminations(state)[:, current_option].sigmoid()
+        latent = self._get_latent(to_tensor(state))
+
+        termination = self.terminations(latent)[:, current_option].sigmoid()
         option_termination = Bernoulli(termination).sample()
-        Q = self.get_Q(state)
+        Q = self.get_Q(latent)
         next_option = Q.argmax(dim=-1)
         return bool(option_termination.item()), next_option.item()
 
@@ -166,7 +173,9 @@ class OptionCriticFeatures(nn.Module):
         return self.terminations(state).sigmoid()
 
     def get_action(self, state, option):
-        logits = state.data @ self.options_W[option] + self.options_b[option]
+        latent = self._get_latent(to_tensor(state))
+
+        logits = latent.data @ self.options_W[option] + self.options_b[option]
         action_dist = (logits / self.temperature).softmax(dim=-1)
         action_dist = Categorical(action_dist)
 
@@ -176,8 +185,9 @@ class OptionCriticFeatures(nn.Module):
 
         return action.item(), logp, entropy
 
-    def greedy_option(self, state):
-        Q = self.get_Q(state)
+    def choose_option_greedy(self, state):
+        latent = self._get_latent(to_tensor(state))
+        Q = self.get_Q(latent)
         return Q.argmax(dim=-1).item()
 
     @property
@@ -198,15 +208,15 @@ def critic_loss(model, model_prime, data_batch, args):
     masks = 1 - torch.FloatTensor(dones).to(model.device)
 
     # The loss is the TD loss of Q and the update target, so we need to calculate Q
-    states = model.get_state(to_tensor(obs)).squeeze(0)
+    states = model._get_latent(to_tensor(obs)).squeeze(0)
     Q = model.get_Q(states)
 
     # the update target contains Q_next, but for stable learning we use prime network for this
-    next_states_prime = model_prime.get_state(to_tensor(next_obs)).squeeze(0)
+    next_states_prime = model_prime._get_latent(to_tensor(next_obs)).squeeze(0)
     next_Q_prime = model_prime.get_Q(next_states_prime)  # detach?
 
     # Additionally, we need the beta probabilities of the next state
-    next_states = model.get_state(to_tensor(next_obs)).squeeze(0)
+    next_states = model._get_latent(to_tensor(next_obs)).squeeze(0)
     next_termination_probs = model.get_terminations(next_states).detach()
     next_options_term_prob = next_termination_probs[batch_idx, options]
 
@@ -221,9 +231,9 @@ def critic_loss(model, model_prime, data_batch, args):
 
 
 def actor_loss(obs, option, logp, entropy, reward, done, next_obs, model, model_prime, args):
-    state = model.get_state(to_tensor(obs))
-    next_state = model.get_state(to_tensor(next_obs))
-    next_state_prime = model_prime.get_state(to_tensor(next_obs))
+    state = model._get_latent(to_tensor(obs))
+    next_state = model._get_latent(to_tensor(next_obs))
+    next_state_prime = model_prime._get_latent(to_tensor(next_obs))
 
     option_term_prob = model.get_terminations(state)[:, option]
     next_option_term_prob = model.get_terminations(next_state)[:, option].detach()
