@@ -1,9 +1,9 @@
-import gym
+import gymnasium
 import numpy as np
 import torch
 
-from gym.wrappers import AtariPreprocessing, TransformReward
-from gym.wrappers import FrameStack as FrameStack_
+from gymnasium.wrappers import AtariPreprocessing, TransformReward
+from gymnasium.wrappers import FrameStack as FrameStack_
 
 from fourrooms import Fourrooms
 
@@ -33,20 +33,33 @@ class FrameStack(FrameStack_):
         assert len(self.frames) == self.k
         return LazyFrames(list(self.frames))
 
-def make_env(env_name):
 
+def make_env(env_name, seed, render_mode=None):
     if env_name == 'fourrooms':
         return Fourrooms(), False
 
-    env = gym.make(env_name)
-    is_atari = hasattr(gym.envs, 'atari') and isinstance(env.unwrapped, gym.envs.atari.atari_env.AtariEnv)
+    env = gymnasium.make(env_name, render_mode=render_mode)
+    is_atari = hasattr(gymnasium.envs, 'atari') and isinstance(env.unwrapped, gymnasium.envs.atari.atari_env.AtariEnv)
     if is_atari:
         env = AtariPreprocessing(env, grayscale_obs=True, scale_obs=True, terminal_on_life_loss=True)
         env = TransformReward(env, lambda r: np.clip(r, -1, 1))
         env = FrameStack(env, 4)
+
+    # Initialize environment using seed
+    env.reset(seed=seed, options={})
+
     return env, is_atari
+
 
 def to_tensor(obs):
     obs = np.asarray(obs)
     obs = torch.from_numpy(obs).float()
     return obs
+
+
+def get_torch_device(use_cuda: bool = True):
+    device = torch.device('cuda' if torch.cuda.is_available() and use_cuda else 'cpu')
+    if device.type == 'cuda':
+        print("Using GPU")
+    else:
+        print("Using CPU")

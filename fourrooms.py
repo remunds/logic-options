@@ -1,13 +1,12 @@
 import logging
-import math
-import gym
-from gym import spaces
-from gym.utils import seeding
+import gymnasium
+from gymnasium import spaces
+from gymnasium.utils import seeding
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-class Fourrooms(gym.Env):
+class Fourrooms(gymnasium.Env):
     metadata = {
         'render.modes': ['human', 'rgb_array'],
         'video.frames_per_second' : 50
