@@ -1,6 +1,8 @@
+from __future__ import annotations
+
+import os.path
 from math import exp
 from copy import deepcopy
-import time
 import signal
 
 import numpy as np
@@ -18,23 +20,20 @@ MODEL_BASE_PATH = "out/models/"
 
 class OptionCritic(nn.Module):
     def __init__(self,
-                 state_shape,
-                 num_actions,
-                 num_options,
-                 is_pixel,
-                 name: str = "",
+                 name: str,
+                 env,
+                 num_options: int,
+                 is_pixel: bool,
                  temperature=1.0,
                  termination_regularization: float = 0.01,
                  entropy_regularization: float = 0.01,
                  device='cpu',
                  testing=False):
         """
-
-        :param state_shape:
-        :param num_actions:
+        :param name: The agent's name (used for model save path)
+        :param env: The Gymnasium environment the agent is going to interact with
         :param num_options: Number of options to create and learn.
         :param is_pixel: Whether the state is a pixel matrix or raw object data.
-        :param name:
         :param temperature: Action distribution softmax temperature
         :param termination_regularization: Regularization factor to decrease termination probability =>
             encourage longer options.
@@ -47,8 +46,8 @@ class OptionCritic(nn.Module):
 
         self.name = name
 
-        self.in_shape = state_shape
-        self.num_actions = num_actions
+        self.in_shape = env.observation_space.shape[0]
+        self.num_actions = env.action_space.n
         self.num_options = num_options
         self.device = device
         self.testing = testing
@@ -64,15 +63,17 @@ class OptionCritic(nn.Module):
 
         self.Q = nn.Linear(self.latent_dimension, num_options)  # Policy-Over-Options
         self.terminations = nn.Linear(self.latent_dimension, num_options)  # Option-Termination
-        self.options_W = nn.Parameter(torch.zeros(num_options, self.latent_dimension, num_actions))
-        self.options_b = nn.Parameter(torch.zeros(num_options, num_actions))
+        self.options_W = nn.Parameter(torch.zeros(num_options, self.latent_dimension, self.num_actions))
+        self.options_b = nn.Parameter(torch.zeros(num_options, self.num_actions))
 
         self.to(device)
         self.train(not testing)
 
-        self.model_path = MODEL_BASE_PATH + f"{time.strftime('%Y-%m-%d-%H-%M-%S')}-{self.name}/"
+        self.model_dir = get_model_dir(model_name=self.name, env_name=env.spec.id)
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
 
-        self.continue_practice = True
+        self.running = True
 
     def _initialize_latent_model(self, is_pixel):
         if is_pixel:
@@ -111,7 +112,7 @@ class OptionCritic(nn.Module):
                  replay_buffer_length: int = 10000,
                  batch_size: int = 32,
                  freeze_interval: int = 200,
-                 replay_period: int = 4,
+                 critic_replay_period: int = 4,
                  max_episode_length: int = 10000,
                  seed: int = 0):
         """
@@ -126,7 +127,7 @@ class OptionCritic(nn.Module):
             replay buffer.
         :param batch_size: Replay batch size
         :param freeze_interval:
-        :param replay_period: Number of transitions before each SGD update (replay)
+        :param critic_replay_period: Number of transitions before each SGD update (replay)
         :param max_episode_length:
         :param seed:
         :return:
@@ -145,7 +146,7 @@ class OptionCritic(nn.Module):
         torch.manual_seed(seed)  # TODO: deprecated
 
         buffer = ReplayBuffer(capacity=replay_buffer_length, seed=seed)
-        logger = Logger(log_dir=self.model_path + "log")
+        logger = Logger(log_dir=self.model_dir + "log")
 
         transition = 0
 
@@ -153,7 +154,7 @@ class OptionCritic(nn.Module):
         signal.signal(signal.SIGINT, self.stop_practice)
 
         # Iterate over episodes
-        while transition < num_transitions and self.continue_practice:
+        while transition < num_transitions and self.running:
             ret = 0  # return (= sum of all rewards)
             option_lengths = {opt: [] for opt in range(self.num_options)}
 
@@ -184,28 +185,29 @@ class OptionCritic(nn.Module):
                 buffer.push(state, current_option, reward, next_state, done)
                 ret += reward
 
-                # Train?
+                # Train
                 actor_loss, critic_loss = None, None
                 if len(buffer) > batch_size:
                     actor_loss = self.actor_loss(state, current_option, logp, entropy,
                                                  reward, done, next_state, option_critic_prime, discount_factor)
                     loss = actor_loss
 
-                    if transition % replay_period == 0:
+                    if transition % critic_replay_period == 0:
                         data_batch = buffer.sample(batch_size)
                         critic_loss = self.critic_loss(option_critic_prime, data_batch, discount_factor)
                         loss += critic_loss
 
+                    # SGD for actor (and critic)
                     optim.zero_grad()
                     loss.backward()
                     optim.step()
 
+                    # Copy parameters from critic model to critic prime
                     if transition % freeze_interval == 0:
                         option_critic_prime.load_state_dict(self.state_dict())
 
                 terminate_option, greedy_option = self.predict_option_termination(next_state, current_option)
 
-                # update global steps etc
                 transition += 1
                 episode_length += 1
                 current_option_length += 1
@@ -215,7 +217,53 @@ class OptionCritic(nn.Module):
 
             logger.log_episode(transition, ret, option_lengths, episode_length, eps)
 
-        torch.save(self, self.model_path + "result.pckl")
+        self.save()
+
+    def play(self, env, max_episode_length: int = np.inf):
+        """Let agent interact with environment and render."""
+
+        # Setup SIGINT handler
+        signal.signal(signal.SIGINT, self.stop_practice)
+
+        transition = 0
+        episode = 0
+
+        print("Playing...")
+
+        # Iterate over episodes
+        self.running = True
+        while self.running:
+            ret = 0  # return (= sum of all rewards)
+
+            state, _ = env.reset()
+            greedy_option = self.choose_option_greedy(state)
+            current_option = 0
+
+            done = False
+            episode_length = 0
+            terminate_option = True
+
+            # Iterate over transitions
+            while not done and episode_length < max_episode_length:
+                if terminate_option:
+                    current_option = greedy_option
+
+                # Choose action
+                action, logp, entropy = self.get_action(state, current_option)
+
+                # Perform transition
+                next_state, reward, done, _, _ = env.step(action)
+                ret += reward
+
+                terminate_option, greedy_option = self.predict_option_termination(next_state, current_option)
+
+                transition += 1
+                episode_length += 1
+                state = next_state
+
+            episode += 1
+
+            print(f"Episode {episode} - Return: {ret} - Length: {episode_length}")
 
     def get_Q(self, state):
         return self.Q(state)
@@ -262,7 +310,7 @@ class OptionCritic(nn.Module):
 
     def stop_practice(self, sig, frame):
         print("Stopping practice...")
-        self.continue_practice = False
+        self.running = False
 
     def critic_loss(self, model_prime, data_batch, discount_factor):
         obs, options, rewards, next_obs, dones = data_batch
@@ -316,3 +364,15 @@ class OptionCritic(nn.Module):
         policy_loss = -logp * (gt.detach() - Q[option]) - self.entropy_regularization * entropy
         actor_loss = termination_loss + policy_loss
         return actor_loss
+
+    def save(self):
+        torch.save(self, self.model_dir + "result.pckl")
+
+    @staticmethod
+    def load(env_name, model_name) -> OptionCritic:
+        model_path = get_model_dir(env_name, model_name) + "result.pckl"
+        return torch.load(model_path)
+
+
+def get_model_dir(env_name, model_name):
+    return MODEL_BASE_PATH + f"{env_name}/{model_name}/"

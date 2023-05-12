@@ -7,8 +7,8 @@ from utils import make_env, get_torch_device
 
 continue_training = True
 
-MODELS_PATH = "out/models/"
 CONFIG_PATH = "config/config.yaml"
+MODELS_PATH = "out/models/"
 
 
 def run(name: str = None,
@@ -32,16 +32,14 @@ def run(name: str = None,
     if not os.path.exists(MODELS_PATH):
         os.makedirs(MODELS_PATH)
 
-    # Setup environment
+    # Setup environment and computing device
     env, is_atari = make_env(seed=seed, **environment)
-
     device = get_torch_device(cuda)
 
     # Create the agent
     option_critic = OptionCritic(
         name=name,
-        state_shape=env.observation_space.shape[0],
-        num_actions=env.action_space.n,
+        env=env,
         device=device,
         is_pixel=is_atari,
         **model

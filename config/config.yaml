@@ -23,5 +23,5 @@ training:
   replay_buffer_length: 10000
   batch_size: 32
   freeze_interval: 200
-  replay_period: 4
+  critic_replay_period: 4
   max_episode_length: 10000
