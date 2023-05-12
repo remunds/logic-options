@@ -15,7 +15,7 @@ from logger import Logger
 from utils import to_tensor
 from param_schedule import ParamScheduler
 
-MODEL_BASE_PATH = "out/models/"
+MODEL_BASE_PATH = "../out/models/"
 
 
 class OptionCritic(nn.Module):
