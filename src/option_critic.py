@@ -24,7 +24,8 @@ class OptionCritic(nn.Module):
                  env,
                  num_options: int,
                  is_pixel: bool,
-                 temperature=1.0,
+                 latent_dimension: int,
+                 temperature: float = 1.0,
                  termination_regularization: float = 0.01,
                  entropy_regularization: float = 0.01,
                  device='cpu',
@@ -42,6 +43,8 @@ class OptionCritic(nn.Module):
         :param testing:
         """
 
+        assert num_options > 0
+
         super(OptionCritic, self).__init__()
 
         self.name = name
@@ -58,8 +61,8 @@ class OptionCritic(nn.Module):
         self.temperature = temperature
         self.num_steps = 0
 
+        self.latent_dimension = latent_dimension
         self.latent = self._initialize_latent_model(is_pixel)
-        self.latent_dimension = 512 if is_pixel else 64
 
         self.Q = nn.Linear(self.latent_dimension, num_options)  # Policy-Over-Options
         self.terminations = nn.Linear(self.latent_dimension, num_options)  # Option-Termination
@@ -85,14 +88,14 @@ class OptionCritic(nn.Module):
                 nn.Conv2d(64, 64, kernel_size=3, stride=1),
                 nn.ReLU(),
                 nn.modules.Flatten(),
-                nn.Linear(7 * 7 * 64, 512),
+                nn.Linear(7 * 7 * 64, self.latent_dimension),
                 nn.ReLU()
             )
         else:
             return nn.Sequential(
-                nn.Linear(self.in_shape, 32),
+                nn.Linear(self.in_shape, self.latent_dimension // 2),
                 nn.ReLU(),
-                nn.Linear(32, 64),
+                nn.Linear(self.latent_dimension // 2, self.latent_dimension),
                 nn.ReLU()
             )
 
@@ -309,7 +312,7 @@ class OptionCritic(nn.Module):
         return eps
 
     def stop_practice(self, sig, frame):
-        print("Stopping practice...")
+        print("Stopping running...")
         self.running = False
 
     def critic_loss(self, model_prime, data_batch, discount_factor):
@@ -349,8 +352,8 @@ class OptionCritic(nn.Module):
         option_term_prob = self.get_terminations(state)[:, option]
         next_option_term_prob = self.get_terminations(next_state)[:, option].detach()
 
-        Q = self.get_Q(state).detach().squeeze()
-        next_Q_prime = model_prime.get_Q(next_state_prime).detach().squeeze()
+        Q = self.get_Q(state).detach().squeeze(0)
+        next_Q_prime = model_prime.get_Q(next_state_prime).detach().squeeze(0)
 
         # Target update gt
         gt = reward + (1 - done) * discount_factor * \
