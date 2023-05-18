@@ -5,6 +5,7 @@ import yaml
 from option_critic import OptionCritic
 from utils import make_env, get_torch_device
 
+
 continue_training = True
 
 CONFIG_PATH = "config/config.yaml"

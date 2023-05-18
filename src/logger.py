@@ -1,36 +1,41 @@
 import logging
 import os
 import time
+
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 
 class Logger:
     def __init__(self, log_dir):
-        self.target_path = log_dir
+        self.target_dir = log_dir
         self.tf_writer = None
         self.start_time = time.time()
         self.n_eps = 0
 
-        if not os.path.exists(self.target_path):
-            os.makedirs(self.target_path)
+        if not os.path.exists(self.target_dir):
+            os.makedirs(self.target_dir)
 
-        self.writer = SummaryWriter(self.target_path)
+        self.writer = SummaryWriter(self.target_dir)
+
+        # Setup logger
+        self.logger = logging.getLogger("practice")
+        self.logger.setLevel(level=logging.DEBUG)
 
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s %(message)s',
             handlers=[
                 logging.StreamHandler(),
-                logging.FileHandler(self.target_path + '/logger.log'),
+                logging.FileHandler(self.target_dir + '/logger.log'),
             ],
-            datefmt='%Y/%m/%d %I:%M:%S %p'
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
 
     def log_episode(self, steps, reward, option_lengths, ep_steps, epsilon):
         self.n_eps += 1
-        logging.info(f"> ep {self.n_eps} done. total_steps={steps} | reward={reward} | episode_steps={ep_steps} "
-                     f"| hours={(time.time() - self.start_time) / 60 / 60:.3f} | epsilon={epsilon:.3f}")
+        self.logger.info(f"> ep {self.n_eps} done. total_steps={steps} | reward={reward} | episode_steps={ep_steps} "
+                         f"| hours={(time.time() - self.start_time) / 60 / 60:.3f} | epsilon={epsilon:.3f}")
         self.writer.add_scalar(tag="episodic_rewards", scalar_value=reward, global_step=self.n_eps)
         self.writer.add_scalar(tag='episode_lengths', scalar_value=ep_steps, global_step=self.n_eps)
 

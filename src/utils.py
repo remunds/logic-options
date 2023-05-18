@@ -34,16 +34,19 @@ class FrameStack(FrameStack_):
         return LazyFrames(list(self.frames))
 
 
-def make_env(name, seed, render_mode=None):
+def make_env(name, seed, render_mode=None, framestack=4, **kwargs) -> (gymnasium.Env, bool):
     if name == 'fourrooms':
         return Fourrooms(), False
 
-    env = gymnasium.make(name, render_mode=render_mode)
-    is_atari = hasattr(gymnasium.envs, 'atari') and isinstance(env.unwrapped, gymnasium.envs.atari.atari_env.AtariEnv)
+    is_atari = 'ALE' in name
+    if is_atari:
+        kwargs['frameskip'] = 1
+
+    env = gymnasium.make(name, render_mode=render_mode, **kwargs)
     if is_atari:
         env = AtariPreprocessing(env, grayscale_obs=True, scale_obs=True, terminal_on_life_loss=True)
         env = TransformReward(env, lambda r: np.clip(r, -1, 1))
-        env = FrameStack(env, 4)
+        env = FrameStack(env, framestack)
 
     # Initialize environment using seed
     env.reset(seed=seed, options={})

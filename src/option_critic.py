@@ -6,16 +6,18 @@ from copy import deepcopy
 import signal
 
 import numpy as np
+import pygame
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Bernoulli
+from tensorboard import program
 
 from experience_replay import ReplayBuffer
 from logger import Logger
 from utils import to_tensor
 from param_schedule import ParamScheduler
 
-MODEL_BASE_PATH = "../out/models/"
+MODEL_BASE_PATH = "out/models/"
 
 
 class OptionCritic(nn.Module):
@@ -49,6 +51,15 @@ class OptionCritic(nn.Module):
 
         self.name = name
 
+        self.model_dir = get_model_dir(model_name=self.name, env_name=env.spec.name)
+        if os.path.exists(self.model_dir):
+            ans = input(f"There already exists a model at '{self.model_dir}'. Override that model? (y/n)")
+            if ans == 'y':
+                os.rmdir(self.model_dir)  # TODO: enable run continuation
+            else:
+                quit()
+        os.makedirs(self.model_dir)
+
         self.in_shape = env.observation_space.shape[0]
         self.num_actions = env.action_space.n
         self.num_options = num_options
@@ -71,10 +82,6 @@ class OptionCritic(nn.Module):
 
         self.to(device)
         self.train(not testing)
-
-        self.model_dir = get_model_dir(model_name=self.name, env_name=env.spec.id)
-        if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
 
         self.running = True
 
@@ -135,6 +142,9 @@ class OptionCritic(nn.Module):
         :param seed:
         :return:
         """
+
+        initialize_tensorboard()
+
         if epsilon is None:
             epsilon = ParamScheduler(0, "const")
         else:
@@ -221,6 +231,7 @@ class OptionCritic(nn.Module):
             logger.log_episode(transition, ret, option_lengths, episode_length, eps)
 
         self.save()
+        print("Saved model.")
 
     def play(self, env, max_episode_length: int = np.inf):
         """Let agent interact with environment and render."""
@@ -230,6 +241,14 @@ class OptionCritic(nn.Module):
 
         transition = 0
         episode = 0
+
+        # Initialize GUI
+        rgb_array = env.render()
+        pygame.init()
+        pygame.display.set_caption(env.spec.name)
+        screen = pygame.display.set_mode((rgb_array.shape[1], rgb_array.shape[0]), flags=pygame.SCALED)
+        self._render_rgb(screen, rgb_array)
+        clock = pygame.time.Clock()
 
         print("Playing...")
 
@@ -258,8 +277,14 @@ class OptionCritic(nn.Module):
                 next_state, reward, done, _, _ = env.step(action)
                 ret += reward
 
+                # Render environment for human
+                rgb_array = env.render()
+                clock.tick(30)  # reduce FPS for Atari games
+                self._render_rgb(screen, rgb_array, option_id=current_option)
+
                 terminate_option, greedy_option = self.predict_option_termination(next_state, current_option)
 
+                # Finalize transition
                 transition += 1
                 episode_length += 1
                 state = next_state
@@ -267,6 +292,25 @@ class OptionCritic(nn.Module):
             episode += 1
 
             print(f"Episode {episode} - Return: {ret} - Length: {episode_length}")
+
+        pygame.quit()
+
+    def _render_rgb(self, screen, rgb_array, option_id=None):
+        # Render RGB image
+        rgb_array = np.transpose(rgb_array, (1, 0, 2))
+        pygame.pixelcopy.array_to_surface(screen, rgb_array)
+
+        # If given, render option ID in top right corner
+        if option_id is not None:
+            font = pygame.font.SysFont('Calibri', 16)
+            text = font.render("Option " + str(option_id), True, (255, 255, 50), None)
+            rect = text.get_rect()
+            rect.bottomright = (screen.get_size()[0], screen.get_size()[1])
+            pygame.draw.rect(screen, color=(20, 20, 20), rect=rect)
+            screen.blit(text, rect)
+
+        pygame.display.flip()
+        pygame.event.pump()
 
     def get_Q(self, state):
         return self.Q(state)
@@ -379,3 +423,11 @@ class OptionCritic(nn.Module):
 
 def get_model_dir(env_name, model_name):
     return MODEL_BASE_PATH + f"{env_name}/{model_name}/"
+
+
+def initialize_tensorboard():
+    # manual console run: tensorboard --logdir=out/models
+    tb = program.TensorBoard()
+    tb.configure(argv=[None, '--logdir', 'out/models'])
+    url = tb.launch()
+    print(f"Tensorboard listening on {url}")
