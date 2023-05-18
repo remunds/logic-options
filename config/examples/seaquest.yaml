@@ -1,4 +1,4 @@
-name: "8_options_512_latent"
+name: "Experiment_2"
 cuda: True
 seed: 0
 

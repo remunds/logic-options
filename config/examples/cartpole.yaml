@@ -1,15 +1,13 @@
-name: "8_options_512_latent"
+name: "Experiment_3"
 cuda: True
 seed: 0
 
 environment:
-  name: "ALE/Seaquest-v5"
-  frameskip: 1
-  framestack: 4  # Applied to Atari environments only
+  name: "CartPole-v1"
 
 model:
-  num_options: 8
-  latent_dimension: 512
+  num_options: 4
+  latent_dimension: 64
   termination_regularization: 0.01
   entropy_regularization: 0.01
   temperature: 1
@@ -22,7 +20,7 @@ training:
     init_value: 1.0
     decay_mode: 'lin'
     milestones:
-      10000: 0
+      15000: 0
   replay_buffer_length: 10000
   batch_size: 32
   freeze_interval: 200
