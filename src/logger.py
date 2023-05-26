@@ -21,22 +21,17 @@ class Logger:
         # Setup logger
         self.logger = logging.getLogger("practice")
         self.logger.setLevel(level=logging.DEBUG)
+        formatter = logging.Formatter(fmt='%(asctime)s %(message)s',
+                                      datefmt='%Y-%m-%d %H:%M:%S')
+        file_handler = logging.FileHandler(self.target_dir + '/logger.log')
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
 
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s %(message)s',
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(self.target_dir + '/logger.log'),
-            ],
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-
-    def log_episode(self, steps, reward, option_lengths, ep_steps, epsilon):
+    def log_episode(self, steps, ret, option_lengths, ep_steps, epsilon):
         self.n_eps += 1
-        self.logger.info(f"> ep {self.n_eps} done. total_steps={steps} | reward={reward} | episode_steps={ep_steps} "
+        self.logger.info(f"> ep {self.n_eps} done. total_steps={steps} | reward={ret} | episode_steps={ep_steps} "
                          f"| hours={(time.time() - self.start_time) / 60 / 60:.3f} | epsilon={epsilon:.3f}")
-        self.writer.add_scalar(tag="episodic_rewards", scalar_value=reward, global_step=self.n_eps)
+        self.writer.add_scalar(tag="returns", scalar_value=ret, global_step=self.n_eps)
         self.writer.add_scalar(tag='episode_lengths', scalar_value=ep_steps, global_step=self.n_eps)
 
         # Keep track of options statistics
