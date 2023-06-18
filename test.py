@@ -1,8 +1,8 @@
 from option_critic import OptionCritic
 from utils import make_env
 
-env_name = "CartPole-v1"
-model_name = "Experiment_1"
+env_name = "ALE/Seaquest-v5"
+model_name = "fameskip"
 
 env, is_atari = make_env(env_name, seed=0, render_mode="rgb_array")
 

@@ -4,17 +4,19 @@ import os.path
 from math import exp
 from copy import deepcopy
 import signal
+from typing import Union
 
+from gymnasium import Env
 import numpy as np
+from ocatari.core import OCAtari
 import pygame
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Bernoulli
-from tensorboard import program
 
 from experience_replay import ReplayBuffer
 from logger import Logger
-from utils import to_tensor
+from utils import to_tensor, objects_to_numeric_vector, categorize_objects_into_dict, get_category_counts, pad_object_list
 from param_schedule import ParamScheduler
 
 MODEL_BASE_PATH = "out/models/"
@@ -23,9 +25,9 @@ MODEL_BASE_PATH = "out/models/"
 class OptionCritic(nn.Module):
     def __init__(self,
                  name: str,
-                 env,
+                 env: Union[Env, OCAtari],
                  num_options: int,
-                 is_pixel: bool,
+                 is_object_centric: bool,
                  latent_dimension: int,
                  temperature: float = 1.0,
                  termination_regularization: float = 0.01,
@@ -36,11 +38,16 @@ class OptionCritic(nn.Module):
         :param name: The agent's name (used for model save path)
         :param env: The Gymnasium environment the agent is going to interact with
         :param num_options: Number of options to create and learn.
-        :param is_pixel: Whether the state is a pixel matrix or raw object data.
-        :param temperature: Action distribution softmax temperature
-        :param termination_regularization: Regularization factor to decrease termination probability =>
-            encourage longer options.
-        :param entropy_regularization: Regularization factor to increase policy entropy.
+        :param is_object_centric: If true, the state representation is object-centric (positions and
+            velocities), otherwise a pixel matrix.
+        :param temperature: Action distribution softmax temperature. Increase temperature to
+            even out action selection probability. Set to 1 to deactivate.
+        :param termination_regularization: Regularization factor. If increased, option termination
+            probability gets decreased, i.e., longer options are encouraged. Set to 0 do disable this
+            regularization.
+        :param entropy_regularization: Regularization factor to control policy entropy. Increase this
+            factor to worsen policy loss, enforcing higher policy entropy. Setting to zero deactivates
+            this regularizer.
         :param device:
         :param testing:
         """
@@ -50,8 +57,10 @@ class OptionCritic(nn.Module):
         super(OptionCritic, self).__init__()
 
         self.name = name
+        self.object_centric = is_object_centric
 
-        self.model_dir = get_model_dir(model_name=self.name, env_name=env.spec.name)
+        env_name = env.spec.name if isinstance(env, Env) else env.game_name
+        self.model_dir = get_model_dir(model_name=self.name, env_name=env_name)
         if os.path.exists(self.model_dir):
             ans = input(f"There already exists a model at '{self.model_dir}'. Override that model? (y/n)")
             if ans == 'y':
@@ -60,7 +69,16 @@ class OptionCritic(nn.Module):
                 quit()
         os.makedirs(self.model_dir)
 
-        self.in_shape = env.observation_space.shape[0]
+        if is_object_centric:
+            self.max_num_objects = len(env.max_objects)
+            self.in_shape = self.max_num_objects * 4
+        else:
+            self.in_shape = env.observation_space.shape[0]
+
+        if is_object_centric:
+            objects_categorized = categorize_objects_into_dict(env.max_objects)
+            self.max_object_counts = get_category_counts(objects_categorized)
+
         self.num_actions = env.action_space.n
         self.num_options = num_options
         self.device = device
@@ -73,10 +91,10 @@ class OptionCritic(nn.Module):
         self.num_steps = 0
 
         self.latent_dimension = latent_dimension
-        self.latent = self._initialize_latent_model(is_pixel)
+        self.latent = self._initialize_latent_model(is_object_centric)
 
-        self.Q = nn.Linear(self.latent_dimension, num_options)  # Policy-Over-Options
-        self.terminations = nn.Linear(self.latent_dimension, num_options)  # Option-Termination
+        self.option_values = nn.Linear(self.latent_dimension, num_options)  # inter-option policy
+        self.termination_probabilities = nn.Linear(self.latent_dimension, num_options)
         self.options_W = nn.Parameter(torch.zeros(num_options, self.latent_dimension, self.num_actions))
         self.options_b = nn.Parameter(torch.zeros(num_options, self.num_actions))
 
@@ -85,8 +103,15 @@ class OptionCritic(nn.Module):
 
         self.running = True
 
-    def _initialize_latent_model(self, is_pixel):
-        if is_pixel:
+    def _initialize_latent_model(self, is_object_centric):
+        if is_object_centric:
+            return nn.Sequential(
+                nn.Linear(self.in_shape, self.latent_dimension // 2),
+                nn.ReLU(),
+                nn.Linear(self.latent_dimension // 2, self.latent_dimension),
+                nn.ReLU()
+            )
+        else:
             return nn.Sequential(
                 nn.Conv2d(self.in_shape, 32, kernel_size=8, stride=4),
                 nn.ReLU(),
@@ -98,15 +123,8 @@ class OptionCritic(nn.Module):
                 nn.Linear(7 * 7 * 64, self.latent_dimension),
                 nn.ReLU()
             )
-        else:
-            return nn.Sequential(
-                nn.Linear(self.in_shape, self.latent_dimension // 2),
-                nn.ReLU(),
-                nn.Linear(self.latent_dimension // 2, self.latent_dimension),
-                nn.ReLU()
-            )
 
-    def _get_latent(self, obs):
+    def get_latent(self, obs: torch.Tensor):
         if obs.ndim < 4:
             obs = obs.unsqueeze(0)
         obs = obs.to(self.device)
@@ -117,9 +135,11 @@ class OptionCritic(nn.Module):
                  env,
                  num_transitions: int = 4e6,
                  learning_rate: float = 0.0005,
+                 optimizer: str = 'Adam',
                  discount_factor: float = 0.99,
                  epsilon: dict = None,
                  replay_buffer_length: int = 10000,
+                 replay_start_size: int = 500,
                  batch_size: int = 32,
                  freeze_interval: int = 200,
                  critic_replay_period: int = 4,
@@ -140,20 +160,29 @@ class OptionCritic(nn.Module):
         :param critic_replay_period: Number of transitions before each SGD update (replay)
         :param max_episode_length:
         :param seed:
+        :param replay_start_size:
+        :param optimizer:
         :return:
         """
 
-        initialize_tensorboard()
+        # initialize_tensorboard()
 
         if epsilon is None:
             epsilon = ParamScheduler(0, "const")
         else:
             epsilon = ParamScheduler(**epsilon)
 
+        replay_start_size = max(replay_start_size, batch_size)
+
         # Create a prime network for more stable Q values
         option_critic_prime = deepcopy(self)
 
-        optim = torch.optim.RMSprop(self.parameters(), lr=learning_rate)
+        if optimizer == "Adam":
+            optim = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        elif optimizer == "RMSprop":
+            optim = torch.optim.RMSprop(self.parameters(), lr=learning_rate)
+        else:
+            raise ValueError(f"Invalid optimizer '{optimizer}' specified.")
 
         np.random.seed(seed)  # TODO: deprecated
         torch.manual_seed(seed)  # TODO: deprecated
@@ -164,7 +193,7 @@ class OptionCritic(nn.Module):
         transition = 0
 
         # Setup SIGINT handler
-        signal.signal(signal.SIGINT, self.stop_practice)
+        signal.signal(signal.SIGINT, self.stop_running)
 
         # Iterate over episodes
         while transition < num_transitions and self.running:
@@ -172,6 +201,9 @@ class OptionCritic(nn.Module):
             option_lengths = {opt: [] for opt in range(self.num_options)}
 
             state, _ = env.reset()
+            if self.object_centric:
+                state = objects_to_numeric_vector(pad_object_list(env.objects, self.max_object_counts))
+
             greedy_option = self.choose_option_greedy(state)
             current_option = 0
 
@@ -193,6 +225,8 @@ class OptionCritic(nn.Module):
 
                 # Perform transition
                 next_state, reward, done, _, _ = env.step(action)
+                if self.object_centric:
+                    next_state = objects_to_numeric_vector(pad_object_list(env.objects, self.max_object_counts))
 
                 # Save transition
                 buffer.push(state, current_option, reward, next_state, done)
@@ -200,7 +234,7 @@ class OptionCritic(nn.Module):
 
                 # Train
                 actor_loss, critic_loss = None, None
-                if len(buffer) > batch_size:
+                if len(buffer) > replay_start_size:
                     actor_loss = self.actor_loss(state, current_option, logp, entropy,
                                                  reward, done, next_state, option_critic_prime, discount_factor)
                     loss = actor_loss
@@ -237,7 +271,7 @@ class OptionCritic(nn.Module):
         """Let agent interact with environment and render."""
 
         # Setup SIGINT handler
-        signal.signal(signal.SIGINT, self.stop_practice)
+        signal.signal(signal.SIGINT, self.stop_running)
 
         transition = 0
         episode = 0
@@ -266,7 +300,7 @@ class OptionCritic(nn.Module):
             terminate_option = True
 
             # Iterate over transitions
-            while not done and episode_length < max_episode_length:
+            while not done and episode_length < max_episode_length and self.running:
                 if terminate_option:
                     current_option = greedy_option
 
@@ -312,24 +346,24 @@ class OptionCritic(nn.Module):
         pygame.display.flip()
         pygame.event.pump()
 
-    def get_Q(self, state):
-        return self.Q(state)
+    def get_option_values(self, state):
+        return self.option_values(state)
 
     def predict_option_termination(self, state, current_option):
-        latent = self._get_latent(to_tensor(state))
-        termination = self.terminations(latent)[:, current_option].sigmoid()
+        latent = self.get_latent(to_tensor(state))
+        termination = self.termination_probabilities(latent)[:, current_option].sigmoid()
         option_termination = Bernoulli(termination).sample()
 
-        Q = self.get_Q(latent)
-        next_option = Q.argmax(dim=-1)
+        option_values = self.get_option_values(latent)
+        next_option = option_values.argmax(dim=-1)
         return bool(option_termination.item()), next_option.item()
 
-    def get_terminations(self, state):
-        return self.terminations(state).sigmoid()
+    def get_termination_probabilities(self, latent: torch.Tensor):
+        return self.termination_probabilities(latent).sigmoid()
 
     def get_action(self, state, option):
         """Given an environment state, samples an action of the specified option policy."""
-        latent = self._get_latent(to_tensor(state))
+        latent = self.get_latent(to_tensor(state))
 
         logits = latent.data @ self.options_W[option] + self.options_b[option]
         action_dist = (logits / self.temperature).softmax(dim=-1)
@@ -342,8 +376,8 @@ class OptionCritic(nn.Module):
         return action.item(), logp, entropy
 
     def choose_option_greedy(self, state):
-        latent = self._get_latent(to_tensor(state))
-        Q = self.get_Q(latent)
+        latent = self.get_latent(to_tensor(state))
+        Q = self.get_option_values(latent)
         return Q.argmax(dim=-1).item()
 
     @property
@@ -355,60 +389,73 @@ class OptionCritic(nn.Module):
             eps = self.eps_test
         return eps
 
-    def stop_practice(self, sig, frame):
+    def stop_running(self, sig, frame):
         print("Stopping running...")
         self.running = False
 
     def critic_loss(self, model_prime, data_batch, discount_factor):
-        obs, options, rewards, next_obs, dones = data_batch
-        batch_idx = torch.arange(len(options)).long()
+        states, options, rewards, next_states, dones = data_batch
+
+        batch_ids = torch.arange(len(options)).long()
         options = torch.LongTensor(options).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
         masks = 1 - torch.FloatTensor(dones).to(self.device)
 
         # The loss is the TD loss of Q and the update target, so we need to calculate Q
-        states = self._get_latent(to_tensor(obs)).squeeze(0)
-        Q = self.get_Q(states)
+        latents = self.get_latent(to_tensor(states)).squeeze(0)
+        option_values = self.get_option_values(latents)
 
-        # the update target contains Q_next, but for stable learning we use prime network for this
-        next_states_prime = model_prime._get_latent(to_tensor(next_obs)).squeeze(0)
-        next_Q_prime = model_prime.get_Q(next_states_prime)  # detach?
+        # The update target contains Q_next, but for stable learning we use prime network for this
+        next_latents_prime = model_prime.get_latent(to_tensor(next_states)).squeeze(0)
+        next_option_values_prime = model_prime.get_option_values(next_latents_prime)  # TODO: detach?
 
-        # Additionally, we need the beta probabilities of the next state
-        next_states = self._get_latent(to_tensor(next_obs)).squeeze(0)
-        next_termination_probs = self.get_terminations(next_states).detach()
-        next_options_term_prob = next_termination_probs[batch_idx, options]
+        # Additionally, we need beta (the termination probabilities) of the next state
+        next_latents = self.get_latent(to_tensor(next_states)).squeeze(0)
+        next_termination_probs = self.get_termination_probabilities(next_latents).detach()
+        next_option_termination_probs = next_termination_probs[batch_ids, options]
 
-        # Now we can calculate the update target gt
-        gt = rewards + masks * discount_factor * \
-             ((1 - next_options_term_prob) * next_Q_prime[batch_idx, options] + next_options_term_prob *
-              next_Q_prime.max(dim=-1)[0])
+        # Now we can calculate the update target g_t
+        g_t = rewards + masks * discount_factor * (
+                (1 - next_option_termination_probs) * next_option_values_prime[batch_ids, options]
+                + next_option_termination_probs * next_option_values_prime.max(dim=-1)[0]
+        )
 
-        # to update Q we want to use the actual network, not the prime
-        td_err = (Q[batch_idx, options] - gt.detach()).pow(2).mul(0.5).mean()
+        # To update Q we want to use the actual network, not the prime
+        td_err = (option_values[batch_ids, options] - g_t.detach()).pow(2).mul(0.5).mean()
         return td_err
 
-    def actor_loss(self, obs, option, logp, entropy, reward, done, next_obs, model_prime, discount_factor):
-        state = self._get_latent(to_tensor(obs))
-        next_state = self._get_latent(to_tensor(next_obs))
-        next_state_prime = model_prime._get_latent(to_tensor(next_obs))
+    def actor_loss(self, state, option, logp, entropy, reward, done, next_state, model_prime, discount_factor):
+        # Compute latent vectors
+        latent = self.get_latent(to_tensor(state))
+        next_latent = self.get_latent(to_tensor(next_state))
+        next_latent_prime = model_prime.get_latent(to_tensor(next_state))
 
-        option_term_prob = self.get_terminations(state)[:, option]
-        next_option_term_prob = self.get_terminations(next_state)[:, option].detach()
+        # Compute termination probabilities of current option for current state and for next state
+        termination_probability = self.get_termination_probabilities(latent)[:, option]
+        next_termination_probability = self.get_termination_probabilities(next_latent)[:, option].detach()
 
-        Q = self.get_Q(state).detach().squeeze(0)
-        next_Q_prime = model_prime.get_Q(next_state_prime).detach().squeeze(0)
+        # Compute Q-values for options
+        option_values = self.get_option_values(latent).detach().squeeze(0)
+        next_option_values_prime = model_prime.get_option_values(next_latent_prime).detach().squeeze(0)
 
-        # Target update gt
-        gt = reward + (1 - done) * discount_factor * \
-             ((1 - next_option_term_prob) * next_Q_prime[option] + next_option_term_prob * next_Q_prime.max(dim=-1)[0])
+        # One-step off-policy update target
+        if done:
+            g_t = reward
+        else:
+            g_t = reward + discount_factor * (
+                    (1 - next_termination_probability) * next_option_values_prime[option]
+                    + next_termination_probability * next_option_values_prime.max(dim=-1)[0]
+            ).detach()
 
-        # The termination loss
-        termination_loss = option_term_prob * (Q[option].detach() - Q.max(dim=-1)[0].detach() +
-                                               self.termination_regularization) * (1 - done)
+        # Compute termination loss
+        if done:
+            termination_loss = 0
+        else:
+            option_advantage = (option_values[option] - option_values.max(dim=-1)[0]).detach()
+            termination_loss = termination_probability * (option_advantage + self.termination_regularization)
 
-        # actor-critic policy gradient with entropy regularization
-        policy_loss = -logp * (gt.detach() - Q[option]) - self.entropy_regularization * entropy
+        # Actor-critic policy gradient with entropy regularization
+        policy_loss = -logp * (g_t - option_values[option]) - self.entropy_regularization * entropy
         actor_loss = termination_loss + policy_loss
         return actor_loss
 
@@ -425,9 +472,3 @@ def get_model_dir(env_name, model_name):
     return MODEL_BASE_PATH + f"{env_name}/{model_name}/"
 
 
-def initialize_tensorboard():
-    # manual console run: tensorboard --logdir=out/models
-    tb = program.TensorBoard()
-    tb.configure(argv=[None, '--logdir', 'out/models'])
-    url = tb.launch()
-    print(f"Tensorboard listening on {url}")

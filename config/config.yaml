@@ -1,28 +1,30 @@
-name: "8_options_512_latent"
+name: "one_option"
 cuda: True
 seed: 0
 
 environment:
-  name: "ALE/Seaquest-v5"
-  frameskip: 1
-  framestack: 4  # Applied to Atari environments only
+  name: "ALE/Pong-v4"
+  object_centric: True
+  frameskip: 4
+  framestack: 1  # Applied to Atari environments only
 
 model:
-  num_options: 8
-  latent_dimension: 512
-  termination_regularization: 0.01
-  entropy_regularization: 0.01
+  num_options: 1
+  latent_dimension: 128
+  termination_regularization: 0
+  entropy_regularization: 0.05
   temperature: 1
 
 training:
-  num_transitions: 100000
+  num_transitions: 10000000
+  optimizer: Adam
   learning_rate: 0.0005
   discount_factor: 0.99
   epsilon:
     init_value: 1.0
     decay_mode: 'lin'
     milestones:
-      10000: 0
+      50000: 0
   replay_buffer_length: 10000
   batch_size: 32
   freeze_interval: 200

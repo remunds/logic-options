@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import yaml
 
@@ -42,7 +43,7 @@ def run(name: str = None,
         name=name,
         env=env,
         device=device,
-        is_pixel=is_atari,
+        is_object_centric=is_atari,
         **model
     )
 
