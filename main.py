@@ -47,6 +47,9 @@ def run(name: str = None,
         **model
     )
 
+    # Copy the config into the model dir
+    shutil.copy(src=CONFIG_PATH, dst=option_critic.model_dir)
+
     option_critic.practice(env, **training)
 
 
