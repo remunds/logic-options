@@ -3,41 +3,20 @@ from __future__ import annotations
 import gymnasium
 import numpy as np
 import torch
-from typing import Sequence
+from typing import Sequence, Union
 
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import GameObject
 from gymnasium.wrappers import AtariPreprocessing, TransformReward
-from gymnasium.wrappers import FrameStack as FrameStack_
+from gymnasium.wrappers import FrameStack  # as FrameStack_
 from tensorboard import program
 
 from fourrooms import Fourrooms
 
 
-class LazyFrames(object):
-    def __init__(self, frames):
-        self._frames = frames
-
-    def __array__(self, dtype=None):
-        out = np.concatenate(self._frames, axis=0)
-        if dtype is not None:
-            out = out.astype(dtype)
-        return out
-
-    def __len__(self):
-        return len(self.__array__())
-
-    def __getitem__(self, i):
-        return self.__array__()[i]
-
-
-class FrameStack(FrameStack_):
-    def __init__(self, env, k):
-        FrameStack_.__init__(self, env, k)
-
-    def _get_ob(self):
-        assert len(self.frames) == self.k
-        return LazyFrames(list(self.frames))
+ATARI_SCREEN_WIDTH = 160
+ATARI_SCREEN_HEIGHT = 210
+AVG_SCREEN_VELOCITY = 4  # TODO: test
 
 
 def make_env(name, seed, render_mode=None, framestack=4,
@@ -57,20 +36,20 @@ def make_env(name, seed, render_mode=None, framestack=4,
         if not is_atari:
             raise NotImplemented("Object centric for non-Atari games not implemented yet.")
         env_name = name.split("/")[1].split("-")[0]  # Extract environment name from gymnasium env identifier
-        env = OCAtari(env_name, mode='revised', hud=True, render_mode=render_mode,
+        env = OCAtari(env_name, mode='revised', hud=False, render_mode=render_mode,
                       frameskip=gym_frameskip, **kwargs)
     else:
         env = gymnasium.make(name, render_mode=render_mode, frameskip=gym_frameskip, **kwargs)
 
-    if is_atari:
-        frameskip = 4 if frameskip is None else frameskip
-        env = AtariPreprocessing(env,
-                                 grayscale_obs=True,
-                                 scale_obs=True,
-                                 terminal_on_life_loss=True,
-                                 frame_skip=frameskip)
-        env = TransformReward(env, lambda r: float(np.clip(r, -1, 1)))
-        env = FrameStack(env, framestack)
+    # if is_atari:
+    frameskip = 4 if frameskip is None else frameskip
+    env = AtariPreprocessing(env,
+                             grayscale_obs=True,
+                             scale_obs=True,
+                             terminal_on_life_loss=True,
+                             frame_skip=frameskip)
+    env = TransformReward(env, lambda r: float(np.clip(r, -1, 1)))
+    env = FrameStack(env, framestack)
 
     # Initialize environment using seed
     env.reset(seed=seed, options={})
@@ -125,18 +104,36 @@ def sec2hhmmss(s):
     return "%d:%02d:%02d h" % (h, m % 60, s % 60)
 
 
-def objects_to_numeric_vector(objects: Sequence[GameObject]):
+def objects_to_matrix(objects: Sequence[GameObject]):
     """Converts a list of objects into the corresponding matrix representation.
     Each row (x, y, dx, dy) of the returned matrix represents the object's center (!)
     position and velocity vector."""
+
     object_matrix = np.zeros(shape=(len(objects), 4), dtype='float32')
+    object_matrix[:] = np.nan
+
     for i, obj in enumerate(objects):
         if obj is not None:
-            object_matrix[i] = (obj.x + obj.w // 2,
-                                obj.y + obj.h // 2,
+            object_matrix[i] = (obj.x + obj.w / 2,
+                                obj.y + obj.h / 2,
                                 obj.dx,
                                 obj.dy)
-    return object_matrix.flatten()
+
+    return object_matrix
+
+
+def normalize_object_matrix(object_matrix):
+    # Normalize positions to [-1, 1] TODO: this applies only to Atari => generalize
+    object_matrix[:, 0] = 2 * object_matrix[:, 0] / ATARI_SCREEN_WIDTH - 1
+    object_matrix[:, 1] = 2 * object_matrix[:, 1] / ATARI_SCREEN_HEIGHT - 1
+
+    # Normalize velocities with tanh to [-1, 1]
+    object_matrix[:, 2:4] = np.tanh(object_matrix[:, 2:4] / AVG_SCREEN_VELOCITY)
+
+    # Replace NaNs with zeros
+    np.nan_to_num(object_matrix, nan=0, copy=False)
+
+    return object_matrix
 
 
 def categorize_objects_into_dict(objects: Sequence[GameObject]):
@@ -155,13 +152,18 @@ def get_category_counts(objects_categorized: dict['str', Sequence[GameObject]]):
 
 
 def pad_object_list(objects: Sequence[GameObject], max_object_counts: dict):
+    """Takes a list of objects and fills it with None entries where other
+    objects are missing (compared to max_object_counts)."""
     padded_object_list = []
     objects_categorized = categorize_objects_into_dict(objects)
 
     # Construct padded object list iteratively by category
     for category in list(max_object_counts.keys()):
-        category_objects = objects_categorized[category]
-        padded_object_list.extend(category_objects)
+        if category in objects_categorized.keys():
+            category_objects = objects_categorized[category]
+            padded_object_list.extend(category_objects)
+        else:
+            category_objects = []
 
         # Add padding for this category
         padding_length = max_object_counts[category] - len(category_objects)
@@ -176,3 +178,7 @@ def initialize_tensorboard():
     tb.configure(argv=[None, '--logdir', 'out/models'])
     url = tb.launch()
     print(f"Tensorboard listening on {url}")
+
+
+def get_env_name(env: Union[gymnasium.Env, OCAtari]):
+    return env.spec.name if isinstance(env, gymnasium.Env) else env.game_name

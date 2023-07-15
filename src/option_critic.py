@@ -16,7 +16,8 @@ from torch.distributions import Categorical, Bernoulli
 
 from experience_replay import ReplayBuffer
 from logger import Logger
-from utils import to_tensor, objects_to_numeric_vector, categorize_objects_into_dict, get_category_counts, pad_object_list
+from utils import to_tensor, objects_to_matrix, categorize_objects_into_dict, get_category_counts, \
+    pad_object_list, get_env_name, normalize_object_matrix
 from param_schedule import ParamScheduler
 
 MODEL_BASE_PATH = "out/models/"
@@ -104,6 +105,8 @@ class OptionCritic(nn.Module):
         self.train(not testing)
 
         self.running = True
+        self.transitions_total = 0
+        self.return_record = -np.inf
 
     def _initialize_latent_model(self, is_object_centric):
         if is_object_centric:
@@ -134,7 +137,7 @@ class OptionCritic(nn.Module):
         return state
 
     def practice(self,
-                 env,
+                 env: Union[Env, OCAtari],
                  num_transitions: int = 4e6,
                  learning_rate: float = 0.0005,
                  optimizer: str = 'Adam',
@@ -167,8 +170,6 @@ class OptionCritic(nn.Module):
         :return:
         """
 
-        # initialize_tensorboard()
-
         if epsilon is None:
             epsilon = ParamScheduler(0, "const")
         else:
@@ -190,7 +191,7 @@ class OptionCritic(nn.Module):
         torch.manual_seed(seed)  # TODO: deprecated
 
         buffer = ReplayBuffer(capacity=replay_buffer_length, seed=seed)
-        logger = Logger(log_dir=self.model_dir + "log")
+        logger = Logger(log_dir=self.model_dir + "/log")
 
         transition = 0
 
@@ -204,7 +205,7 @@ class OptionCritic(nn.Module):
 
             state, _ = env.reset()
             if self.object_centric:
-                state = objects_to_numeric_vector(pad_object_list(env.objects, self.max_object_counts))
+                state = self.get_current_oc_env_state(env)
 
             greedy_option = self.choose_option_greedy(state)
             current_option = 0
@@ -228,7 +229,13 @@ class OptionCritic(nn.Module):
                 # Perform transition
                 next_state, reward, done, _, _ = env.step(action)
                 if self.object_centric:
-                    next_state = objects_to_numeric_vector(pad_object_list(env.objects, self.max_object_counts))
+                    next_state = self.get_current_oc_env_state(env)
+
+                # Reward shaping for Pong
+                # if "Pong" in env.game_name:
+                #     ball_position_y = env.objects[1].y
+                #     player_position_y = env.objects[0].y
+                #     reward += 0.05 / (1 + abs(ball_position_y - player_position_y))
 
                 # Save transition
                 buffer.push(state, current_option, reward, next_state, done)
@@ -257,17 +264,27 @@ class OptionCritic(nn.Module):
 
                 terminate_option, greedy_option = self.predict_option_termination(next_state, current_option)
 
+                self.transitions_total += 1
                 transition += 1
                 episode_length += 1
                 current_option_length += 1
                 state = next_state
 
-                logger.log_data(transition, actor_loss, critic_loss, entropy.item(), eps)
+                if self.transitions_total % SUMMARY_WRITE_INTERVAL == 0:
+                    logger.log_data(self.transitions_total, actor_loss, critic_loss, entropy.item(), eps)
 
-            logger.log_episode(transition, ret, option_lengths, episode_length, eps)
+                if self.transitions_total % CHECKPOINT_SAVE_PERIOD == 0:
+                    self.save()
+
+            logger.log_episode(self.transitions_total, ret, option_lengths, episode_length, eps)
+
+            if ret > self.return_record:
+                if self.return_record > -np.inf:
+                    logger.logger.info(f"New record: {ret}")
+                    self.save(suffix="_record_%.0f" % ret)
+                self.return_record = ret
 
         self.save()
-        print("Saved model.")
 
     def play(self, env, max_episode_length: int = np.inf):
         """Let agent interact with environment and render."""
@@ -294,6 +311,8 @@ class OptionCritic(nn.Module):
             ret = 0  # return (= sum of all rewards)
 
             state, _ = env.reset()
+            if self.object_centric:
+                state = self.get_current_oc_env_state(env)
             greedy_option = self.choose_option_greedy(state)
             current_option = 0
 
@@ -311,6 +330,8 @@ class OptionCritic(nn.Module):
 
                 # Perform transition
                 next_state, reward, done, _, _ = env.step(action)
+                if self.object_centric:
+                    next_state = self.get_current_oc_env_state(env)
                 ret += reward
 
                 # Render environment for human
