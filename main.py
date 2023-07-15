@@ -3,7 +3,8 @@ import shutil
 
 import yaml
 
-from option_critic import OptionCritic, get_model_dir
+from agent import Agent, get_model_dir
+from option_critic import OptionCritic
 from utils import make_env, get_torch_device, get_env_name
 
 
@@ -59,19 +60,19 @@ def run(name: str = None,
                 quit()
 
     if load_existing_agent:
-        option_critic = OptionCritic.load(env_name=env_name, model_name=name)
+        agent = Agent.load(env_name=env_name, model_name=name)
         # TODO: copy train config
     else:  # Create the agent and copy the config
         option_critic = OptionCritic(
-            name=name,
             env=env,
             device=device,
             is_object_centric=environment['object_centric'],
             **model
         )
-        shutil.copy(src=CONFIG_PATH, dst=option_critic.model_dir)
+        agent = Agent(name=name, model=option_critic, env=env, is_object_centric=environment['object_centric'])
+        shutil.copy(src=CONFIG_PATH, dst=agent.model_dir)
 
-    option_critic.practice(env, **training)
+    agent.practice(env, **training)
 
 
 if __name__ == "__main__":
