@@ -20,6 +20,9 @@ from utils import to_tensor, objects_to_numeric_vector, categorize_objects_into_
 from param_schedule import ParamScheduler
 
 MODEL_BASE_PATH = "out/models/"
+MODEL_BASE_FILENAME = "model"
+CHECKPOINT_SAVE_PERIOD = 1000000
+SUMMARY_WRITE_INTERVAL = 100  # no. of transitions
 
 
 class OptionCritic(nn.Module):
@@ -59,15 +62,14 @@ class OptionCritic(nn.Module):
         self.name = name
         self.object_centric = is_object_centric
 
-        env_name = env.spec.name if isinstance(env, Env) else env.game_name
+        env_name = get_env_name(env)
         self.model_dir = get_model_dir(model_name=self.name, env_name=env_name)
+
+        # Handle any pre-existing model
         if os.path.exists(self.model_dir):
-            ans = input(f"There already exists a model at '{self.model_dir}'. Override that model? (y/n)")
-            if ans == 'y':
-                os.rmdir(self.model_dir)  # TODO: enable run continuation
-            else:
-                quit()
-        os.makedirs(self.model_dir)
+            raise ValueError(f"There already exists a model at {self.model_dir}.")
+        else:
+            os.makedirs(self.model_dir)
 
         if is_object_centric:
             self.max_num_objects = len(env.max_objects)
@@ -459,16 +461,48 @@ class OptionCritic(nn.Module):
         actor_loss = termination_loss + policy_loss
         return actor_loss
 
-    def save(self):
-        torch.save(self, self.model_dir + "result.pckl")
+    def save(self, suffix=""):
+        torch.save(self, f"{self.model_dir}/{MODEL_BASE_FILENAME}_{self.transitions_total}{suffix}.pckl")
+        print("Saved model.")
 
     @staticmethod
-    def load(env_name, model_name) -> OptionCritic:
-        model_path = get_model_dir(env_name, model_name) + "result.pckl"
-        return torch.load(model_path)
+    def load(env_name, model_name, model_version=None) -> OptionCritic:
+        model_dir = get_model_dir(env_name, model_name)
+
+        if not os.path.exists(model_dir):
+            raise ValueError(f"No model '{model_name}' found for environment '{env_name}'.")
+
+        if model_version is not None:
+            model_save_file = f"{model_dir}/{model_version}.pckl"
+            if not os.path.exists(model_save_file):
+                raise ValueError(f"No model version '{model_version}' found for model '{model_name}' "
+                                 f"and environment '{env_name}'.")
+
+        else:  # pick most recent checkpoint file
+            model_save_files = glob.glob(f"{model_dir}/{MODEL_BASE_FILENAME}*.pckl")
+            if len(model_save_files) == 0:
+                if os.path.exists(f"{model_dir}/result.pckl"):
+                    model_save_file = f"{model_dir}/result.pckl"
+                else:
+                    raise ValueError(f"Model '{model_name}' (of env '{env_name}') has no saved versions.")
+            else:
+                model_save_file = model_save_files[-1]
+
+        option_critic = torch.load(model_save_file)
+        option_critic.running = True
+        return option_critic
+
+    def get_current_oc_env_state(self, env: Union[Env, OCAtari]):
+        """Returns the object-centric representation of the provided environment's
+        current state. It is defined as the normalized vector of x,y,dx,dy properties
+        of each non-HUD game object."""
+        padded_object_list = pad_object_list(env.objects, self.max_object_counts)
+        object_matrix = objects_to_matrix(padded_object_list)
+        object_matrix_normalized = normalize_object_matrix(object_matrix)
+        return object_matrix_normalized.flatten()
 
 
 def get_model_dir(env_name, model_name):
-    return MODEL_BASE_PATH + f"{env_name}/{model_name}/"
+    return MODEL_BASE_PATH + f"{env_name}/{model_name}"
 
 

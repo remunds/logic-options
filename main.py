@@ -3,8 +3,8 @@ import shutil
 
 import yaml
 
-from option_critic import OptionCritic
-from utils import make_env, get_torch_device
+from option_critic import OptionCritic, get_model_dir
+from utils import make_env, get_torch_device, get_env_name
 
 
 continue_training = True
@@ -36,19 +36,40 @@ def run(name: str = None,
 
     # Setup environment and computing device
     env, is_atari = make_env(seed=seed, **environment)
+    env_name = get_env_name(env)
+
     device = get_torch_device(cuda)
 
-    # Create the agent
-    option_critic = OptionCritic(
-        name=name,
-        env=env,
-        device=device,
-        is_object_centric=is_atari,
-        **model
-    )
+    model_dir = get_model_dir(env_name=env_name, model_name=name)
 
-    # Copy the config into the model dir
-    shutil.copy(src=CONFIG_PATH, dst=option_critic.model_dir)
+    # Handle any pre-existing models
+    load_existing_agent = False
+    if os.path.exists(model_dir):
+        ans = None
+        while ans not in ['l', 'r', 'q']:
+            ans = input(f"There already exists a model at '{model_dir}'. You can either load (l) or "
+                        f"remove (r) the model. Else, you can quit (q) instead.")
+        match ans:
+            case 'l':  # load
+                load_existing_agent = True
+            case 'r':  # remove
+                os.rmdir(model_dir)
+                os.makedirs(model_dir)
+            case 'q':
+                quit()
+
+    if load_existing_agent:
+        option_critic = OptionCritic.load(env_name=env_name, model_name=name)
+        # TODO: copy train config
+    else:  # Create the agent and copy the config
+        option_critic = OptionCritic(
+            name=name,
+            env=env,
+            device=device,
+            is_object_centric=environment['object_centric'],
+            **model
+        )
+        shutil.copy(src=CONFIG_PATH, dst=option_critic.model_dir)
 
     option_critic.practice(env, **training)
 
