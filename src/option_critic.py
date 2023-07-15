@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os.path
+import glob
 from math import exp
 from copy import deepcopy
 import signal
@@ -336,8 +337,9 @@ class OptionCritic(nn.Module):
 
                 # Render environment for human
                 rgb_array = env.render()
-                clock.tick(30)  # reduce FPS for Atari games
-                self._render_rgb(screen, rgb_array, option_id=current_option)
+                clock.tick(15)  # reduce FPS for Atari games
+                self._render_rgb(screen, rgb_array, option_id=current_option,
+                                 object_centric=self.object_centric, env=env)
 
                 terminate_option, greedy_option = self.predict_option_termination(next_state, current_option)
 
@@ -352,7 +354,10 @@ class OptionCritic(nn.Module):
 
         pygame.quit()
 
-    def _render_rgb(self, screen, rgb_array, option_id=None):
+    def _render_rgb(self, screen, rgb_array, option_id=None, object_centric=False, env=None):
+        """Displays an RGB pixel image using pygame.
+        Optional: Show the currently used option_id and/or the detected objects
+        and their velocities."""
         # Render RGB image
         rgb_array = np.transpose(rgb_array, (1, 0, 2))
         pygame.pixelcopy.array_to_surface(screen, rgb_array)
@@ -365,6 +370,29 @@ class OptionCritic(nn.Module):
             rect.bottomright = (screen.get_size()[0], screen.get_size()[1])
             pygame.draw.rect(screen, color=(20, 20, 20), rect=rect)
             screen.blit(text, rect)
+
+        # If given, render object coordinates and velocity vectors
+        if object_centric and env is not None:
+            padded_object_list = pad_object_list(env.objects, self.max_object_counts)
+            object_matrix = objects_to_matrix(padded_object_list)
+
+            for x, y, dx, dy in object_matrix:
+                if x == np.nan:
+                    continue
+
+                # Draw an 'X' at object center
+                pygame.draw.line(screen, color=(255, 255, 255),
+                                 start_pos=(x-2, y-2), end_pos=(x+2, y+2))
+                pygame.draw.line(screen, color=(255, 255, 255),
+                                 start_pos=(x-2, y+2), end_pos=(x+2, y-2))
+
+                # Draw velocity vector
+                if dx != 0 or dy != 0:
+                    if abs(dx) > 10 or abs(dy) > 10:
+                        print(f"Large velocity dx={dx}, dy={dy} encountered!")
+                    # TODO: make this an actual arrow
+                    pygame.draw.line(screen, color=(100, 200, 255),
+                                     start_pos=(float(x), float(y)), end_pos=(x+8*dx, y+8*dy))
 
         pygame.display.flip()
         pygame.event.pump()

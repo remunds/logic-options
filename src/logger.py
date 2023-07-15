@@ -16,8 +16,6 @@ class Logger:
         self.start_time = time.time()
         self.episode_cnt = 0
 
-        self.return_record = 0
-
         if not os.path.exists(self.target_dir):
             os.makedirs(self.target_dir)
 
@@ -37,10 +35,6 @@ class Logger:
 
     def log_episode(self, steps, ret, option_lengths, ep_steps, epsilon):
         self.episode_cnt += 1
-
-        if ret > self.return_record:
-            self.logger.info("New record!")
-            self.return_record = ret
 
         self.logger.info(f"> ep {self.episode_cnt} done. "
                          f"total_steps={num2text(steps)} "
