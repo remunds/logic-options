@@ -11,3 +11,5 @@ settings.json
 runs/*
 analysis/*
 /out/
+/baselines_checkpoints/
+/baselines_logs/
