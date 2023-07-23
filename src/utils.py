@@ -30,6 +30,8 @@ from fourrooms import Fourrooms
 ATARI_SCREEN_WIDTH = 160
 ATARI_SCREEN_HEIGHT = 210
 AVG_SCREEN_VELOCITY = 4  # TODO: test
+FOCUS_FILES_DIR = "in/focusfiles"
+FOCUS_FILES_DIR_EXTERNAL = "in/focusfiles_external"
 
 
 def make_env(name, seed, render_mode=None, framestack=4,
@@ -82,6 +84,7 @@ def get_torch_device(use_cuda: bool = True):
         print("Using GPU")
     else:
         print("Using CPU")
+    return device
 
 
 def is_sorted(a: np.array) -> bool:
@@ -275,9 +278,9 @@ def init_envs(name: str,
 
     if object_centric:
         if prune_concept == "default":
-            focus_dir = "focusfiles"
+            focus_dir = FOCUS_FILES_DIR
         elif prune_concept == "external":
-            focus_dir = "baselines_focusfiles"
+            focus_dir = FOCUS_FILES_DIR_EXTERNAL
 
         # Extract game name if Atari
         if "ALE" in name:
@@ -304,7 +307,7 @@ def init_envs(name: str,
             return _init
 
         # Verify compatibility with Gymnasium
-        monitor = make_scobi_env()()
+        monitor = make_scobi_env(reward_mode=REWARD_MODE[reward_mode])()
         check_env(monitor.env)
         del monitor
 
