@@ -1,4 +1,4 @@
-name: "rl-zoo-oc-human-clip-05"
+name: "rl-zoo-oc-human"
 cuda: False
 cores: 4
 seed: 0
@@ -21,7 +21,7 @@ model:  # if an existing model is reloaded, these parameters are ignored
     gamma: 0.99
     # gae_lambda: 0.95
     clip_range:  # clipping epsilon
-      initial_value: 0.05
+      initial_value: 0.1
       schedule_type: linear
     vf_coef: 0.5
     ent_coef: 0.01
