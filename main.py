@@ -10,7 +10,7 @@ from utils import make_env, get_torch_device, get_env_name
 
 continue_training = True
 
-CONFIG_PATH = "config/config.yaml"
+CONFIG_PATH = "in/config/config.yaml"
 MODELS_PATH = "out/models/"
 
 

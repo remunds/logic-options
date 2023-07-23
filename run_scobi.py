@@ -6,7 +6,8 @@ from stable_baselines3.common.logger import configure
 
 from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, init_callbacks, get_torch_device
 
-CONFIG_PATH = "config/scobi.yaml"
+CONFIG_PATH = "in/config/scobi.yaml"
+MODELS_PATH = "out/scobi_sb3/"
 
 
 def run(name: str = None,
@@ -26,8 +27,8 @@ def run(name: str = None,
     n_envs = cores
     n_eval_envs = 4
     total_timestamps = int(float(training["total_timesteps"]))
-    log_path = Path("baselines_logs", name)
-    ckpt_path = Path("baselines_checkpoints", name)
+    log_path = Path(MODELS_PATH, name, "logs")
+    ckpt_path = Path(MODELS_PATH, name, "checkpoints")
     log_path.mkdir(parents=True, exist_ok=True)
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
