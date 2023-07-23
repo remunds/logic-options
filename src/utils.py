@@ -1,18 +1,31 @@
 from __future__ import annotations
 
+import os
+from collections import deque
+from pathlib import Path
+from typing import Sequence, Union, Callable
+
 import gymnasium
+import gymnasium as gym
 import numpy as np
 import torch
-from typing import Sequence, Union
-
-from ocatari.core import OCAtari
-from ocatari.ram.game_objects import GameObject
 from gymnasium.wrappers import AtariPreprocessing, TransformReward
 from gymnasium.wrappers import FrameStack  # as FrameStack_
+from ocatari.core import OCAtari
+from ocatari.ram.game_objects import GameObject
+from rtpt import RTPT
+from scobi import Environment
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList, EvalCallback, CheckpointCallback, \
+    EveryNTimesteps
+from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.env_util import make_atari_env
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import VecFrameStack
 from tensorboard import program
 
 from fourrooms import Fourrooms
-
 
 ATARI_SCREEN_WIDTH = 160
 ATARI_SCREEN_HEIGHT = 210
@@ -182,3 +195,241 @@ def initialize_tensorboard():
 
 def get_env_name(env: Union[gymnasium.Env, OCAtari]):
     return env.spec.name if isinstance(env, gymnasium.Env) else env.game_name
+
+
+def get_linear_schedule(initial_value: float) -> Callable[[float], float]:
+    def linear(progress_remaining: float) -> float:
+        return progress_remaining * initial_value
+
+    return linear
+
+
+def maybe_make_schedule(args):
+    if isinstance(args, (int, float)):
+        return args
+    elif isinstance(args, dict):
+        initial_value = args["initial_value"]
+        schedule_type = args["schedule_type"]
+        if schedule_type == "linear":
+            return get_linear_schedule(initial_value)
+        elif schedule_type is None:
+            return initial_value
+        else:
+            ValueError(f"Unrecognized schedule type {schedule_type} provided.")
+    else:
+        raise ValueError("Invalid parameter schedule specification.")
+
+
+def get_experiment_name_from_hyperparams(environment_kwargs, seed):
+    # Build string from settings hyperparams
+    settings_str = ""
+
+    reward_mode = environment_kwargs['reward_mode']
+
+    if reward_mode == "env":
+        settings_str += "_re"
+    elif reward_mode == "human":
+        settings_str += "_rh"
+    elif reward_mode == "mixed":
+        settings_str += "_rm"
+
+    if environment_kwargs["prune_concept"] == "default":
+        settings_str += "_pr-d"
+    elif environment_kwargs["prune_concept"] == "external":
+        settings_str += "_pr-e"
+
+    if environment_kwargs["exclude_properties"]:
+        settings_str += '_ep'
+
+    game_name = get_atari_identifier(environment_kwargs["name"])
+
+    exp_name = game_name + "_s" + str(seed) + settings_str
+
+    return exp_name
+
+
+def get_atari_identifier(env_name: str):
+    """Extracts game name, e.g.: 'ALE/Pong-v5' => 'pong'"""
+    return env_name.split("/")[1].split("-")[0].lower()
+
+
+REWARD_MODE = {
+    "env": 0,
+    "human": 1,
+    "mixed": 2
+}
+MULTIPROCESSING_START_METHOD = "spawn" if os.name == 'nt' else "fork"  # 'nt' == Windows
+
+
+def init_envs(name: str,
+              n_envs: int,
+              n_eval_envs: int,
+              prune_concept: str,
+              exclude_properties: bool,
+              reward_mode: str,
+              seed: int,
+              object_centric: bool = True,
+              frameskip: int = 4,
+              framestack: int = 1) -> (SubprocVecEnv, SubprocVecEnv):
+    eval_env_seed = (seed + 42) * 2  # different seeds for eval
+
+    if object_centric:
+        if prune_concept == "default":
+            focus_dir = "focusfiles"
+        elif prune_concept == "external":
+            focus_dir = "baselines_focusfiles"
+
+        # Extract game name if Atari
+        if "ALE" in name:
+            env_identifier = get_atari_identifier(name)
+        else:
+            env_identifier = name
+
+        pruned_ff_name = f"pruned_{env_identifier}.yaml"
+
+        def make_scobi_env(rank: int = 0, seed: int = 0, silent=False, refresh=True, reward_mode=0) -> Callable:
+            def _init() -> gym.Env:
+                env = Environment(name,
+                                  focus_dir=focus_dir,
+                                  focus_file=pruned_ff_name,
+                                  hide_properties=exclude_properties,
+                                  silent=silent,
+                                  reward=reward_mode,
+                                  refresh_yaml=refresh)
+                env = Monitor(env)
+                env.reset(seed=seed + rank)
+                return env
+
+            set_random_seed(seed)
+            return _init
+
+        # Verify compatibility with Gymnasium
+        monitor = make_scobi_env()()
+        check_env(monitor.env)
+        del monitor
+
+        # silent init and don't refresh default yaml file because it causes spam and issues with multiprocessing
+        train_envs = [make_scobi_env(rank=i,
+                                     seed=seed,
+                                     silent=True,
+                                     refresh=False,
+                                     reward_mode=REWARD_MODE[reward_mode]) for i in range(n_envs)]
+        eval_envs = [make_scobi_env(rank=i,
+                                    seed=eval_env_seed,
+                                    silent=True,
+                                    refresh=False,
+                                    reward_mode=0) for i in range(n_eval_envs)]
+
+        env = SubprocVecEnv(train_envs, start_method=MULTIPROCESSING_START_METHOD)
+        eval_env = SubprocVecEnv(eval_envs, start_method=MULTIPROCESSING_START_METHOD)
+
+        return env, eval_env
+
+    else:
+        # def make_gym_env(seed: int):
+        #     def _init() -> gym.Env:
+        #         env = gym.make(name)
+        #         env.reset(seed=seed)
+        #         return env
+        #     return _init
+        #
+        # train_envs = [make_gym_env(seed=seed + i) for i in range(n_envs)]
+        # eval_envs = [make_gym_env(seed=eval_env_seed + i) for i in range(n_eval_envs)]
+
+        env = make_atari_env(name,
+                             n_envs=4,
+                             seed=seed,
+                             vec_env_cls=SubprocVecEnv,
+                             vec_env_kwargs={"start_method": MULTIPROCESSING_START_METHOD},
+                             wrapper_kwargs={"frame_skip": frameskip})
+        env = VecFrameStack(env, n_stack=framestack)
+
+        eval_env = make_atari_env(name,
+                                  n_envs=4,
+                                  seed=eval_env_seed,
+                                  vec_env_cls=SubprocVecEnv,
+                                  vec_env_kwargs={"start_method": MULTIPROCESSING_START_METHOD},
+                                  wrapper_kwargs={"frame_skip": frameskip})
+        eval_env = VecFrameStack(eval_env, n_stack=framestack)
+
+        return env, eval_env
+
+
+class RtptCallback(BaseCallback):
+    def __init__(self, exp_name, max_iter, verbose=0):
+        super(RtptCallback, self).__init__(verbose)
+        self.rtpt = RTPT(name_initials="QD",
+                         experiment_name=exp_name,
+                         max_iterations=max_iter)
+        self.rtpt.start()
+
+    def _on_step(self) -> bool:
+        self.rtpt.step()
+        return True
+
+
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for plotting additional values in tensorboard.
+    """
+
+    def __init__(self, n_envs, verbose=0):
+        self.n_envs = n_envs
+        self.buffer = deque(maxlen=100)  # ppo default stat window
+        super().__init__(verbose)
+
+    def _on_step(self) -> None:
+        ep_rewards = self.training_env.get_attr("ep_env_reward", range(self.n_envs))
+        for rew in ep_rewards:
+            if rew is not None:
+                self.buffer.extend([rew])
+
+    def on_rollout_end(self) -> None:
+        buff_list = list(self.buffer)
+        if len(buff_list) == 0:
+            return
+        self.logger.record("rollout/ep_env_rew_mean", np.mean(list(self.buffer)))
+
+
+def init_callbacks(exp_name: str,
+                   total_timestamps: int,
+                   object_centric: bool,
+                   n_envs: int,
+                   eval_env,
+                   n_eval_episodes: int,
+                   ckpt_path: Path) -> CallbackList:
+    checkpoint_frequency = 1_000_000
+    eval_frequency = 50_000
+    rtpt_frequency = 100_000
+
+    rtpt_iters = total_timestamps // rtpt_frequency
+    eval_callback = EvalCallback(
+        eval_env,
+        n_eval_episodes=n_eval_episodes,
+        best_model_save_path=str(ckpt_path),
+        log_path=str(ckpt_path),
+        eval_freq=max(eval_frequency // n_envs, 1),
+        deterministic=True,
+        render=False)
+
+    checkpoint_callback = CheckpointCallback(
+        save_freq=max(checkpoint_frequency // n_envs, 1),
+        save_path=str(ckpt_path),
+        name_prefix="model",
+        save_replay_buffer=True,
+        save_vecnormalize=False, )
+
+    rtpt_callback = RtptCallback(
+        exp_name=exp_name,
+        max_iter=rtpt_iters)
+
+    n_callback = EveryNTimesteps(
+        n_steps=rtpt_frequency,
+        callback=rtpt_callback)
+
+    callbacks = [checkpoint_callback, eval_callback, n_callback]
+
+    if object_centric:
+        callbacks.append(TensorboardCallback(n_envs=n_envs))
+
+    return CallbackList(callbacks)
