@@ -207,16 +207,28 @@ def get_linear_schedule(initial_value: float) -> Callable[[float], float]:
     return linear
 
 
+def get_exponential_schedule(initial_value: float, half_life_period: float = 0.25) -> Callable[[float], float]:
+    """It holds exponential(half_life_period) = 0.5. If half_life_period == 0.25, then
+    exponential(0) ~= 0.06"""
+    assert 0 < half_life_period < 1
+
+    def exponential(progress_remaining: float) -> float:
+        return initial_value * np.exp((1 - progress_remaining) * np.log(0.5) / half_life_period)
+
+    return exponential
+
+
 def maybe_make_schedule(args):
     if isinstance(args, (int, float)):
         return args
     elif isinstance(args, dict):
-        initial_value = args["initial_value"]
-        schedule_type = args["schedule_type"]
+        schedule_type = args.pop("schedule_type")
         if schedule_type == "linear":
-            return get_linear_schedule(initial_value)
+            return get_linear_schedule(**args)
+        if schedule_type == "exponential":
+            return get_exponential_schedule(**args)
         elif schedule_type is None:
-            return initial_value
+            return args["initial_value"]
         else:
             ValueError(f"Unrecognized schedule type {schedule_type} provided.")
     else:
@@ -281,43 +293,36 @@ def init_envs(name: str,
             focus_dir = FOCUS_FILES_DIR
         elif prune_concept == "external":
             focus_dir = FOCUS_FILES_DIR_EXTERNAL
+        else:
+            raise ValueError(f"Unknown prune concept '{prune_concept}'.")
 
         # Extract game name if Atari
-        if "ALE" in name:
-            env_identifier = get_atari_identifier(name)
-        else:
-            env_identifier = name
-
-        pruned_ff_name = f"pruned_{env_identifier}.yaml"
-
-        def make_scobi_env(rank: int = 0, seed: int = 0, silent=False, refresh=True, reward_mode=0) -> Callable:
-            def _init() -> gym.Env:
-                env = Environment(name,
-                                  focus_dir=focus_dir,
-                                  focus_file=pruned_ff_name,
-                                  hide_properties=exclude_properties,
-                                  silent=silent,
-                                  reward=reward_mode,
-                                  refresh_yaml=refresh)
-                env = Monitor(env)
-                env.reset(seed=seed + rank)
-                return env
-
-            set_random_seed(seed)
-            return _init
+        pruned_ff_name = get_pruned_focus_file_from_env_name(name)
 
         # Verify compatibility with Gymnasium
-        monitor = make_scobi_env(reward_mode=REWARD_MODE[reward_mode])()
+        monitor = make_scobi_env(name=name,
+                                 focus_dir=focus_dir,
+                                 pruned_ff_name=pruned_ff_name,
+                                 exclude_properties=exclude_properties,
+                                 reward_mode=REWARD_MODE[reward_mode])()
         check_env(monitor.env)
         del monitor
 
         # silent init and don't refresh default yaml file because it causes spam and issues with multiprocessing
-        train_envs = [make_scobi_env(rank=i,
+        train_envs = [make_scobi_env(name=name,
+                                     focus_dir=focus_dir,
+                                     pruned_ff_name=pruned_ff_name,
+                                     exclude_properties=exclude_properties,
+                                     rank=i,
                                      seed=seed,
                                      silent=True,
                                      refresh=False,
                                      reward_mode=REWARD_MODE[reward_mode]) for i in range(n_envs)]
-        eval_envs = [make_scobi_env(rank=i,
+        eval_envs = [make_scobi_env(name=name,
+                                    focus_dir=focus_dir,
+                                    pruned_ff_name=pruned_ff_name,
+                                    exclude_properties=exclude_properties,
+                                    rank=i,
                                     seed=eval_env_seed,
                                     silent=True,
                                     refresh=False,
@@ -329,16 +334,6 @@ def init_envs(name: str,
         return env, eval_env
 
     else:
-        # def make_gym_env(seed: int):
-        #     def _init() -> gym.Env:
-        #         env = gym.make(name)
-        #         env.reset(seed=seed)
-        #         return env
-        #     return _init
-        #
-        # train_envs = [make_gym_env(seed=seed + i) for i in range(n_envs)]
-        # eval_envs = [make_gym_env(seed=eval_env_seed + i) for i in range(n_eval_envs)]
-
         env = make_atari_env(name,
                              n_envs=4,
                              seed=seed,
@@ -356,6 +351,39 @@ def init_envs(name: str,
         eval_env = VecFrameStack(eval_env, n_stack=framestack)
 
         return env, eval_env
+
+
+def get_pruned_focus_file_from_env_name(name: str) -> str:
+    if "ALE" in name:
+        env_identifier = get_atari_identifier(name)
+    else:
+        env_identifier = name
+    return f"pruned_{env_identifier}.yaml"
+
+
+def make_scobi_env(name: str,
+                   focus_dir: str,
+                   pruned_ff_name: str,
+                   exclude_properties: bool,
+                   rank: int = 0,
+                   seed: int = 0,
+                   silent=False,
+                   refresh=True,
+                   reward_mode=0) -> Callable:
+    def _init() -> gym.Env:
+        env = Environment(name,
+                          focus_dir=focus_dir,
+                          focus_file=pruned_ff_name,
+                          hide_properties=exclude_properties,
+                          silent=silent,
+                          reward=reward_mode,
+                          refresh_yaml=refresh)
+        env = Monitor(env)
+        env.reset(seed=seed + rank)
+        return env
+
+    set_random_seed(seed)
+    return _init
 
 
 class RtptCallback(BaseCallback):
@@ -400,9 +428,9 @@ def init_callbacks(exp_name: str,
                    n_envs: int,
                    eval_env,
                    n_eval_episodes: int,
-                   ckpt_path: Path) -> CallbackList:
+                   ckpt_path: Path,
+                   eval_frequency: int = 100_000) -> CallbackList:
     checkpoint_frequency = 1_000_000
-    eval_frequency = 50_000
     rtpt_frequency = 100_000
 
     rtpt_iters = total_timestamps // rtpt_frequency
@@ -420,7 +448,7 @@ def init_callbacks(exp_name: str,
         save_path=str(ckpt_path),
         name_prefix="model",
         save_replay_buffer=True,
-        save_vecnormalize=False, )
+        save_vecnormalize=False)
 
     rtpt_callback = RtptCallback(
         exp_name=exp_name,
