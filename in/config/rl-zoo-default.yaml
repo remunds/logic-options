@@ -1,19 +1,19 @@
-name: "rl-zoo-oc-exponential-clip"
-cuda: False
+name: "rl-zoo-cnn"
+cuda: True
 cores: 4
 seed: 0
 
 environment:
   name: "ALE/Pong-v5"
-  object_centric: True
+  object_centric: False
   reward_mode: mixed  # env, human, mixed
   prune_concept: default  # default or external: use pruned focusfile (from default 'focusfiles' dir or external 'baselines_focusfiles' dir. for custom pruning and or docker mount)
   exclude_properties: True  # exclude properties from feature vector
-  framestack: 4  # ignored when object-centric (1 in that case)
-  frameskip: 1  # ignored when object-centric (1 in that case)
+  framestack: 4
+  frameskip: 1
 
 model:  # if an existing model is reloaded, these parameters are ignored
-  n_options: 6
+  num_options: 1
   ppo:
     n_steps: 256
     n_epochs: 4
@@ -29,9 +29,8 @@ model:  # if an existing model is reloaded, these parameters are ignored
     normalize_advantage: True
 
 training:
-  total_timesteps: 5e5
+  total_timesteps: 1e7
   learning_rate:  # Adam
-    initial_value: 0.001
-    schedule_type: exponential
-    half_life_period: 0.25
-  eval_frequency: 25000
+    initial_value: 0.00025
+    schedule_type: linear
+  eval_frequency: 100000

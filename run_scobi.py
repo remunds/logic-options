@@ -5,6 +5,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.logger import configure
 
 from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, init_callbacks, get_torch_device
+from options_ppo import OptionsPPO
+from option_critic_policy import OptionCriticPolicy
 
 CONFIG_PATH = "in/config/scobi.yaml"
 MODELS_PATH = "out/scobi_sb3/"
@@ -24,8 +26,9 @@ def run(name: str = None,
     device = get_torch_device(cuda)
 
     object_centric = environment["object_centric"]
+    eval_frequency = training["eval_frequency"]
     n_envs = cores
-    n_eval_envs = 4
+    n_eval_envs = cores
     total_timestamps = int(float(training["total_timesteps"]))
     log_path = Path(MODELS_PATH, name, "logs")
     ckpt_path = Path(MODELS_PATH, name, "checkpoints")
@@ -39,22 +42,35 @@ def run(name: str = None,
                              object_centric=object_centric,
                              n_envs=n_envs,
                              eval_env=eval_env,
-                             n_eval_episodes=8,
-                             ckpt_path=ckpt_path)
+                             n_eval_episodes=4*n_eval_envs,
+                             ckpt_path=ckpt_path,
+                             eval_frequency=eval_frequency)
 
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
 
-    policy = "MlpPolicy" if object_centric else "CnnPolicy"
+    n_options = model["n_options"]
 
-    model = PPO(
-        policy,
-        learning_rate=learning_rate,
-        clip_range=clip_range,
-        env=train_env,
-        **model["ppo"],
-        verbose=1,
-        device=device)
+    if n_options > 1:
+        model = OptionsPPO(
+            options_policy=OptionCriticPolicy,
+            n_options=n_options,
+            learning_rate=learning_rate,
+            clip_range=clip_range,
+            env=train_env,
+            **model["ppo"],
+            verbose=1,
+            device=device)
+    else:
+        policy = "MlpPolicy" if object_centric else "CnnPolicy"
+        model = PPO(
+            policy,
+            learning_rate=learning_rate,
+            clip_range=clip_range,
+            env=train_env,
+            **model["ppo"],
+            verbose=1,
+            device=device)
 
     new_logger = configure(str(log_path), ["tensorboard"])
     model.set_logger(new_logger)
