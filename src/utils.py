@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections import deque
 from pathlib import Path
-from typing import Sequence, Union, Callable
+from typing import Sequence, Union, Callable, Type
 
 import gymnasium
 import gymnasium as gym
@@ -24,6 +24,7 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.vec_env import VecFrameStack
 from tensorboard import program
+from torch import nn
 
 from fourrooms import Fourrooms
 
@@ -464,3 +465,15 @@ def init_callbacks(exp_name: str,
         callbacks.append(TensorboardCallback(n_envs=n_envs))
 
     return CallbackList(callbacks)
+
+
+def get_net_from_layer_dims(layers_dims: list[int],
+                            in_dim: int,
+                            activation_fn: Type[nn.Module]) -> (list[nn.Module], int):
+    net: list[nn.Module] = []
+    last_layer_dim = in_dim
+    for layer_dim in layers_dims:
+        net.append(nn.Linear(last_layer_dim, layer_dim))
+        net.append(activation_fn())
+        last_layer_dim = layer_dim
+    return net, last_layer_dim

@@ -70,23 +70,14 @@ class OptionCriticPolicy(ActorCriticPolicy):
 
     def forward_terminator(self, obs: th.Tensor, deterministic: bool = False) -> (th.Tensor, th.Tensor):
         """
-        Forward pass in actor, critic, and termination network for currently active option.
+        Forward pass through termination network for currently active option.
 
         :param obs: Observation
         :param deterministic: Whether to sample or use deterministic actions
-        :return: whether the option terminated
+        :return: option terminations and their log probabilities
         """
         active_option = self.get_active_option()
         return active_option.forward_terminator(obs, deterministic)
-        # option_terminated = termination_dist.get_actions(deterministic=deterministic)
-        # log_prob = termination_dist.log_prob(option_terminated)
-        # return option_terminated, log_prob
-
-    # def predict_termination(self, obs: th.Tensor) -> th.Tensor:
-    #     """Returns the termination probability for the currently active option at
-    #     the provided observation."""
-    #     active_option = self.get_active_option()
-    #     return active_option.predict_termination(obs)
 
     def get_option_distribution(self, obs: th.Tensor) -> Distribution:
         return super().get_distribution(obs)
@@ -94,8 +85,23 @@ class OptionCriticPolicy(ActorCriticPolicy):
     def evaluate_options(self, obs: th.Tensor, options: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
         return super().evaluate_actions(obs=obs, actions=options)
 
+    def evaluate_terminations(
+            self,
+            obs: th.Tensor,
+            terminations: th.Tensor
+    ) -> th.Tensor:
+        """
+        Evaluate terminations according to the current policy, given the observations.
+
+        :param obs: Observations
+        :param terminations: Terminations
+        :return: estimated termination log likelihood
+        """
+        active_option = self.get_active_option()
+        return active_option.evaluate_terminations(obs=obs, terminations=terminations)
+
     def choose_option(self, obs: th.Tensor) -> th.Tensor:
         return self.get_option_distribution(obs).get_actions()
 
-    def choose_termination(self, obs: th.Tensor) -> th.Tensor:
-        return self.get_term
+    # def choose_termination(self, obs: th.Tensor) -> th.Tensor:
+    #     return self.get_termi
