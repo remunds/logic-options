@@ -1,107 +1,225 @@
-from typing import Optional, Tuple, Union
+from typing import Tuple
 
-import numpy as np
 import torch as th
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.distributions import Distribution
-from gymnasium.spaces import Discrete
+from stable_baselines3.common.distributions import BernoulliDistribution
+from gymnasium.spaces import Discrete, Space
 
 from option import Option, OptionCollection
 
 
-class OptionCriticPolicy(ActorCriticPolicy):
-    """Actor-critic policy where actions are replaced by options. All options are
-    an AC policy on their own. The policy of this class is the inter-option policy."""
+class GlobalOptionsPolicy(ActorCriticPolicy):
+    """Policy representing an entirety of an option hierarchy with all its levels.
+    Acts itself as the global (inter-option) policy."""
 
     def __init__(self,
                  observation_space,
                  action_space,
                  lr_schedule,
-                 n_options: int,
-                 n_envs: int,
+                 options_hierarchy: list[int],
                  device: th.device,
                  **kwargs):
-        self.option_space = Discrete(n_options)
+        """
+        :param observation_space:
+        :param action_space:
+        :param lr_schedule:
+        :param options_hierarchy: List of options per hierarchy level; from highest to lowest level.
+            Example: [2, 4, 8]. If empty, no options used => standard actor-critic PPO.
+        :param device:
+        """
+
+        action_option_spaces = []
+        for n_options in options_hierarchy:
+            action_option_spaces.append(Discrete(n_options))
+        action_option_spaces.append(action_space)
 
         super().__init__(observation_space,
-                         action_space=self.option_space,
+                         action_space=action_option_spaces[0],
                          lr_schedule=lr_schedule, **kwargs)
 
-        self.n_options = n_options
-        self.options = OptionCollection([Option(observation_space=observation_space,
-                                                action_space=action_space,
-                                                lr_schedule=lr_schedule,
-                                                device=device,
-                                                **kwargs) for _ in range(n_options)])
-        self.active_option_id = th.LongTensor(n_envs * [0])
+        self.hierarchy_size = len(options_hierarchy)  # 0 => no options, 1 => one level of options...
+        self.options_hierarchy = options_hierarchy
 
-    def set_active_option_id(self, option_id: th.Tensor, where: th.Tensor = None) -> None:
-        if where is not None:
-            assert len(self.active_option_id) == len(where)
-            assert len(option_id) == th.sum(where)
-            self.active_option_id[where] = option_id
-        else:
-            self.active_option_id = option_id
+        self.action_option_spaces = action_option_spaces
 
-    def get_active_option_id(self) -> th.Tensor:
-        return self.active_option_id
+        def make_option(local_action_space: Space):
+            return Option(observation_space=observation_space,
+                          action_space=local_action_space,
+                          lr_schedule=lr_schedule,
+                          device=device,
+                          **kwargs)
 
-    def get_active_option(self) -> Union[Option, OptionCollection]:
-        return self.options[self.get_active_option_id()]
+        self.options = []  # higher-level options first, lower-level options last
+        for h, n_options in enumerate(self.options_hierarchy):
+            assert n_options > 1, "It doesn't make sense to have a layer containing only one option."
+            action_option_space = self.action_option_spaces[h+1]
+            level_options = [make_option(action_option_space) for _ in range(n_options)]
+            self.options.append(level_options)
+
+    def get_option_by_id(self, option_id: th.Tensor) -> OptionCollection:
+        """
+        Turns a batch of option IDs into the corresponding list of options
+
+        :param option_id: 2D matrix
+        :return:
+        """
+        options = []
+        for level, idx in option_id:
+            options.append(self.options[level][idx])
+        return OptionCollection(options)
 
     def set_training_mode(self, mode: bool) -> None:
         super().set_training_mode(mode)
-        self.options.set_training_mode(mode)
+        for level in self.options:
+            for option in level:
+                option.set_training_mode(mode)
 
     def reset_noise(self, n_envs: int = 1) -> None:
         super().reset_noise(n_envs)
-        self.options.reset_noise(n_envs)
+        for level in self.options:
+            for option in level:
+                option.reset_noise(n_envs)
 
-    def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+    def forward_option(
+            self,
+            obs: th.Tensor,
+            option_id: th.Tensor,
+            deterministic: bool = False
+    ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
-        Forward pass in actor and critic for currently active option.
+        Forward pass in actor and critic on global level.
 
         :param obs: Observation
+        :param option_id: The target option's index [level, ID]
         :param deterministic: Whether to sample or use deterministic actions
         :return: action, value, and log probability of the action
         """
-        active_option = self.get_active_option()
-        return active_option.forward(obs=obs, deterministic=deterministic)
+        option = self.get_option_by_id(option_id)
+        return option.forward(obs, deterministic)
 
-    def forward_terminator(self, obs: th.Tensor, deterministic: bool = False) -> (th.Tensor, th.Tensor):
-        """
-        Forward pass through termination network for currently active option.
-
-        :param obs: Observation
-        :param deterministic: Whether to sample or use deterministic actions
-        :return: option terminations and their log probabilities
-        """
-        active_option = self.get_active_option()
-        return active_option.forward_terminator(obs, deterministic)
-
-    def get_option_distribution(self, obs: th.Tensor) -> Distribution:
-        return super().get_distribution(obs)
-
-    def evaluate_options(self, obs: th.Tensor, options: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
-        return super().evaluate_actions(obs=obs, actions=options)
-
-    def evaluate_terminations(
+    def forward_all(
             self,
             obs: th.Tensor,
+            option_traces: th.Tensor,
+            option_terminations: th.Tensor,
+            deterministic: bool = False
+    ) -> ((th.Tensor, th.Tensor), th.Tensor, th.Tensor):
+        """
+        Forward pass in all actors and critics. Terminated options will be replaced by a new
+        option.
+
+        :param obs: Observation
+        :param option_traces:
+        :param option_terminations: Same shape as option_traces where each entry is True iff the
+            corresponding option in option_traces has terminated.
+        :param deterministic:
+        :return: option trace with action appended, corresponding values, and log probabilities
+        """
+        if self.hierarchy_size == 0:
+            actions, values, log_probs = self(obs, deterministic)
+            return (th.Tensor(), actions), values, log_probs
+
+        n_envs = len(option_traces)
+
+        options = option_traces.clone()
+        actions = th.zeros(n_envs, *self.action_space.shape)
+        values = th.zeros(n_envs, options.shape[1] + 1)
+        log_probs = th.zeros(n_envs, options.shape[1] + 1)
+
+        # Forward global policy
+        new_options, global_values, log_probs[:, 0] = self(obs, deterministic)
+        values[:, 0] = global_values.squeeze()
+        is_terminated = option_terminations[:, 0]
+        options[is_terminated, 0] = new_options[is_terminated]
+
+        for env_id, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env_id], dim=0)
+
+            # Determine new options (if needed)
+            for level_id, option_id in enumerate(trace):
+                if level_id == 0:
+                    continue
+
+                higher_level_option_id = options[env_id][level_id - 1]
+                active_option = self.options[level_id - 1][higher_level_option_id]
+
+                option, values[env_id][level_id], log_probs[env_id][level_id] = \
+                    active_option(env_obs, deterministic)
+
+                # Replace terminated options
+                if option_terminations[env_id][level_id]:
+                    options[env_id][level_id] = option
+
+            # Determine new action (always executed)
+            lowest_level_option_id = options[env_id][-1]
+            lowest_level_option = self.options[-1][lowest_level_option_id]
+            actions[env_id], values[env_id, -1], log_probs[env_id, -1] = lowest_level_option(env_obs, deterministic)
+
+        return (options, actions), values, log_probs
+
+    def forward_option_terminator(
+            self,
+            obs: th.Tensor,
+            option_id: th.Tensor,
+            deterministic: bool = False
+    ) -> Tuple[th.Tensor, th.Tensor]:
+        option = self.get_option_by_id(option_id)
+        return option.forward_terminator(obs, deterministic)
+
+    def predict_all_values(self, obs: th.Tensor, option_traces: th.Tensor) -> th.Tensor:
+        """Computes state-value for the global policy and each option as
+        specified in the option trace."""
+        values = th.zeros(option_traces.shape[0], option_traces.shape[1] + 1)
+        values[:, 0] = self.predict_values(obs).squeeze()
+        for env_id, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env_id], dim=0)
+            for level_id, option_id in enumerate(trace):
+                option = self.options[level_id][option_id]
+                values[env_id, level_id + 1] = option.predict_values(env_obs)
+        return values
+
+    def forward_all_terminators(
+            self,
+            obs: th.Tensor,
+            option_traces: th.Tensor,
+            deterministic: bool = False
+    ) -> Tuple[th.Tensor, th.Tensor]:
+
+        n_envs = len(option_traces)
+
+        terminations = th.zeros((n_envs, self.hierarchy_size), dtype=th.bool)
+        log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.long)
+
+        for env_id, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env_id], dim=0)
+            for level, option_id in enumerate(trace):
+                option = self.options[level][option_id]
+                terminations[env_id][level], log_probs[env_id][level] = \
+                    option.forward_terminator(env_obs, deterministic)
+
+        return terminations, log_probs
+
+    # def choose_option(self, obs: th.Tensor, option_id: th.Tensor, deterministic: bool = False) -> th.Tensor:
+    #     option_id = th.clone(option_id)
+    #     while len(option_id) < self.hierarchy_height:
+    #         option = self.get_option_by_id(option_id)
+    #         action, _, _ = option.forward(obs, deterministic)
+    #         option_id = th.cat([option_id, action.squeeze()])
+    #     return option_id
+
+    def get_option_termination_dist(self, obs: th.Tensor, option_id: th.Tensor) -> BernoulliDistribution:
+        option = self.get_option_by_id(option_id)
+        return option.get_termination_dist(obs)
+    #
+    # def predict_option_termination(self, obs: th.Tensor, option_id: th.Tensor) -> th.Tensor:
+    #     option = self.get_option_by_id(option_id)
+    #     return option.predict_termination(obs)
+
+    def evaluate_option_terminations(
+            self,
+            obs: th.Tensor,
+            option_id: th.Tensor,
             terminations: th.Tensor
     ) -> th.Tensor:
-        """
-        Evaluate terminations according to the current policy, given the observations.
-
-        :param obs: Observations
-        :param terminations: Terminations
-        :return: estimated termination log likelihood
-        """
-        active_option = self.get_active_option()
-        return active_option.evaluate_terminations(obs=obs, terminations=terminations)
-
-    def choose_option(self, obs: th.Tensor) -> th.Tensor:
-        return self.get_option_distribution(obs).get_actions()
-
-    # def choose_termination(self, obs: th.Tensor) -> th.Tensor:
-    #     return self.get_termi
+        option = self.get_option_by_id(option_id)
+        return option.evaluate_terminations(obs=obs, terminations=terminations)

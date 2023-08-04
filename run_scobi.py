@@ -6,7 +6,7 @@ from stable_baselines3.common.logger import configure
 
 from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, init_callbacks, get_torch_device
 from options_ppo import OptionsPPO
-from option_critic_policy import OptionCriticPolicy
+from option_critic_policy import GlobalOptionsPolicy
 
 CONFIG_PATH = "in/config/scobi.yaml"
 MODELS_PATH = "out/scobi_sb3/"
@@ -49,12 +49,12 @@ def run(name: str = None,
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
 
-    n_options = model["n_options"]
+    options_hierarchy = model["options_hierarchy"]
 
-    if n_options > 1:
+    if len(options_hierarchy) > 0:
         model = OptionsPPO(
-            options_policy=OptionCriticPolicy,
-            n_options=n_options,
+            options_policy=GlobalOptionsPolicy,
+            options_hierarchy=options_hierarchy,
             learning_rate=learning_rate,
             clip_range=clip_range,
             env=train_env,

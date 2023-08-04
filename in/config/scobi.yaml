@@ -1,6 +1,6 @@
 name: "rl-zoo-oc-exponential-clip"
 cuda: False
-cores: 4
+cores: 2
 seed: 0
 
 environment:
@@ -13,7 +13,7 @@ environment:
   frameskip: 1  # ignored when object-centric (1 in that case)
 
 model:  # if an existing model is reloaded, these parameters are ignored
-  n_options: 6
+  options_hierarchy: [3, 6]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   ppo:
     n_steps: 256
     n_epochs: 4

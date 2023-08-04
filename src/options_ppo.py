@@ -9,7 +9,7 @@ from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv
 from stable_baselines3.ppo.ppo import PPO
 from torch.nn import functional as F
 
-from option_critic_policy import OptionCriticPolicy
+from option_critic_policy import GlobalOptionsPolicy
 from options_rollout_buffer import OptionsRolloutBuffer, OptionsRolloutBufferSamples
 
 
@@ -17,36 +17,36 @@ class OptionsPPO(PPO):
     """
     Proximal Policy Optimization algorithm (PPO) with options
 
-    :param n_options: Number of options
+    :param options_hierarchy: Number of options
     :param **kwargs: PPO keyworded arguments, see SB3 docs:
         https://stable-baselines3.readthedocs.io/en/master/modules/ppo.html
     """
 
     rollout_buffer: OptionsRolloutBuffer
-    policy: OptionCriticPolicy
+    policy: GlobalOptionsPolicy
 
     def __init__(self,
                  env: SubprocVecEnv,
-                 options_policy: Type[OptionCriticPolicy],
-                 n_options: int,
+                 options_policy: Type[GlobalOptionsPolicy],
+                 options_hierarchy: list[int],
                  device: th.device,
                  **kwargs):
-        policy_kwargs = {"n_options": n_options,
+        policy_kwargs = {"options_hierarchy": options_hierarchy,
                          "device": device,
-                         "net_arch": [64, 64],  # TODO: Test this hyperparameter
-                         "n_envs": env.num_envs}
+                         "net_arch": [64, 64]}  # TODO: Test this hyperparameter
         super().__init__(policy=options_policy,
                          policy_kwargs=policy_kwargs,
                          env=env,
                          device=device,
                          **kwargs)
-        self.option_space = self.policy.option_space
-        self._last_option_terminations = th.BoolTensor(env.num_envs * [True])
+        self._last_option_terminations = th.ones(env.num_envs, self.policy.hierarchy_size).type(th.BoolTensor)
+        self._last_active_options = th.zeros(env.num_envs, self.policy.hierarchy_size).type(th.LongTensor)
 
         self.rollout_buffer = OptionsRolloutBuffer(
             self.n_steps,
             self.observation_space,
             self.action_space,
+            option_hierarchy_size=len(options_hierarchy),
             device=self.device,
             gamma=self.gamma,
             gae_lambda=self.gae_lambda,
@@ -93,19 +93,17 @@ class OptionsPPO(PPO):
 
             with th.no_grad():
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
-                if self._last_option_terminations.any():  # Select and activate new option
-                    new_option_ids = self.policy.choose_option(obs_tensor[self._last_option_terminations])
-                    self.policy.set_active_option_id(new_option_ids, where=self._last_option_terminations)
-                actions, values, action_log_probs = self.policy(obs_tensor)
+                (options, actions), values, log_probs = \
+                    self.policy.forward_all(obs_tensor, self._last_active_options, self._last_option_terminations)
 
-            actions = actions.cpu().numpy()
+            actions = actions.cpu().numpy().astype(self.action_space.dtype)
 
-            # Rescale and perform action
-            clipped_actions = actions
             # Clip the actions to avoid out of bound error
+            clipped_actions = actions
             if isinstance(self.action_space, spaces.Box):
                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
+            # Perform actions
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
             self.num_timesteps += env.num_envs
@@ -122,7 +120,7 @@ class OptionsPPO(PPO):
                 # Reshape in case of discrete action
                 actions = actions.reshape(-1, 1)
 
-            # Handle timeout by bootstraping with value function
+            # Handle timeout by bootstrapping with value function
             # see GitHub issue #633
             for idx, done in enumerate(dones):
                 if (
@@ -137,25 +135,39 @@ class OptionsPPO(PPO):
 
             with th.no_grad():
                 new_obs_tensor = obs_as_tensor(self._last_obs, self.device)
-                self._last_option_terminations, tn_log_probs = self.policy.forward_terminator(new_obs_tensor)
+                terminations, tn_log_probs = self.policy.forward_all_terminators(new_obs_tensor, options)
 
+                # If a higher-level option exits, all lower-level options exit, too
+                for level in range(1, self.policy.hierarchy_size):
+                    terminations[:, level] |= terminations[:, level - 1]
+
+                # TODO: efficiency can be improved as next values are needed only for terminated options
+                next_values = self.policy.predict_all_values(new_obs_tensor, self._last_active_options)
+
+            # Save observed data to rollout buffer
             rollout_buffer.add(
                 self._last_obs,
                 actions,
                 rewards,
                 self._last_episode_starts,
                 values,
-                action_log_probs,
-                self.policy.get_active_option_id(),
-                self._last_option_terminations,
+                next_values,
+                log_probs,
+                options,
+                terminations,
                 tn_log_probs,
             )
+
+            # Prepare next iteration
             self._last_obs = new_obs
             self._last_episode_starts = dones
+            self._last_active_options = options
+            terminations[dones] = True
+            self._last_option_terminations = terminations
 
+        # Compute value for the last timestep
         with th.no_grad():
-            # Compute value for the last timestep
-            values = self.policy.predict_values(new_obs_tensor)
+            values = self.policy.predict_all_values(new_obs_tensor, options)
 
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
