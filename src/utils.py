@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-from collections import deque
-from pathlib import Path
 from typing import Sequence, Union, Callable, Type
 
 import gymnasium
@@ -13,10 +11,7 @@ from gymnasium.wrappers import AtariPreprocessing, TransformReward
 from gymnasium.wrappers import FrameStack  # as FrameStack_
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import GameObject
-from rtpt import RTPT
 from scobi import Environment
-from stable_baselines3.common.callbacks import BaseCallback, CallbackList, EvalCallback, CheckpointCallback, \
-    EveryNTimesteps
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_atari_env
 from stable_baselines3.common.monitor import Monitor
@@ -27,6 +22,7 @@ from tensorboard import program
 from torch import nn
 
 from fourrooms import Fourrooms
+
 
 ATARI_SCREEN_WIDTH = 160
 ATARI_SCREEN_HEIGHT = 210
@@ -385,86 +381,6 @@ def make_scobi_env(name: str,
 
     set_random_seed(seed)
     return _init
-
-
-class RtptCallback(BaseCallback):
-    def __init__(self, exp_name, max_iter, verbose=0):
-        super(RtptCallback, self).__init__(verbose)
-        self.rtpt = RTPT(name_initials="QD",
-                         experiment_name=exp_name,
-                         max_iterations=max_iter)
-        self.rtpt.start()
-
-    def _on_step(self) -> bool:
-        self.rtpt.step()
-        return True
-
-
-class TensorboardCallback(BaseCallback):
-    """
-    Custom callback for plotting additional values in tensorboard.
-    """
-
-    def __init__(self, n_envs, verbose=0):
-        self.n_envs = n_envs
-        self.buffer = deque(maxlen=100)  # ppo default stat window
-        super().__init__(verbose)
-
-    def _on_step(self) -> None:
-        ep_rewards = self.training_env.get_attr("ep_env_reward", range(self.n_envs))
-        for rew in ep_rewards:
-            if rew is not None:
-                self.buffer.extend([rew])
-
-    def on_rollout_end(self) -> None:
-        buff_list = list(self.buffer)
-        if len(buff_list) == 0:
-            return
-        self.logger.record("rollout/ep_env_rew_mean", np.mean(list(self.buffer)))
-
-
-def init_callbacks(exp_name: str,
-                   total_timestamps: int,
-                   object_centric: bool,
-                   n_envs: int,
-                   eval_env,
-                   n_eval_episodes: int,
-                   ckpt_path: Path,
-                   eval_frequency: int = 100_000) -> CallbackList:
-    checkpoint_frequency = 1_000_000
-    rtpt_frequency = 100_000
-
-    rtpt_iters = total_timestamps // rtpt_frequency
-    eval_callback = EvalCallback(
-        eval_env,
-        n_eval_episodes=n_eval_episodes,
-        best_model_save_path=str(ckpt_path),
-        log_path=str(ckpt_path),
-        eval_freq=max(eval_frequency // n_envs, 1),
-        deterministic=True,
-        render=False)
-
-    checkpoint_callback = CheckpointCallback(
-        save_freq=max(checkpoint_frequency // n_envs, 1),
-        save_path=str(ckpt_path),
-        name_prefix="model",
-        save_replay_buffer=True,
-        save_vecnormalize=False)
-
-    rtpt_callback = RtptCallback(
-        exp_name=exp_name,
-        max_iter=rtpt_iters)
-
-    n_callback = EveryNTimesteps(
-        n_steps=rtpt_frequency,
-        callback=rtpt_callback)
-
-    callbacks = [checkpoint_callback, eval_callback, n_callback]
-
-    if object_centric:
-        callbacks.append(TensorboardCallback(n_envs=n_envs))
-
-    return CallbackList(callbacks)
 
 
 def get_net_from_layer_dims(layers_dims: list[int],

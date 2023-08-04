@@ -115,13 +115,13 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         :param deterministic:
         :return: option trace with action appended, corresponding values, and log probabilities
         """
+        n_envs = len(obs)
+        options = option_traces.clone()
+
         if self.hierarchy_size == 0:
             actions, values, log_probs = self(obs, deterministic)
-            return (th.Tensor(), actions), values, log_probs
+            return (options, actions), values, log_probs.unsqueeze(1)
 
-        n_envs = len(option_traces)
-
-        options = option_traces.clone()
         actions = th.zeros(n_envs, *self.action_space.shape)
         values = th.zeros(n_envs, options.shape[1] + 1)
         log_probs = th.zeros(n_envs, options.shape[1] + 1)
@@ -185,7 +185,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
 
-        n_envs = len(option_traces)
+        n_envs = len(obs)
 
         terminations = th.zeros((n_envs, self.hierarchy_size), dtype=th.bool)
         log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.long)

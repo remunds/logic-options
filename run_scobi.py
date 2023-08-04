@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import yaml
-from stable_baselines3 import PPO
 from stable_baselines3.common.logger import configure
 
-from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, init_callbacks, get_torch_device
+from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, get_torch_device
 from options_ppo import OptionsPPO
 from option_critic_policy import GlobalOptionsPolicy
+from callbacks import init_callbacks
 
 CONFIG_PATH = "in/config/scobi.yaml"
 MODELS_PATH = "out/scobi_sb3/"
@@ -51,26 +51,15 @@ def run(name: str = None,
 
     options_hierarchy = model["options_hierarchy"]
 
-    if len(options_hierarchy) > 0:
-        model = OptionsPPO(
-            options_policy=GlobalOptionsPolicy,
-            options_hierarchy=options_hierarchy,
-            learning_rate=learning_rate,
-            clip_range=clip_range,
-            env=train_env,
-            **model["ppo"],
-            verbose=1,
-            device=device)
-    else:
-        policy = "MlpPolicy" if object_centric else "CnnPolicy"
-        model = PPO(
-            policy,
-            learning_rate=learning_rate,
-            clip_range=clip_range,
-            env=train_env,
-            **model["ppo"],
-            verbose=1,
-            device=device)
+    model = OptionsPPO(
+        options_policy=GlobalOptionsPolicy,
+        options_hierarchy=options_hierarchy,
+        learning_rate=learning_rate,
+        clip_range=clip_range,
+        env=train_env,
+        **model["ppo"],
+        verbose=1,
+        device=device)
 
     new_logger = configure(str(log_path), ["tensorboard"])
     model.set_logger(new_logger)

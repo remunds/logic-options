@@ -45,6 +45,7 @@ class OptionsPPO(PPO):
                          **kwargs)
 
         self.termination_regularizer = termination_regularizer
+        self.hierarchy_size = self.policy.hierarchy_size
 
         self._last_option_terminations = th.ones(env.num_envs, self.policy.hierarchy_size).type(th.BoolTensor)
         self._last_active_options = th.zeros(env.num_envs, self.policy.hierarchy_size).type(th.LongTensor)
@@ -306,7 +307,8 @@ class OptionsPPO(PPO):
         self.logger.record(base_str + "value_loss", np.mean(value_losses))
         self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
         self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
-        self.logger.record(base_str + "loss", loss.item())
+        if loss is not None:
+            self.logger.record(base_str + "loss", loss.item())
         self.logger.record(base_str + "explained_variance", explained_var)
         if hasattr(policy, "log_std"):
             self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
@@ -393,7 +395,8 @@ class OptionsPPO(PPO):
         self.logger.record(base_str + "termination_loss", np.mean(losses))
         self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
         self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
-        self.logger.record(base_str + "loss", loss.item())
+        if loss is not None:
+            self.logger.record(base_str + "loss", loss.item())
         if hasattr(policy, "log_std"):
             self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
@@ -411,6 +414,19 @@ class OptionsPPO(PPO):
         else:
             clip_range_vf = None
         return clip_range, clip_range_vf
+
+    def forward_all(self, obs: Union[np.ndarray, th.Tensor], *args, **kwargs):
+        with th.no_grad():
+            if isinstance(obs, np.ndarray):
+                obs = obs_as_tensor(obs, self.device)
+            (options, actions), values, log_probs = self.policy.forward_all(obs, *args, **kwargs)
+        actions = actions.cpu().numpy().astype(self.action_space.dtype)
+        return (options, actions), values, log_probs
+
+    def forward_all_terminators(self, obs, *args, **kwargs):
+        with th.no_grad():
+            obs = obs_as_tensor(obs, self.device)
+            return self.policy.forward_all_terminators(obs, *args, **kwargs)
 
 
 def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.Tensor, th.Tensor):

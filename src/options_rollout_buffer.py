@@ -273,7 +273,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         return self.option_traces[:, level] == option_id
 
     def get_option_starts(self, level: Union[int, th.Tensor] = None):
-        if level is None:
+        if level is None or self.option_hierarchy_size == 0:
             shape = self.option_terminations.shape
             level = slice(None)
         else:
