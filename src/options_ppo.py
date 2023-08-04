@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, Union
 
 import numpy as np
 import torch as th
@@ -10,7 +10,7 @@ from stable_baselines3.ppo.ppo import PPO
 from torch.nn import functional as F
 
 from option_critic_policy import GlobalOptionsPolicy
-from options_rollout_buffer import OptionsRolloutBuffer, OptionsRolloutBufferSamples
+from options_rollout_buffer import OptionsRolloutBuffer
 
 
 class OptionsPPO(PPO):
@@ -18,6 +18,9 @@ class OptionsPPO(PPO):
     Proximal Policy Optimization algorithm (PPO) with options
 
     :param options_hierarchy: Number of options
+    :param termination_regularizer: Variable xi. If increased, option termination
+            probability gets decreased, i.e., longer options are encouraged. Set
+            to 0 do disable this regularization.
     :param **kwargs: PPO keyworded arguments, see SB3 docs:
         https://stable-baselines3.readthedocs.io/en/master/modules/ppo.html
     """
@@ -30,6 +33,7 @@ class OptionsPPO(PPO):
                  options_policy: Type[GlobalOptionsPolicy],
                  options_hierarchy: list[int],
                  device: th.device,
+                 termination_regularizer: float = 0,
                  **kwargs):
         policy_kwargs = {"options_hierarchy": options_hierarchy,
                          "device": device,
@@ -39,6 +43,9 @@ class OptionsPPO(PPO):
                          env=env,
                          device=device,
                          **kwargs)
+
+        self.termination_regularizer = termination_regularizer
+
         self._last_option_terminations = th.ones(env.num_envs, self.policy.hierarchy_size).type(th.BoolTensor)
         self._last_active_options = th.zeros(env.num_envs, self.policy.hierarchy_size).type(th.LongTensor)
 
@@ -54,11 +61,11 @@ class OptionsPPO(PPO):
         )
 
     def collect_rollouts(
-        self,
-        env: VecEnv,
-        callback: BaseCallback,
-        rollout_buffer: OptionsRolloutBuffer,
-        n_rollout_steps: int,
+            self,
+            env: VecEnv,
+            callback: BaseCallback,
+            rollout_buffer: OptionsRolloutBuffer,
+            n_rollout_steps: int,
     ) -> bool:
         """
         Collect experiences using the current policy and fill a ``RolloutBuffer``.
@@ -124,9 +131,9 @@ class OptionsPPO(PPO):
             # see GitHub issue #633
             for idx, done in enumerate(dones):
                 if (
-                    done
-                    and infos[idx].get("terminal_observation") is not None
-                    and infos[idx].get("TimeLimit.truncated", False)
+                        done
+                        and infos[idx].get("terminal_observation") is not None
+                        and infos[idx].get("TimeLimit.truncated", False)
                 ):
                     terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                     with th.no_grad():
@@ -183,18 +190,29 @@ class OptionsPPO(PPO):
         self.policy.set_training_mode(True)
         # Update optimizer learning rate
         self._update_learning_rate(self.policy.optimizer)
-        # Compute current clip range
-        clip_range = self.clip_range(self._current_progress_remaining)
-        # Optional: clip range for the value function
-        if self.clip_range_vf is not None:
-            clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
+
+        # Train global policy
+        self._train_actor_critic()
+
+        # Train actor, critic, and terminator of each option
+        for level, n_options in enumerate(self.policy.options_hierarchy):
+            for option_id in range(n_options):
+                self._train_actor_critic(level, option_id)
+                self._train_terminator(level, option_id)
+
+    def _train_actor_critic(self, level: int = None, option_id: int = None) -> None:
+        """Trains the actor and critic of the global policy or, if specified, of
+        the option."""
+        if level is None or option_id is None:
+            policy = self.policy
         else:
-            clip_range_vf = None
+            policy = self.policy.options[level][option_id]
+
+        clip_range, clip_range_vf = self._get_current_clip_ranges()
 
         entropy_losses = []
-        pg_losses, value_losses, tn_losses = [], [], []
-        pi_clip_fractions = []
-        tn_clip_fractions = []
+        pg_losses, value_losses = [], []
+        clip_fractions = []
         approx_kl_divs = loss = None
 
         continue_training = True
@@ -202,49 +220,30 @@ class OptionsPPO(PPO):
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
-            for rollout_data in self.rollout_buffer.get(self.batch_size):
-                actions = rollout_data.actions
-                if isinstance(self.action_space, spaces.Discrete):
-                    # Convert discrete action from float to long
-                    actions = rollout_data.actions.long().flatten()
+            for rollout_data in self.rollout_buffer.get_actor_critic_train_data(level, option_id, self.batch_size):
+                options_actions = rollout_data.options_actions.long().flatten().unsqueeze(1)
 
                 # Re-sample the noise matrix because the log_std has changed
                 if self.use_sde:
-                    self.policy.reset_noise(self.batch_size)
+                    policy.reset_noise(self.batch_size)
 
-                # Activate options
-                options = rollout_data.options
-                self.policy.set_active_option_id(options)
-
-                obs = rollout_data.observations
-                terminations = rollout_data.terminations
-
-                values, pi_log_prob, entropy = self.policy.evaluate_actions(obs, actions)
+                values, log_prob, entropy = policy.evaluate_actions(rollout_data.observations, options_actions)
                 values = values.flatten()
+                # Normalize advantage
+                advantages = rollout_data.advantages
+                # Normalization does not make sense if mini batchsize == 1, see GH issue #325
+                if self.normalize_advantage and len(advantages) > 1:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-                tn_log_prob = self.policy.evaluate_terminations(obs, terminations)
+                # ratio between old and new policy, should be one at the first iteration
+                old_log_prob = rollout_data.old_log_probs
+                ratio = th.exp(log_prob - old_log_prob)
 
-                # Normalize advantage (makes sense only if minibatch size > 1)
-                action_advantages = rollout_data.advantages  # TODO: useful in case of options? Affects multiple models at once
-                if self.normalize_advantage and len(action_advantages) > 1:
-                    action_advantages = (action_advantages - action_advantages.mean()) / (action_advantages.std() + 1e-8)
-
-                option_advantages = ...  # TODO
-
-                # Ratio between old and new, should both be one at the first iteration
-                pi_ratio = th.exp(pi_log_prob - rollout_data.old_pi_log_prob)  # old and new policy
-                tn_ratio = th.exp(tn_log_prob - rollout_data.old_tn_log_prob)  # old and new termination
-
-                # clipped surrogate loss
-                policy_loss, pi_clip_fraction = ppo_loss(pi_ratio, action_advantages, clip_range)
-                termination_loss, tn_clip_fraction = ppo_loss(tn_ratio, -option_advantages, clip_range)
-                # TODO: insert termination regularization xi
+                policy_loss, clip_fraction = ppo_loss(ratio, advantages, clip_range)
 
                 # Logging
                 pg_losses.append(policy_loss.item())
-                tn_losses.append(termination_loss.item())
-                pi_clip_fractions.append(pi_clip_fraction)
-                tn_clip_fractions.append(tn_clip_fraction)
+                clip_fractions.append(clip_fraction)
 
                 if self.clip_range_vf is None:
                     # No clipping
@@ -252,8 +251,9 @@ class OptionsPPO(PPO):
                 else:
                     # Clip the difference between old and new value
                     # NOTE: this depends on the reward scaling
-                    values_pred = rollout_data.old_values + th.clamp(
-                        values - rollout_data.old_values, -clip_range_vf, clip_range_vf
+                    old_values = rollout_data.old_values
+                    values_pred = old_values + th.clamp(
+                        values - old_values, -clip_range_vf, clip_range_vf
                     )
                 # Value loss using the TD(gae_lambda) target
                 value_loss = F.mse_loss(rollout_data.returns, values_pred)
@@ -262,20 +262,20 @@ class OptionsPPO(PPO):
                 # Entropy loss favor exploration
                 if entropy is None:
                     # Approximate entropy when no analytical form
-                    entropy_loss = -th.mean(-pi_log_prob)
+                    entropy_loss = -th.mean(-log_prob)
                 else:
                     entropy_loss = -th.mean(entropy)
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = policy_loss + termination_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
                 # and discussion in PR #419: https://github.com/DLR-RM/stable-baselines3/pull/419
                 # and Schulman blog: http://joschu.net/blog/kl-approx.html
                 with th.no_grad():
-                    log_ratio = pi_log_prob - rollout_data.old_log_prob
+                    log_ratio = log_prob - rollout_data.old_log_probs
                     approx_kl_div = th.mean((th.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
                     approx_kl_divs.append(approx_kl_div)
 
@@ -286,11 +286,11 @@ class OptionsPPO(PPO):
                     break
 
                 # Optimization step
-                self.policy.optimizer.zero_grad()
+                policy.optimizer.zero_grad()
                 loss.backward()
                 # Clip grad norm
-                th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-                self.policy.optimizer.step()
+                th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
+                policy.optimizer.step()
 
             self._n_updates += 1
             if not continue_training:
@@ -299,22 +299,118 @@ class OptionsPPO(PPO):
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 
         # Logs
-        self.logger.record("train/entropy_loss", np.mean(entropy_losses))
-        self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
-        self.logger.record("train/termination_loss", np.mean(tn_losses))
-        self.logger.record("train/value_loss", np.mean(value_losses))
-        self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
-        self.logger.record("train/pi_clip_fraction", np.mean(pi_clip_fractions))
-        self.logger.record("train/tn_clip_fraction", np.mean(tn_clip_fractions))
-        self.logger.record("train/loss", loss.item())
-        self.logger.record("train/explained_variance", explained_var)
-        if hasattr(self.policy, "log_std"):
-            self.logger.record("train/std", th.exp(self.policy.log_std).mean().item())
+        policy_name = "global_policy" if level is None or option_id is None else f"option_{level}.{option_id}"
+        base_str = f"train/{policy_name}/actor-critic/"
+        self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
+        self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
+        self.logger.record(base_str + "value_loss", np.mean(value_losses))
+        self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
+        self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
+        self.logger.record(base_str + "loss", loss.item())
+        self.logger.record(base_str + "explained_variance", explained_var)
+        if hasattr(policy, "log_std"):
+            self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        self.logger.record("train/clip_range", clip_range)
+        self.logger.record(base_str + "n_updates", self._n_updates, exclude="tensorboard")  # FIXME
+        self.logger.record(base_str + "clip_range", clip_range)
         if self.clip_range_vf is not None:
-            self.logger.record("train/clip_range_vf", clip_range_vf)
+            self.logger.record(base_str + "clip_range_vf", clip_range_vf)
+
+    def _train_terminator(self, level: int, option_id: int) -> None:
+        """Trains the terminator of each specified option."""
+        policy = self.policy.options[level][option_id]
+
+        clip_range, clip_range_vf = self._get_current_clip_ranges()
+
+        entropy_losses = []
+        losses = []
+        clip_fractions = []
+        approx_kl_divs = loss = None
+
+        continue_training = True
+        # train for n_epochs epochs
+        for epoch in range(self.n_epochs):
+            approx_kl_divs = []
+            # Do a complete pass on the rollout buffer
+            for rollout_data in self.rollout_buffer.get_terminator_train_data(level, option_id, self.batch_size):
+                # Re-sample the noise matrix because the log_std has changed
+                if self.use_sde:
+                    policy.reset_noise(self.batch_size)
+
+                obs = rollout_data.observations
+
+                terminations = rollout_data.option_terminations
+                tn_log_probs, entropy = policy.evaluate_terminations(obs, terminations)
+
+                # Ratio between old and new termination log prob
+                tn_ratio = th.exp(tn_log_probs - rollout_data.old_tn_log_probs)
+
+                # Advantage estimate
+                next_advantages = rollout_data.next_higher_level_value - rollout_data.next_values
+                adjusted_advantage = th.Tensor(next_advantages) + self.termination_regularizer
+
+                termination_loss, tn_clip_fraction = ppo_loss(tn_ratio, -adjusted_advantage, clip_range)
+
+                entropy_loss = -th.mean(entropy)
+
+                losses.append(termination_loss.item())
+                clip_fractions.append(tn_clip_fraction)
+
+                entropy_losses.append(entropy_loss.item())
+
+                loss = termination_loss + self.ent_coef * entropy_loss
+
+                # Calculate approximate form of reverse KL Divergence for early stopping
+                # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
+                # and discussion in PR #419: https://github.com/DLR-RM/stable-baselines3/pull/419
+                # and Schulman blog: http://joschu.net/blog/kl-approx.html
+                with th.no_grad():
+                    log_ratio = tn_log_probs - rollout_data.old_tn_log_probs
+                    approx_kl_div = th.mean((th.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+                    approx_kl_divs.append(approx_kl_div)
+
+                if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
+                    continue_training = False
+                    if self.verbose >= 1:
+                        print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
+                    break
+
+                # Optimization step
+                policy.optimizer.zero_grad()
+                loss.backward()
+                # Clip grad norm
+                th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
+                policy.optimizer.step()
+
+            self._n_updates += 1
+            if not continue_training:
+                break
+
+        # Logs
+        policy_name = f"option_{level}.{option_id}"
+        base_str = f"train/{policy_name}/terminator/"
+        self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
+        self.logger.record(base_str + "termination_loss", np.mean(losses))
+        self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
+        self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
+        self.logger.record(base_str + "loss", loss.item())
+        if hasattr(policy, "log_std"):
+            self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
+
+        self.logger.record(base_str + "n_updates", self._n_updates, exclude="tensorboard")  # FIXME
+        self.logger.record(base_str + "clip_range", clip_range)
+        if self.clip_range_vf is not None:
+            self.logger.record(base_str + "clip_range_vf", clip_range_vf)
+
+    def _get_current_clip_ranges(self) -> (float, float):
+        # Compute current clip range
+        clip_range = self.clip_range(self._current_progress_remaining)
+        # Optional: clip range for the value function
+        if self.clip_range_vf is not None:
+            clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
+        else:
+            clip_range_vf = None
+        return clip_range, clip_range_vf
 
 
 def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.Tensor, th.Tensor):

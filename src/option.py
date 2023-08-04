@@ -84,7 +84,7 @@ class Option(ActorCriticPolicy):
         log_prob = distribution.log_prob(termination)
         return termination.type(th.BoolTensor), log_prob
 
-    def evaluate_terminations(self, obs: th.Tensor, terminations: th.Tensor) -> th.Tensor:
+    def evaluate_terminations(self, obs: th.Tensor, terminations: th.Tensor) -> (th.Tensor, th.Tensor):
         """
         Evaluate terminations according to the current policy, given the observations.
 
@@ -93,7 +93,7 @@ class Option(ActorCriticPolicy):
         :return: estimated termination log likelihood
         """
         termination_dist = self.get_termination_dist(obs)
-        return termination_dist.log_prob(terminations)
+        return termination_dist.log_prob(terminations), termination_dist.entropy()
 
 
 class OptionCollection:

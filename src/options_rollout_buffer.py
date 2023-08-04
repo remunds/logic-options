@@ -1,43 +1,51 @@
 import numpy as np
 import torch as th
 
-from typing import Optional, Generator, Union, NamedTuple
+from typing import Optional, Generator, Union, NamedTuple, Callable
 
-from stable_baselines3.common.buffers import BaseBuffer, RolloutBufferSamples
-from stable_baselines3.common.vec_env import VecNormalize
+from stable_baselines3.common.buffers import BaseBuffer
 from gymnasium.spaces import Space, Discrete
+from stable_baselines3.common.type_aliases import ReplayBufferSamples, RolloutBufferSamples
+from stable_baselines3.common.vec_env import VecNormalize
 
 
-class OptionsRolloutBufferSamples(NamedTuple):
+class ActorCriticSamples(NamedTuple):
     observations: th.Tensor
-    actions: th.Tensor
+    options_actions: th.Tensor
     returns: th.Tensor
 
-    option_traces: th.Tensor
     advantages: th.Tensor
     old_log_probs: th.Tensor
     old_values: th.Tensor
     next_values: th.Tensor
 
+
+class TerminatorSamples(NamedTuple):
+    observations: th.Tensor
+
     option_terminations: th.Tensor
-    old_tn_log_prob: th.Tensor
+    old_tn_log_probs: th.Tensor
+
+    next_values: th.Tensor
+    next_higher_level_value: th.Tensor
 
 
 class OptionsRolloutBuffer(BaseBuffer):
     observations: np.ndarray
     actions: np.ndarray
     rewards: np.ndarray
-    returns: np.ndarray
     episode_starts: np.ndarray
 
     option_traces: np.ndarray
-    advantages: np.ndarray  # for both options and actions
-    log_probs: np.ndarray  # for both options and actions
-    values: np.ndarray  # for both options and actions
-    next_values: np.ndarray  # for both options and actions
-
     option_terminations: np.ndarray
     option_tn_log_probs: np.ndarray
+
+    # for both options and actions
+    advantages: np.ndarray
+    returns: np.ndarray
+    log_probs: np.ndarray
+    values: np.ndarray
+    next_values: np.ndarray
 
     def __init__(
             self,
@@ -63,19 +71,20 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.observations = np.zeros((*base_shape, *self.obs_shape), dtype=np.float32)
         self.actions = np.zeros((*base_shape, self.action_dim), dtype=np.float32)
         self.rewards = np.zeros(base_shape, dtype=np.float32)
-        self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.episode_starts = np.zeros(base_shape, dtype=np.float32)
 
-        self.option_traces = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.int32)
+        self.option_traces = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
+        self.option_terminations = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
+        self.option_tn_log_probs = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
+
         self.advantages = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
+        self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.log_probs = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         # Keeps value of next state as determined by the option saved in option_traces (not the new option)
         self.next_values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
 
-        self.option_terminations = np.zeros((*base_shape, self.option_hierarchy_size), dtype=bool)
-        self.option_tn_log_probs = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
-
+        self.generator_ready = False
         super().reset()
 
     def add(
@@ -121,40 +130,55 @@ class OptionsRolloutBuffer(BaseBuffer):
         if self.pos == self.buffer_size:
             self.full = True
 
-    def get(self, batch_size: Optional[int] = None) -> Generator[OptionsRolloutBufferSamples, None, None]:
-        """Returns data that is used to train the global (inter-option) policy."""
+    def get(self, batch_size: Optional[int] = None) -> Generator[ActorCriticSamples, None, None]:
+        raise NotImplementedError
+
+    def get_actor_critic_train_data(
+            self,
+            level: int = None,
+            option_id: int = None,
+            batch_size: Optional[int] = None
+    ) -> Generator[ActorCriticSamples, None, None]:
         assert self.full, "Buffer is not full"
 
         if not self.generator_ready:
             self._prepare_generator()
 
-        decisions = self.get_global_policy_decisions()
+        is_global_policy = level is None or option_id is None
+
+        if is_global_policy:
+            decisions = self.get_global_policy_decisions()
+            level = -1
+        else:
+            decisions = self.get_option_decisions(level, option_id)
+
         indices = np.where(decisions)[0]
 
-        yield self._get(indices, batch_size)
+        return self._get(indices, level, self._get_actor_critic_samples, batch_size)
 
-    def get_for_option(
+    def get_terminator_train_data(
             self,
-            level: Union[int, th.Tensor],
-            option_id: Union[int, th.Tensor],
+            level: int,
+            option_id: int,
             batch_size: Optional[int] = None
-    ) -> Generator[OptionsRolloutBufferSamples, None, None]:
-        """Returns data that is used to train the specified option."""
+    ) -> Generator[TerminatorSamples, None, None]:
         assert self.full, "Buffer is not full"
 
         if not self.generator_ready:
             self._prepare_generator()
 
-        option_decisions = self.get_option_decisions(level, option_id)
-        indices = np.where(option_decisions)[0]
+        option_active = self.get_option_active(level, option_id)
+        indices = np.where(option_active)[0]
 
-        yield self._get(indices, batch_size)
+        return self._get(indices, level, self._get_terminator_samples, batch_size)
 
     def _get(
             self,
             indices: np.array,
-            batch_size: Optional[int] = None
-    ) -> Generator[OptionsRolloutBufferSamples, None, None]:
+            level: int,
+            samples_getter: Callable,
+            batch_size: Optional[int] = None,
+    ) -> Generator:
         n_transitions = len(indices)
         if n_transitions == 0:
             return
@@ -168,23 +192,25 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         start_idx = 0
         while start_idx < n_transitions:
-            yield self._get_samples(indices[start_idx: start_idx + batch_size])
+            yield samples_getter(indices[start_idx: start_idx + batch_size], level)
             start_idx += batch_size
 
     def _prepare_generator(self):
         _tensor_names = [
             "observations",
             "actions",
-            "returns",
+            "rewards",
+            "episode_starts",
 
             "option_traces",
+            "option_terminations",
+            "option_tn_log_probs",
+
             "advantages",
+            "returns",
             "log_probs",
             "values",
             "next_values",
-
-            "option_terminations",
-            "option_tn_log_probs",
         ]
 
         for tensor in _tensor_names:
@@ -193,24 +219,48 @@ class OptionsRolloutBuffer(BaseBuffer):
 
     def _get_samples(
             self,
+            batch_inds: np.ndarray,
+            env: Optional[VecNormalize] = None
+    ) -> Union[ReplayBufferSamples, RolloutBufferSamples]:
+        raise NotImplementedError
+
+    def _get_actor_critic_samples(
+            self,
             indices: np.ndarray,
-            env: Optional[VecNormalize] = None,
-    ) -> OptionsRolloutBufferSamples:
+            level: int = -1,
+    ) -> ActorCriticSamples:
+        if level == self.option_hierarchy_size - 1:
+            # Lowest-level options decide over actions
+            options_actions = self.actions[indices]
+        else:
+            # Higher-level options decide over options
+            options_actions = self.option_traces[indices, ..., level + 1]
+
         data = (
             self.observations[indices],
-            self.actions[indices],
-            self.returns[indices],
+            options_actions,
 
-            self.option_traces[indices],
-            self.advantages[indices],
-            self.log_probs[indices],
-            self.values[indices],
-            self.next_values[indices],
-
-            self.option_terminations[indices],
-            self.option_tn_log_probs[indices],
+            self.advantages[indices, ..., level + 1],
+            self.returns[indices, ..., level + 1],
+            self.log_probs[indices, ..., level + 1],
+            self.values[indices, ..., level + 1],
+            self.next_values[indices, ..., level + 1],
         )
-        return OptionsRolloutBufferSamples(*tuple(map(self.to_torch, data)))
+        return ActorCriticSamples(*tuple(map(self.to_torch, data)))
+
+    def _get_terminator_samples(
+            self,
+            indices: np.ndarray,
+            level: int,
+    ) -> TerminatorSamples:
+        data = (
+            self.observations[indices],
+            self.option_terminations[indices, level],
+            self.option_tn_log_probs[indices, level],
+            self.next_values[indices, ..., level + 1],
+            self.next_values[indices, ..., level]
+        )
+        return TerminatorSamples(*tuple(map(self.to_torch, data)))
 
     def get_option_active(
             self,
@@ -224,10 +274,10 @@ class OptionsRolloutBuffer(BaseBuffer):
 
     def get_option_starts(self, level: Union[int, th.Tensor] = None):
         if level is None:
-            shape = self.rewards.shape
-            level = Ellipsis
-        else:
             shape = self.option_terminations.shape
+            level = slice(None)
+        else:
+            shape = self.option_terminations.shape[:-1]
         option_starts = np.ones(shape, dtype='bool')
         option_starts[1:] = self.option_terminations[:-1, ..., level]
         return option_starts
