@@ -122,19 +122,49 @@ class OptionsRolloutBuffer(BaseBuffer):
             self.full = True
 
     def get(self, batch_size: Optional[int] = None) -> Generator[OptionsRolloutBufferSamples, None, None]:
-        """Used to train the global (inter-option) policy."""
+        """Returns data that is used to train the global (inter-option) policy."""
         assert self.full, "Buffer is not full"
 
         if not self.generator_ready:
             self._prepare_generator()
 
-        n_transitions = self.buffer_size * self.n_envs
+        decisions = self.get_global_policy_decisions()
+        indices = np.where(decisions)[0]
+
+        yield self._get(indices, batch_size)
+
+    def get_for_option(
+            self,
+            level: Union[int, th.Tensor],
+            option_id: Union[int, th.Tensor],
+            batch_size: Optional[int] = None
+    ) -> Generator[OptionsRolloutBufferSamples, None, None]:
+        """Returns data that is used to train the specified option."""
+        assert self.full, "Buffer is not full"
+
+        if not self.generator_ready:
+            self._prepare_generator()
+
+        option_decisions = self.get_option_decisions(level, option_id)
+        indices = np.where(option_decisions)[0]
+
+        yield self._get(indices, batch_size)
+
+    def _get(
+            self,
+            indices: np.array,
+            batch_size: Optional[int] = None
+    ) -> Generator[OptionsRolloutBufferSamples, None, None]:
+        n_transitions = len(indices)
+        if n_transitions == 0:
+            return
+
+        # Randomize index order
+        np.random.shuffle(indices)
 
         if batch_size is None:
             # Return everything, don't create mini-batches
             batch_size = n_transitions
-
-        indices = np.random.permutation(n_transitions)
 
         start_idx = 0
         while start_idx < n_transitions:
@@ -161,51 +191,6 @@ class OptionsRolloutBuffer(BaseBuffer):
             self.__dict__[tensor] = self.swap_and_flatten(self.__dict__[tensor])
         self.generator_ready = True
 
-    def _get_indices_of_active_option(
-            self,
-            level: Union[int, th.Tensor],
-            option_id: Union[int, th.Tensor],
-            as_bool_mask: bool = False
-    ) -> th.Tensor:
-        """Returns the indices for all transitions where the specified option was active,
-        i.e., has made a decision."""
-        assert self.generator_ready
-        # needs: local advantage, higher-level-advantage, action-log-prob
-        is_active = self.option_traces[:, level] == option_id
-        if as_bool_mask:
-            return is_active
-        else:
-            return np.where(is_active)[0]
-
-    def get_for_option(
-            self,
-            level: Union[int, th.Tensor],
-            option_id: Union[int, th.Tensor],
-            batch_size: Optional[int] = None
-    ) -> Generator[OptionsRolloutBufferSamples, None, None]:
-        assert self.full, "Buffer is not full"
-
-        if not self.generator_ready:
-            self._prepare_generator()
-
-        indices = self._get_indices_of_active_option(level, option_id)
-        n_transitions = len(indices)
-
-        if n_transitions == 0:
-            return
-
-        # Randomize index order
-        np.random.shuffle(indices)
-
-        if batch_size is None:
-            # Return everything, don't create mini-batches
-            batch_size = n_transitions
-
-        start_idx = 0
-        while start_idx < n_transitions:
-            yield self._get_samples(indices[start_idx: start_idx + batch_size])
-            start_idx += batch_size
-
     def _get_samples(
             self,
             indices: np.ndarray,
@@ -226,6 +211,36 @@ class OptionsRolloutBuffer(BaseBuffer):
             self.option_tn_log_probs[indices],
         )
         return OptionsRolloutBufferSamples(*tuple(map(self.to_torch, data)))
+
+    def get_option_active(
+            self,
+            level: Union[int, th.Tensor],
+            option_id: Union[int, th.Tensor]
+    ) -> th.Tensor:
+        """Returns the indices for all transitions where the specified option was active,
+        i.e., is contained in an option trace."""
+        assert self.generator_ready
+        return self.option_traces[:, level] == option_id
+
+    def get_option_starts(self, level: Union[int, th.Tensor] = None):
+        if level is None:
+            shape = self.rewards.shape
+            level = Ellipsis
+        else:
+            shape = self.option_terminations.shape
+        option_starts = np.ones(shape, dtype='bool')
+        option_starts[1:] = self.option_terminations[:-1, ..., level]
+        return option_starts
+
+    def get_global_policy_decisions(self) -> np.array:
+        return self.get_option_starts(0)
+
+    def get_option_decisions(self, level: Union[int, th.Tensor], option_id: Union[int, th.Tensor]) -> np.array:
+        option_decisions = self.get_option_active(level, option_id)
+        if level + 1 < self.option_hierarchy_size:
+            lower_level_starts = self.get_option_starts(level + 1)
+            option_decisions &= lower_level_starts
+        return option_decisions
 
     def compute_returns_and_advantage(self, last_values: th.Tensor, dones: np.ndarray) -> None:
         # Convert to numpy
@@ -250,7 +265,7 @@ class OptionsRolloutBuffer(BaseBuffer):
 
             option_starts = np.ones((self.advantages.shape[1:]), dtype='bool')
             if step > 0:
-                option_starts[:, :-1] = self.option_terminations[step-1]  # Actions always "start" anew
+                option_starts[:, :-1] = self.option_terminations[step - 1]  # Actions always "start" anew
 
             # Adjust shapes
             rewards = np.expand_dims(self.rewards[step], axis=1)
