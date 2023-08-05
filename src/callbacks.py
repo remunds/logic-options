@@ -80,7 +80,8 @@ class OptionEvalCallback(EvalCallback):
             self.last_mean_reward = mean_reward
 
             if self.verbose >= 1:
-                print(f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
+                print(
+                    f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
                 print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
             # Add to current Logger
             self.logger.record("eval/mean_reward", float(mean_reward))
@@ -150,15 +151,15 @@ class TensorboardCallback(BaseCallback):
 
 
 def evaluate_policy(
-    model: OptionsPPO,
-    env: Union[gym.Env, VecEnv],
-    n_eval_episodes: int = 10,
-    deterministic: bool = True,
-    render: bool = False,
-    callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
-    reward_threshold: Optional[float] = None,
-    return_episode_rewards: bool = False,
-    warn: bool = True,
+        model: OptionsPPO,
+        env: Union[gym.Env, VecEnv],
+        n_eval_episodes: int = 10,
+        deterministic: bool = True,
+        render: bool = False,
+        callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
+        reward_threshold: Optional[float] = None,
+        return_episode_rewards: bool = False,
+        warn: bool = True,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
     """Same as evaluate_policy from stable_baselines3.common.evaluation
     but for options."""
@@ -256,12 +257,13 @@ def init_callbacks(exp_name: str,
                    eval_env,
                    n_eval_episodes: int,
                    ckpt_path: Path,
-                   eval_frequency: int = 100_000) -> CallbackList:
+                   eval_frequency: int = 100_000,
+                   eval_callback_cls=OptionEvalCallback) -> CallbackList:
     checkpoint_frequency = 1_000_000
     rtpt_frequency = 100_000
 
     rtpt_iters = total_timestamps // rtpt_frequency
-    eval_callback = OptionEvalCallback(
+    eval_callback = eval_callback_cls(
         eval_env,
         n_eval_episodes=n_eval_episodes,
         best_model_save_path=str(ckpt_path),
@@ -291,4 +293,3 @@ def init_callbacks(exp_name: str,
         callbacks.append(TensorboardCallback(n_envs=n_envs))
 
     return CallbackList(callbacks)
-
