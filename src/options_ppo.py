@@ -218,7 +218,9 @@ class OptionsPPO(PPO):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get_actor_critic_train_data(level, option_id, self.batch_size):
-                options_actions = rollout_data.options_actions.long().flatten().unsqueeze(1)
+                options_actions = rollout_data.options_actions
+                if isinstance(policy.action_space, spaces.Discrete):
+                    options_actions = options_actions.long().flatten()
 
                 # Re-sample the noise matrix because the log_std has changed
                 if self.use_sde:
@@ -228,7 +230,7 @@ class OptionsPPO(PPO):
                 values = values.flatten()
                 # Normalize advantage
                 advantages = rollout_data.advantages
-                # Normalization does not make sense if mini batchsize == 1, see GH issue #325
+                # Normalization does not make sense if minibatch size == 1, see GH issue #325
                 if self.normalize_advantage and len(advantages) > 1:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -437,8 +439,8 @@ def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.T
     """
     loss_part_1 = advantage * ratio
     loss_part_2 = advantage * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-    loss = th.min(loss_part_1, loss_part_2).mean()
+    loss = -th.min(loss_part_1, loss_part_2).mean()
 
-    clip_fraction = -th.mean((th.abs(ratio - 1) > clip_range).float()).item()
+    clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
 
     return loss, clip_fraction

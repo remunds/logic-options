@@ -13,7 +13,6 @@ class ActorCriticSamples(NamedTuple):
     observations: th.Tensor
     options_actions: th.Tensor
     returns: th.Tensor
-
     advantages: th.Tensor
     old_log_probs: th.Tensor
     old_values: th.Tensor
@@ -22,10 +21,8 @@ class ActorCriticSamples(NamedTuple):
 
 class TerminatorSamples(NamedTuple):
     observations: th.Tensor
-
     option_terminations: th.Tensor
     old_tn_log_probs: th.Tensor
-
     next_values: th.Tensor
     next_higher_level_value: th.Tensor
 
@@ -240,9 +237,8 @@ class OptionsRolloutBuffer(BaseBuffer):
         data = (
             self.observations[indices],
             options_actions,
-
-            self.advantages[indices, ..., level + 1],
             self.returns[indices, ..., level + 1],
+            self.advantages[indices, ..., level + 1],
             self.log_probs[indices, ..., level + 1],
             self.values[indices, ..., level + 1],
             self.next_values[indices, ..., level + 1],
@@ -284,7 +280,10 @@ class OptionsRolloutBuffer(BaseBuffer):
         return option_starts
 
     def get_global_policy_decisions(self) -> np.array:
-        return self.get_option_starts(0)
+        if self.option_hierarchy_size > 0:
+            return self.get_option_starts(0)
+        else:
+            return np.ones(self.values.shape, dtype='bool')
 
     def get_option_decisions(self, level: Union[int, th.Tensor], option_id: Union[int, th.Tensor]) -> np.array:
         option_decisions = self.get_option_active(level, option_id)
@@ -307,10 +306,10 @@ class OptionsRolloutBuffer(BaseBuffer):
         decisions[..., :-1] = self.get_option_starts()  # Lowest-level option always makes a decision
 
         # Keep track of properties between decision points
-        reward = np.zeros(self.advantages.shape[1:])
+        reward = np.zeros(self.advantages.shape[1:], dtype=np.float32)
         next_decision = np.ones(self.advantages.shape[1:], dtype=bool)
-        next_value = np.zeros(self.advantages.shape[1:])
-        last_gae = np.zeros(self.advantages.shape[1:])
+        next_value = np.zeros(self.advantages.shape[1:], dtype=np.float32)
+        last_gae = np.zeros(self.advantages.shape[1:], dtype=np.float32)
 
         values_upon_arrival = self.get_values_upon_arrival()
 
@@ -349,4 +348,4 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         # TD(lambda) estimator, see GitHub PR #375 or "Telescoping in TD(lambda)"
         # in David Silver Lecture 4: https://www.youtube.com/watch?v=PnHCvfgC_ZA
-        self.returns = self.advantages + self.values  # FIXME: slightly diverging advantages
+        self.returns = self.advantages + self.values
