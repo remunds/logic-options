@@ -142,7 +142,7 @@ class OptionsPPO(PPO):
                     rewards[idx] += self.gamma * terminal_value
 
             with th.no_grad():
-                new_obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                new_obs_tensor = obs_as_tensor(new_obs, self.device)
                 terminations, tn_log_probs = self.policy.forward_all_terminators(new_obs_tensor, options)
 
                 # If a higher-level option exits, all lower-level options exit, too
@@ -173,11 +173,7 @@ class OptionsPPO(PPO):
             terminations[dones] = True
             self._last_option_terminations = terminations
 
-        # Compute value for the last timestep
-        with th.no_grad():
-            values = self.policy.predict_all_values(new_obs_tensor, options)
-
-        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+        rollout_buffer.compute_returns_and_advantage(dones=dones)
 
         callback.on_rollout_end()
 

@@ -78,6 +78,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.option_tn_log_probs = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
 
         self.advantages = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
+        self.advantages[:] = np.nan
         self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.log_probs = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
@@ -93,8 +94,8 @@ class OptionsRolloutBuffer(BaseBuffer):
             action: np.ndarray,
             reward: np.ndarray,
             episode_start: np.ndarray,
-            values: th.Tensor,
-            next_values: th.Tensor,
+            value: th.Tensor,
+            next_value: th.Tensor,
             log_probs: th.Tensor,
             option_trace: th.Tensor,
             termination: th.Tensor,
@@ -120,8 +121,8 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         self.option_traces[self.pos] = np.array(option_trace).copy()
         self.log_probs[self.pos] = log_probs.clone().cpu().numpy()
-        self.values[self.pos] = values.clone().cpu().numpy()
-        self.next_values[self.pos] = next_values.clone().cpu().numpy()
+        self.values[self.pos] = value.clone().cpu().numpy()
+        self.next_values[self.pos] = next_value.clone().cpu().numpy()
 
         self.option_terminations[self.pos] = termination.clone().cpu().numpy()
         self.option_tn_log_probs[self.pos] = termination_log_prob.clone().cpu().numpy()
@@ -292,41 +293,60 @@ class OptionsRolloutBuffer(BaseBuffer):
             option_decisions &= lower_level_starts
         return option_decisions
 
-    def compute_returns_and_advantage(self, last_values: th.Tensor, dones: np.ndarray) -> None:
-        # Convert to numpy
-        last_values = last_values.clone().cpu().numpy()
+    def get_values_upon_arrival(self):
+        """Returns for each option (not for the global policy) the value upon
+        arrival. Implements the function U_omega(s')."""
+        termination_prob = np.exp(self.option_tn_log_probs)
+        next_outer_value = self.next_values[..., :-1]  # in context of higher-level option
+        next_local_value = self.next_values[..., 1:]  # in context of this option
+        return termination_prob * next_outer_value + (1 - termination_prob) * next_local_value
 
-        termination_probs = np.exp(self.option_tn_log_probs)
+    def compute_returns_and_advantage(self, dones: np.ndarray) -> None:
+        # Identify policy decision points
+        decisions = np.ones(self.advantages.shape, dtype='bool')
+        decisions[..., :-1] = self.get_option_starts()  # Lowest-level option always makes a decision
 
-        self.advantages[:] = np.nan
+        # Keep track of properties between decision points
+        reward = np.zeros(self.advantages.shape[1:])
+        next_decision = np.ones(self.advantages.shape[1:], dtype=bool)
+        next_value = np.zeros(self.advantages.shape[1:])
         last_gae = np.zeros(self.advantages.shape[1:])
+
+        values_upon_arrival = self.get_values_upon_arrival()
+
+        policy_continues = np.ones(self.advantages.shape[1:], dtype=bool)
+
+        episode_continues = ~dones.astype(bool)
+
         for step in reversed(range(self.buffer_size)):
-            if step == self.buffer_size - 1:
-                next_non_terminal = 1.0 - dones
-                next_values = last_values
-            else:
-                next_non_terminal = 1.0 - self.episode_starts[step + 1]
-                next_values = self.values[step + 1]
+            # Update next value for policies before their next decision
+            next_value_tmp = self.next_values[step]
+            next_value_tmp[..., 1:] = values_upon_arrival[step]
+            next_value[next_decision] = next_value_tmp[next_decision]
 
-            next_outer_value = next_values[..., :-1]  # in context of higher-level option
-            next_local_value = self.next_values[step, ..., 1:]  # in context of this option
-            termination_prob = termination_probs[step]
-            next_values[..., 1:] = termination_prob * next_outer_value + (1 - termination_prob) * next_local_value
+            # Only policies that actively made a decision receive an advantage estimate
+            decision = decisions[step]
 
-            option_starts = np.ones((self.advantages.shape[1:]), dtype='bool')
-            if step > 0:
-                option_starts[:, :-1] = self.option_terminations[step - 1]  # Actions always "start" anew
+            # Determine policy continuation/termination
+            episode_continues = np.expand_dims(episode_continues, axis=1)
+            option_terminates = self.option_terminations[step].astype(bool)
+            policy_continues[..., 1:] = ~option_terminates  # global policy always continues
+            policy_continues &= episode_continues
 
-            # Adjust shapes
-            rewards = np.expand_dims(self.rewards[step], axis=1)
-            next_non_terminal = np.expand_dims(next_non_terminal, axis=1)
+            reward += np.expand_dims(self.rewards[step], axis=1)
 
-            td_0_estimate = rewards + self.gamma * next_values * next_non_terminal
+            # Compute Generalized Advantage Estimate (GAE)
+            td_0_estimate = reward + episode_continues * self.gamma * next_value
             delta = td_0_estimate - self.values[step]  # TD error
-            gae = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae
-            self.advantages[step, option_starts] = gae[option_starts]
-            last_gae[option_starts] = gae[option_starts]
+            gae = delta + policy_continues * self.gamma * self.gae_lambda * last_gae
+            self.advantages[step, decision] = gae[decision]
+            last_gae[decision] = gae[decision]
+
+            reward[decision] = 0
+
+            episode_continues = ~self.episode_starts[step].astype(bool)
+            next_decision = decision
 
         # TD(lambda) estimator, see GitHub PR #375 or "Telescoping in TD(lambda)"
         # in David Silver Lecture 4: https://www.youtube.com/watch?v=PnHCvfgC_ZA
-        self.returns = self.advantages + self.values
+        self.returns = self.advantages + self.values  # FIXME: slightly diverging advantages
