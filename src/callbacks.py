@@ -30,7 +30,7 @@ class OptionEvalCallback(EvalCallback):
     def _on_step(self) -> bool:
         continue_training = True
 
-        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0 or self.n_calls == 1:
             # Sync training and eval env if there is VecNormalize
             if self.model.get_vec_normalize_env() is not None:
                 try:
@@ -80,8 +80,8 @@ class OptionEvalCallback(EvalCallback):
             self.last_mean_reward = mean_reward
 
             if self.verbose >= 1:
-                print(
-                    f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
+                print(f"Eval num_timesteps={self.num_timesteps}, "
+                      f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
                 print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
             # Add to current Logger
             self.logger.record("eval/mean_reward", float(mean_reward))
@@ -269,7 +269,7 @@ def init_callbacks(exp_name: str,
         best_model_save_path=str(ckpt_path),
         log_path=str(ckpt_path),
         eval_freq=max(eval_frequency // n_envs, 1),
-        deterministic=True,
+        deterministic=True,  # Always choose max-likelihood action
         render=False)
 
     checkpoint_callback = CheckpointCallback(

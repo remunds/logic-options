@@ -1,6 +1,6 @@
-name: "rl-zoo-oc-exponential-clip"
+name: "vanilla-scobi-ppo-2"
 cuda: False
-cores: 2
+cores: 4
 seed: 0
 
 environment:
@@ -13,7 +13,7 @@ environment:
   frameskip: 1  # ignored when object-centric (1 in that case)
 
 model:  # if an existing model is reloaded, these parameters are ignored
-  options_hierarchy: [3, 6]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  options_hierarchy: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   ppo:
     n_steps: 256
     n_epochs: 4
@@ -27,6 +27,7 @@ model:  # if an existing model is reloaded, these parameters are ignored
     ent_coef: 0.01
     clip_range_vf:
     normalize_advantage: True
+    gae_lambda: 0.95
 
 training:
   total_timesteps: 5e5

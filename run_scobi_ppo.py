@@ -25,6 +25,7 @@ def run(name: str = None,
     device = get_torch_device(cuda)
 
     object_centric = environment["object_centric"]
+    eval_frequency = training["eval_frequency"]
     n_envs = cores
     n_eval_envs = 4
     total_timestamps = int(float(training["total_timesteps"]))
@@ -40,9 +41,10 @@ def run(name: str = None,
                              object_centric=object_centric,
                              n_envs=n_envs,
                              eval_env=eval_env,
-                             n_eval_episodes=8,
+                             n_eval_episodes=4*n_eval_envs,
                              ckpt_path=ckpt_path,
-                             eval_callback_cls=EvalCallback)
+                             eval_callback_cls=EvalCallback,
+                             eval_frequency=eval_frequency)
 
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))

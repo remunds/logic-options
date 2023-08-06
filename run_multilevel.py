@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 
 import yaml
 from stable_baselines3.common.logger import configure
@@ -8,7 +9,7 @@ from options_ppo import OptionsPPO
 from option_critic_policy import GlobalOptionsPolicy
 from callbacks import init_callbacks
 
-CONFIG_PATH = "in/config/scobi.yaml"
+CONFIG_PATH = "in/config/config.yaml"
 MODELS_PATH = "out/scobi_sb3/"
 
 
@@ -63,6 +64,9 @@ def run(name: str = None,
 
     new_logger = configure(str(log_path), ["tensorboard"])
     model.set_logger(new_logger)
+
+    # Save model config
+    shutil.copy(src=CONFIG_PATH, dst=Path(MODELS_PATH, name, "config.yaml"))
 
     print(f"Experiment name: {name}")
     print(f"Started {type(model).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")

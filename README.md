@@ -17,6 +17,9 @@ The idea is to apply both **temporal abstraction** (options) with **state abstra
 * Reward shaping
 * Reward cropping
 
+## Issues
+* Implicit float32-to-float64 conversions (and vice versa) cause floating point imprecision, may affect model training performance
+
 ## Requirements
 ```
 torch>=2.0.1
