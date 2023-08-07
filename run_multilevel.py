@@ -3,6 +3,7 @@ import shutil
 
 import yaml
 from stable_baselines3.common.logger import configure
+import torch as th
 
 from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, get_torch_device
 from options_ppo import OptionsPPO
@@ -20,6 +21,8 @@ def run(name: str = None,
         environment: dict = None,
         model: dict = None,
         training: dict = None):
+    th.manual_seed(seed)
+
     # Set experiment name
     if name is None:
         name = get_experiment_name_from_hyperparams(environment_kwargs=environment, seed=seed)

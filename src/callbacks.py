@@ -235,6 +235,7 @@ def evaluate_policy(
                     current_lengths[i] = 0
 
         option_terminations, _ = model.forward_all_terminators(new_observations, options)
+        option_terminations[dones] = True
 
         observations = new_observations
 

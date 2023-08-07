@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 from stable_baselines3 import PPO
 from stable_baselines3.common.logger import configure
+import torch as th
 
 from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, get_torch_device
 from callbacks import init_callbacks, EvalCallback
@@ -18,6 +19,8 @@ def run(name: str = None,
         environment: dict = None,
         model: dict = None,
         training: dict = None):
+    th.manual_seed(seed)
+
     # Set experiment name
     if name is None:
         name = get_experiment_name_from_hyperparams(environment_kwargs=environment, seed=seed)
@@ -27,7 +30,7 @@ def run(name: str = None,
     object_centric = environment["object_centric"]
     eval_frequency = training["eval_frequency"]
     n_envs = cores
-    n_eval_envs = 4
+    n_eval_envs = cores
     total_timestamps = int(float(training["total_timesteps"]))
     log_path = Path(MODELS_PATH, name, "logs")
     ckpt_path = Path(MODELS_PATH, name, "checkpoints")
