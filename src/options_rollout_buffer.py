@@ -329,7 +329,8 @@ class OptionsRolloutBuffer(BaseBuffer):
             # Determine policy continuation/termination
             episode_continues = np.expand_dims(episode_continues, axis=1)
             option_terminates = self.option_terminations[step].astype(bool)
-            policy_continues[..., 1:] = ~option_terminates  # global policy always continues
+            policy_continues[..., 0] = True  # global policy always continues
+            policy_continues[..., 1:] = ~option_terminates  # options continue if they don't terminate
             policy_continues &= episode_continues
 
             reward += np.expand_dims(self.rewards[step], axis=1)
@@ -341,7 +342,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             self.advantages[step, decision] = gae[decision]
             last_gae[decision] = gae[decision]
 
-            reward[decision] = 0
+            reward[decision] = 0  # also takes done episodes into account, implicitly
 
             episode_continues = ~self.episode_starts[step].astype(bool)
             next_decision = decision
