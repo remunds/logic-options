@@ -198,7 +198,7 @@ def evaluate_policy(
     options = th.zeros(env.num_envs, model.hierarchy_size).type(th.LongTensor)
 
     while (episode_counts < episode_count_targets).any():
-        (options, actions), _, _ = model.forward_all(observations, options, option_terminations)
+        (options, actions), _, _ = model.forward_all(observations, options, option_terminations, deterministic)
 
         new_observations, rewards, dones, infos = env.step(actions)
         current_rewards += rewards
