@@ -188,14 +188,15 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         n_envs = len(obs)
 
         terminations = th.zeros((n_envs, self.hierarchy_size), dtype=th.bool)
-        log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.long)
+        log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.float)
 
         for env_id, trace in enumerate(option_traces):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level, option_id in enumerate(trace):
                 option = self.options[level][option_id]
-                terminations[env_id][level], log_probs[env_id][level] = \
-                    option.forward_terminator(env_obs, deterministic)
+                termination, log_prob = option.forward_terminator(env_obs, deterministic)
+                terminations[env_id, level] = termination
+                log_probs[env_id, level] = log_prob
 
         return terminations, log_probs
 
