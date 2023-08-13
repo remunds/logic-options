@@ -329,6 +329,8 @@ class OptionsRolloutBuffer(BaseBuffer):
             # Determine policy continuation/termination
             episode_continues = np.expand_dims(episode_continues, axis=1)
             option_terminates = self.option_terminations[step].astype(bool)
+            # if step < self.buffer_size - 1:  # advantage carryover
+            #     option_terminates |= self.option_traces[step] == self.option_traces[step + 1]
             policy_continues[..., 0] = True  # global policy always continues
             policy_continues[..., 1:] = ~option_terminates  # options continue if they don't terminate
             policy_continues &= episode_continues

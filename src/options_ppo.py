@@ -1,7 +1,10 @@
-from typing import Type, Union
+from __future__ import annotations
+
+from typing import Union
 
 import numpy as np
 import torch as th
+import yaml
 from gymnasium import spaces
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.utils import obs_as_tensor, explained_variance
@@ -11,6 +14,8 @@ from torch.nn import functional as F
 
 from option_critic_policy import GlobalOptionsPolicy
 from options_rollout_buffer import OptionsRolloutBuffer
+from utils import get_option_name, get_atari_identifier, get_pruned_focus_file_from_env_name, make_scobi_env, \
+    REWARD_MODE
 
 
 class OptionsPPO(PPO):
@@ -18,6 +23,8 @@ class OptionsPPO(PPO):
     Proximal Policy Optimization algorithm (PPO) with options
 
     :param options_hierarchy: Number of options
+    :param net_arch: The network architecture of each individual option policy,
+        specified as a sequence of dense layer widths
     :param termination_regularizer: Variable xi. If increased, option termination
             probability gets decreased, i.e., longer options are encouraged. Set
             to 0 do disable this regularization.
@@ -28,33 +35,23 @@ class OptionsPPO(PPO):
     rollout_buffer: OptionsRolloutBuffer
     policy: GlobalOptionsPolicy
 
-    def __init__(self,
-                 env: SubprocVecEnv,
-                 options_policy: Type[GlobalOptionsPolicy],
-                 options_hierarchy: list[int],
-                 device: th.device,
-                 termination_regularizer: float = 0,
-                 **kwargs):
-        policy_kwargs = {"options_hierarchy": options_hierarchy,
-                         "device": device,
-                         "net_arch": [64, 64]}  # TODO: Test this hyperparameter
-        super().__init__(policy=options_policy,
-                         policy_kwargs=policy_kwargs,
-                         env=env,
-                         device=device,
-                         **kwargs)
-
+    def __init__(self, termination_regularizer: float = 0, policy=None, **kwargs):
+        super().__init__(policy=GlobalOptionsPolicy, **kwargs)
         self.termination_regularizer = termination_regularizer
+
+    def _setup_model(self) -> None:
+        super()._setup_model()
+
         self.hierarchy_size = self.policy.hierarchy_size
 
-        self._last_option_terminations = th.ones(env.num_envs, self.policy.hierarchy_size).type(th.BoolTensor)
-        self._last_active_options = th.zeros(env.num_envs, self.policy.hierarchy_size).type(th.LongTensor)
+        self._last_option_terminations = th.ones(self.env.num_envs, self.policy.hierarchy_size).type(th.BoolTensor)
+        self._last_active_options = th.zeros(self.env.num_envs, self.policy.hierarchy_size).type(th.LongTensor)
 
         self.rollout_buffer = OptionsRolloutBuffer(
             self.n_steps,
             self.observation_space,
             self.action_space,
-            option_hierarchy_size=len(options_hierarchy),
+            option_hierarchy_size=self.hierarchy_size,
             device=self.device,
             gamma=self.gamma,
             gae_lambda=self.gae_lambda,
@@ -93,6 +90,7 @@ class OptionsPPO(PPO):
             self.policy.reset_noise(env.num_envs)
 
         callback.on_rollout_start()
+        dones = None
 
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
@@ -192,10 +190,13 @@ class OptionsPPO(PPO):
         self._train_actor_critic()
 
         # Train actor, critic, and terminator of each option
-        for level, n_options in enumerate(self.policy.options_hierarchy):
+        for level, n_options in enumerate(self.policy.hierarchy_shape):
             for option_id in range(n_options):
                 self._train_actor_critic(level, option_id)
                 self._train_terminator(level, option_id)
+
+        self._n_updates += self.n_epochs
+        self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
     def _train_actor_critic(self, level: int = None, option_id: int = None) -> None:
         """Trains the actor and critic of the global policy or, if specified, of
@@ -203,7 +204,7 @@ class OptionsPPO(PPO):
         if level is None or option_id is None:
             policy = self.policy
         else:
-            policy = self.policy.options[level][option_id]
+            policy = self.policy.options_hierarchy[level][option_id]
 
         clip_range, clip_range_vf = self._get_current_clip_ranges()
 
@@ -291,7 +292,6 @@ class OptionsPPO(PPO):
                 th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
                 policy.optimizer.step()
 
-            self._n_updates += 1
             if not continue_training:
                 break
 
@@ -299,7 +299,7 @@ class OptionsPPO(PPO):
 
         # Logs
         policy_name = "global_policy" if level is None or option_id is None else f"option_{level}.{option_id}"
-        base_str = f"train/{policy_name}/actor-critic/"
+        base_str = f"{policy_name}/actor_critic/"
         self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
         self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
         self.logger.record(base_str + "value_loss", np.mean(value_losses))
@@ -311,14 +311,13 @@ class OptionsPPO(PPO):
         if hasattr(policy, "log_std"):
             self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
-        self.logger.record(base_str + "n_updates", self._n_updates, exclude="tensorboard")  # FIXME
         self.logger.record(base_str + "clip_range", clip_range)
         if self.clip_range_vf is not None:
             self.logger.record(base_str + "clip_range_vf", clip_range_vf)
 
     def _train_terminator(self, level: int, option_id: int) -> None:
         """Trains the terminator of each specified option."""
-        policy = self.policy.options[level][option_id]
+        policy = self.policy.options_hierarchy[level][option_id]
 
         clip_range, clip_range_vf = self._get_current_clip_ranges()
 
@@ -382,13 +381,12 @@ class OptionsPPO(PPO):
                 th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
                 policy.optimizer.step()
 
-            self._n_updates += 1
             if not continue_training:
                 break
 
         # Logs
-        policy_name = f"option_{level}.{option_id}"
-        base_str = f"train/{policy_name}/terminator/"
+        policy_name = get_option_name(level, option_id)
+        base_str = f"{policy_name}/terminator/"
         self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
         self.logger.record(base_str + "termination_loss", np.mean(losses))
         self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
@@ -398,7 +396,6 @@ class OptionsPPO(PPO):
         if hasattr(policy, "log_std"):
             self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
-        self.logger.record(base_str + "n_updates", self._n_updates, exclude="tensorboard")  # FIXME
         self.logger.record(base_str + "clip_range", clip_range)
         if self.clip_range_vf is not None:
             self.logger.record(base_str + "clip_range_vf", clip_range_vf)
@@ -444,3 +441,40 @@ def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.T
     clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
 
     return loss, clip_fraction
+
+
+MODELS_BASE_PATH = "out/"
+
+
+def load_agent(name: str, env_name: str, **kwargs):
+    env_identifier = get_atari_identifier(env_name)
+
+    model_dir = f"{MODELS_BASE_PATH}{env_identifier}/{name}/"
+
+    config_path = model_dir + "config.yaml"
+    model_path = model_dir + "checkpoints/best_model.zip"
+
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+
+    reward_mode = config["environment"]["reward_mode"]
+    exclude_properties = config["environment"]["exclude_properties"]
+    device = "gpu" if config["cuda"] else "cpu"
+
+    pruned_ff_name = get_pruned_focus_file_from_env_name(env_name)
+    env = make_scobi_env(name=env_name,
+                         reward_mode=REWARD_MODE[reward_mode],
+                         focus_dir="in/focusfiles",
+                         pruned_ff_name=pruned_ff_name,
+                         exclude_properties=exclude_properties,
+                         silent=False,
+                         refresh=False,
+                         **kwargs)()
+
+    model = OptionsPPO.load(model_path,
+                            env=env,
+                            verbose=1,
+                            render_mode="human",
+                            device=device)
+
+    return model

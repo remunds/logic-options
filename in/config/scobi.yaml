@@ -1,7 +1,7 @@
-name: "vanilla-scobi-ppo-2"
+name: "vanilla-scobi-ppo-seed3"
 cuda: False
 cores: 4
-seed: 0
+seed: 3
 
 environment:
   name: "ALE/Pong-v5"

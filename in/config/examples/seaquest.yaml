@@ -1,33 +1,41 @@
-name: "debug"
+name: "smaller-obs"
 cuda: False
-seed: 0
+cores: 4
+seed: 123456789
 
 environment:
   name: "ALE/Seaquest-v5"
   object_centric: True
-  frameskip: 4
-  framestack: 1  # Applied to Atari environments only
+  reward_mode: env  # env, human, mixed
+  prune_concept: default  # default or external: use pruned focusfile (from default 'focusfiles' dir or external 'baselines_focusfiles' dir. for custom pruning and or docker mount)
+  exclude_properties: False  # exclude object properties (like position) from feature vector
+  framestack: 4  # ignored when object-centric (1 in that case)
+  frameskip: 1  # ignored when object-centric (1 in that case)
+  eval_render: False
 
 model:  # if an existing model is reloaded, these parameters are ignored
-  num_options: 1
-  latent_dimension: 512
-  termination_regularization: 0.01
-  entropy_regularization: 0.01
-  temperature: 1
+  options_hierarchy: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [64, 64]  # the network architecture of each individual option policy
+  ppo:
+    n_steps: 256
+    n_epochs: 4
+    batch_size: 256
+    gamma: 0.99
+    # gae_lambda: 0.95
+    clip_range:  # clipping epsilon
+      initial_value: 0.1
+      schedule_type: linear
+    vf_coef: 0.5
+    ent_coef: 0.01
+    clip_range_vf:
+    normalize_advantage: True
+    gae_lambda: 0.95
+  eval_deterministic: False
 
 training:
-  num_transitions: 50000000
-  optimizer: Adam
-  learning_rate: 0.00001
-  discount_factor: 0.99
-  epsilon:
-    init_value: 1
-    decay_mode: 'exp'
-    half_life_period: 1000000
-#    milestones:
-#      500000: 0
-  replay_buffer_length: 10000
-  batch_size: 32
-  freeze_interval: 256
-  critic_replay_period: 4
-  max_episode_length: 10000
+  total_timesteps: 2e6
+  learning_rate:  # Adam
+    initial_value: 0.001
+    schedule_type: exponential
+    half_life_period: 0.25
+  eval_frequency: 25000

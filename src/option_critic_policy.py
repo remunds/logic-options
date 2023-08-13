@@ -1,11 +1,11 @@
-from typing import Tuple
+from typing import Tuple, Any
 
 import torch as th
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.distributions import BernoulliDistribution
-from gymnasium.spaces import Discrete, Space
 
-from option import Option, OptionCollection
+from option import OptionCollection
+from options_hierarchy import OptionsHierarchy
 
 
 class GlobalOptionsPolicy(ActorCriticPolicy):
@@ -17,7 +17,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
                  action_space,
                  lr_schedule,
                  options_hierarchy: list[int],
-                 device: th.device,
+                 net_arch: list[int],
                  **kwargs):
         """
         :param observation_space:
@@ -28,33 +28,25 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         :param device:
         """
 
-        action_option_spaces = []
-        for n_options in options_hierarchy:
-            action_option_spaces.append(Discrete(n_options))
-        action_option_spaces.append(action_space)
+        options_hierarchy = OptionsHierarchy(options_hierarchy,
+                                             observation_space,
+                                             action_space,
+                                             lr_schedule,
+                                             net_arch)
 
         super().__init__(observation_space,
-                         action_space=action_option_spaces[0],
+                         action_space=options_hierarchy.action_option_spaces[0],
                          lr_schedule=lr_schedule, **kwargs)
 
-        self.hierarchy_size = len(options_hierarchy)  # 0 => no options, 1 => one level of options...
         self.options_hierarchy = options_hierarchy
 
-        self.action_option_spaces = action_option_spaces
+    @property
+    def hierarchy_size(self):
+        return self.options_hierarchy.size
 
-        def make_option(local_action_space: Space):
-            return Option(observation_space=observation_space,
-                          action_space=local_action_space,
-                          lr_schedule=lr_schedule,
-                          device=device,
-                          **kwargs)
-
-        self.options = []  # higher-level options first, lower-level options last
-        for h, n_options in enumerate(self.options_hierarchy):
-            assert n_options > 1, "It doesn't make sense to have a layer containing only one option."
-            action_option_space = self.action_option_spaces[h+1]
-            level_options = [make_option(action_option_space) for _ in range(n_options)]
-            self.options.append(level_options)
+    @property
+    def hierarchy_shape(self):
+        return self.options_hierarchy.shape
 
     def get_option_by_id(self, option_id: th.Tensor) -> OptionCollection:
         """
@@ -65,18 +57,18 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         """
         options = []
         for level, idx in option_id:
-            options.append(self.options[level][idx])
+            options.append(self.options_hierarchy[level][idx])
         return OptionCollection(options)
 
     def set_training_mode(self, mode: bool) -> None:
         super().set_training_mode(mode)
-        for level in self.options:
+        for level in self.options_hierarchy:
             for option in level:
                 option.set_training_mode(mode)
 
     def reset_noise(self, n_envs: int = 1) -> None:
         super().reset_noise(n_envs)
-        for level in self.options:
+        for level in self.options_hierarchy:
             for option in level:
                 option.reset_noise(n_envs)
 
@@ -141,7 +133,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
                     continue
 
                 higher_level_option_id = options[env_id][level_id - 1]
-                active_option = self.options[level_id - 1][higher_level_option_id]
+                active_option = self.options_hierarchy[level_id - 1][higher_level_option_id]
 
                 option, values[env_id][level_id], log_probs[env_id][level_id] = \
                     active_option(env_obs, deterministic)
@@ -152,7 +144,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
 
             # Determine new action (always executed)
             lowest_level_option_id = options[env_id][-1]
-            lowest_level_option = self.options[-1][lowest_level_option_id]
+            lowest_level_option = self.options_hierarchy[-1][lowest_level_option_id]
             actions[env_id], values[env_id, -1], log_probs[env_id, -1] = lowest_level_option(env_obs, deterministic)
 
         return (options, actions), values, log_probs
@@ -174,7 +166,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         for env_id, trace in enumerate(option_traces):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level_id, option_id in enumerate(trace):
-                option = self.options[level_id][option_id]
+                option = self.options_hierarchy[level_id][option_id]
                 values[env_id, level_id + 1] = option.predict_values(env_obs)
         return values
 
@@ -193,28 +185,16 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         for env_id, trace in enumerate(option_traces):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level, option_id in enumerate(trace):
-                option = self.options[level][option_id]
+                option = self.options_hierarchy[level][option_id]
                 termination, log_prob = option.forward_terminator(env_obs, deterministic)
                 terminations[env_id, level] = termination
                 log_probs[env_id, level] = log_prob
 
         return terminations, log_probs
 
-    # def choose_option(self, obs: th.Tensor, option_id: th.Tensor, deterministic: bool = False) -> th.Tensor:
-    #     option_id = th.clone(option_id)
-    #     while len(option_id) < self.hierarchy_height:
-    #         option = self.get_option_by_id(option_id)
-    #         action, _, _ = option.forward(obs, deterministic)
-    #         option_id = th.cat([option_id, action.squeeze()])
-    #     return option_id
-
     def get_option_termination_dist(self, obs: th.Tensor, option_id: th.Tensor) -> BernoulliDistribution:
         option = self.get_option_by_id(option_id)
         return option.get_termination_dist(obs)
-    #
-    # def predict_option_termination(self, obs: th.Tensor, option_id: th.Tensor) -> th.Tensor:
-    #     option = self.get_option_by_id(option_id)
-    #     return option.predict_termination(obs)
 
     def evaluate_option_terminations(
             self,
@@ -224,3 +204,8 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
     ) -> th.Tensor:
         option = self.get_option_by_id(option_id)
         return option.evaluate_terminations(obs=obs, terminations=terminations)
+
+    def _get_constructor_parameters(self) -> dict[str, Any]:
+        data = super()._get_constructor_parameters()
+        data.update(dict(options_hierarchy=self.hierarchy_shape))
+        return data

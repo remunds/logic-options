@@ -1,7 +1,7 @@
-name: "reproduce-2"
+name: "no-option-4"
 cuda: False
 cores: 4
-seed: 0
+seed: 12345678
 
 environment:
   name: "ALE/Pong-v5"
@@ -11,9 +11,11 @@ environment:
   exclude_properties: True  # exclude properties from feature vector
   framestack: 4  # ignored when object-centric (1 in that case)
   frameskip: 1  # ignored when object-centric (1 in that case)
+  eval_render: False
 
 model:  # if an existing model is reloaded, these parameters are ignored
   options_hierarchy: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [64, 64]  # the network architecture of each individual option policy
   ppo:
     n_steps: 256
     n_epochs: 4
@@ -28,11 +30,12 @@ model:  # if an existing model is reloaded, these parameters are ignored
     clip_range_vf:
     normalize_advantage: True
     gae_lambda: 0.95
+  eval_deterministic: True
 
 training:
-  total_timesteps: 1e6
+  total_timesteps: 2e6
   learning_rate:  # Adam
     initial_value: 0.001
-    schedule_type: linear
-#    half_life_period: 0.25
+    schedule_type: exponential
+    half_life_period: 0.25
   eval_frequency: 25000

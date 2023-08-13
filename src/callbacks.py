@@ -80,12 +80,12 @@ class OptionEvalCallback(EvalCallback):
             self.last_mean_reward = mean_reward
 
             if self.verbose >= 1:
-                print(f"Eval num_timesteps={self.num_timesteps}, "
-                      f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
-                print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
+                print(f"Step {self.num_timesteps} - Eval results:")
+                print(f"\tReturn: \t{mean_reward:.2f} +/- {std_reward:.2f}")
+                print(f"\tEpisode length: \t{mean_ep_length:.2f} +/- {std_ep_length:.2f}")
             # Add to current Logger
-            self.logger.record("eval/mean_reward", float(mean_reward))
-            self.logger.record("eval/mean_ep_length", mean_ep_length)
+            self.logger.record("eval/mean_reward", float(mean_reward))  # TODO: rename
+            self.logger.record("eval/mean_ep_length", mean_ep_length)  # TODO: rename
 
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
@@ -259,7 +259,9 @@ def init_callbacks(exp_name: str,
                    n_eval_episodes: int,
                    ckpt_path: Path,
                    eval_frequency: int = 100_000,
-                   eval_callback_cls=OptionEvalCallback) -> CallbackList:
+                   eval_callback_cls=OptionEvalCallback,
+                   eval_render: bool = False,
+                   eval_deterministic: bool = True) -> CallbackList:
     checkpoint_frequency = 1_000_000
     rtpt_frequency = 100_000
 
@@ -270,14 +272,13 @@ def init_callbacks(exp_name: str,
         best_model_save_path=str(ckpt_path),
         log_path=str(ckpt_path),
         eval_freq=max(eval_frequency // n_envs, 1),
-        deterministic=True,  # Always choose max-likelihood action
-        render=False)
+        deterministic=eval_deterministic,
+        render=eval_render)
 
     checkpoint_callback = CheckpointCallback(
         save_freq=max(checkpoint_frequency // n_envs, 1),
         save_path=str(ckpt_path),
         name_prefix="model",
-        save_replay_buffer=True,
         save_vecnormalize=False)
 
     rtpt_callback = RtptCallback(

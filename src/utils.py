@@ -11,7 +11,7 @@ from gymnasium.wrappers import AtariPreprocessing, TransformReward
 from gymnasium.wrappers import FrameStack  # as FrameStack_
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import GameObject
-from scobi import Environment
+from scobi import Environment as ScobiEnv
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_atari_env
 from stable_baselines3.common.monitor import Monitor
@@ -22,7 +22,6 @@ from tensorboard import program
 from torch import nn
 
 from fourrooms import Fourrooms
-
 
 ATARI_SCREEN_WIDTH = 160
 ATARI_SCREEN_HEIGHT = 210
@@ -282,7 +281,8 @@ def init_envs(name: str,
               seed: int,
               object_centric: bool = True,
               frameskip: int = 4,
-              framestack: int = 1) -> (SubprocVecEnv, SubprocVecEnv):
+              framestack: int = 1,
+              eval_render: bool = False) -> (SubprocVecEnv, SubprocVecEnv):
     eval_env_seed = (seed + 42) * 2  # different seeds for eval
 
     if object_centric:
@@ -305,6 +305,8 @@ def init_envs(name: str,
         check_env(monitor.env)
         del monitor
 
+        eval_render_mode = "human" if eval_render else None
+
         # silent init and don't refresh default yaml file because it causes spam and issues with multiprocessing
         train_envs = [make_scobi_env(name=name,
                                      focus_dir=focus_dir,
@@ -323,7 +325,8 @@ def init_envs(name: str,
                                     seed=eval_env_seed,
                                     silent=True,
                                     refresh=False,
-                                    reward_mode=0) for i in range(n_eval_envs)]
+                                    reward_mode=0,
+                                    render_mode=eval_render_mode) for i in range(n_eval_envs)]
 
         env = SubprocVecEnv(train_envs, start_method=MULTIPROCESSING_START_METHOD)
         eval_env = SubprocVecEnv(eval_envs, start_method=MULTIPROCESSING_START_METHOD)
@@ -355,7 +358,7 @@ def get_pruned_focus_file_from_env_name(name: str) -> str:
         env_identifier = get_atari_identifier(name)
     else:
         env_identifier = name
-    return f"pruned_{env_identifier}.yaml"
+    return f"{env_identifier}.yaml"
 
 
 def make_scobi_env(name: str,
@@ -366,15 +369,18 @@ def make_scobi_env(name: str,
                    seed: int = 0,
                    silent=False,
                    refresh=True,
-                   reward_mode=0) -> Callable:
+                   reward_mode=0,
+                   **kwargs) -> Callable:
     def _init() -> gym.Env:
-        env = Environment(name,
-                          focus_dir=focus_dir,
-                          focus_file=pruned_ff_name,
-                          hide_properties=exclude_properties,
-                          silent=silent,
-                          reward=reward_mode,
-                          refresh_yaml=refresh)
+        env = ScobiEnv(name,
+                       focus_dir=focus_dir,
+                       focus_file=pruned_ff_name,
+                       hide_properties=exclude_properties,
+                       silent=silent,
+                       reward=reward_mode,
+                       refresh_yaml=refresh,
+                       hud=True,
+                       **kwargs)
         env = Monitor(env)
         env.reset(seed=seed + rank)
         return env
@@ -393,3 +399,7 @@ def get_net_from_layer_dims(layers_dims: list[int],
         net.append(activation_fn())
         last_layer_dim = layer_dim
     return net, last_layer_dim
+
+
+def get_option_name(level: int, index: int) -> str:
+    return f"option_{level}_{index}"

@@ -1,0 +1,31 @@
+name: "options_four"
+cuda: False
+seed: 0
+
+environment:
+  name: "ALE/Pong-v4"
+  object_centric: True
+  frameskip: 4
+  framestack: 1  # Applied to Atari environments only
+
+model:  # if an existing model is reloaded, these parameters are ignored
+  num_options: 1
+  latent_dimension: 128
+  termination_regularization: 0.01
+  entropy_regularization: 0.01
+  temperature: 1
+
+training:
+  num_transitions: 50000000
+  optimizer: Adam
+  learning_rate: 0.0001
+  discount_factor: 0.99
+  epsilon:
+    init_value: 1
+    decay_mode: 'exp'
+    half_life_period: 100000
+  replay_buffer_length: 10000
+  batch_size: 32
+  freeze_interval: 64
+  critic_replay_period: 4
+  max_episode_length: 15000
