@@ -11,7 +11,6 @@ environment:
   exclude_properties: False  # exclude object properties (like position) from feature vector
   framestack: 4  # ignored when object-centric (1 in that case)
   frameskip: 1  # ignored when object-centric (1 in that case)
-  eval_render: False
 
 model:  # if an existing model is reloaded, these parameters are ignored
   options_hierarchy: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
@@ -30,7 +29,6 @@ model:  # if an existing model is reloaded, these parameters are ignored
     clip_range_vf:
     normalize_advantage: True
     gae_lambda: 0.95
-  eval_deterministic: False
 
 training:
   total_timesteps: 2e6
@@ -38,4 +36,8 @@ training:
     initial_value: 0.001
     schedule_type: exponential
     half_life_period: 0.25
-  eval_frequency: 25000
+
+evaluation:
+  frequency: 25000
+  deterministic: False
+  render: False

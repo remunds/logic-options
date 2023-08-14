@@ -1,4 +1,4 @@
-name: "one-option-4"
+name: "sota"
 cuda: False
 cores: 4
 seed: 1234567
@@ -31,9 +31,13 @@ model:  # if an existing model is reloaded, these parameters are ignored
     gae_lambda: 0.95
 
 training:
-  total_timesteps: 2e6
+  total_timesteps: 1e6
   learning_rate:  # Adam
     initial_value: 0.001
     schedule_type: exponential
     half_life_period: 0.25
-  eval_frequency: 25000
+
+evaluation:
+  frequency: 25000
+  deterministic: True
+  render: False

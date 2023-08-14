@@ -22,6 +22,7 @@ def run(name: str = None,
         environment: dict = None,
         model: dict = None,
         training: dict = None,
+        evaluation: dict = None,
         config_path: str = ""):
     th.manual_seed(seed)
 
@@ -36,7 +37,6 @@ def run(name: str = None,
     device = get_torch_device(cuda)
 
     object_centric = environment["object_centric"]
-    eval_frequency = training["eval_frequency"]
     n_envs = cores
     n_eval_envs = cores
     total_timestamps = int(float(training["total_timesteps"]))
@@ -54,9 +54,9 @@ def run(name: str = None,
                              eval_env=eval_env,
                              n_eval_episodes=4 * n_eval_envs,
                              ckpt_path=ckpt_path,
-                             eval_frequency=eval_frequency,
-                             eval_render=environment["eval_render"],
-                             eval_deterministic=model["eval_deterministic"])
+                             eval_frequency=evaluation["frequency"],
+                             eval_render=evaluation["render"],
+                             eval_deterministic=evaluation["deterministic"])
 
     policy_kwargs = {"options_hierarchy": model["options_hierarchy"],
                      "net_arch": model["net_arch"]}
