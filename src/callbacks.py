@@ -84,8 +84,8 @@ class OptionEvalCallback(EvalCallback):
                 print(f"\tReturn: \t{mean_reward:.2f} +/- {std_reward:.2f}")
                 print(f"\tEpisode length: \t{mean_ep_length:.2f} +/- {std_ep_length:.2f}")
             # Add to current Logger
-            self.logger.record("eval/mean_reward", float(mean_reward))  # TODO: rename
-            self.logger.record("eval/mean_ep_length", mean_ep_length)  # TODO: rename
+            self.logger.record("eval/return", float(mean_reward))
+            self.logger.record("eval/episode_length", mean_ep_length)
 
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
@@ -129,7 +129,8 @@ class RtptCallback(BaseCallback):
 
 class TensorboardCallback(BaseCallback):
     """
-    Custom callback for plotting additional values in tensorboard.
+    Custom callback for plotting the original return (useful in cases
+    where reward shaping is applied).
     """
 
     def __init__(self, n_envs, verbose=0):
@@ -147,7 +148,7 @@ class TensorboardCallback(BaseCallback):
         buff_list = list(self.buffer)
         if len(buff_list) == 0:
             return
-        self.logger.record("rollout/ep_env_rew_mean", np.mean(list(self.buffer)))
+        self.logger.record("rollout/original_return", np.mean(list(self.buffer)))
 
 
 def evaluate_policy(

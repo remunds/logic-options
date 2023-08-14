@@ -15,6 +15,7 @@ class OptionsHierarchy(nn.Module):
 
         action_option_spaces = []
         for n_options in shape:
+            # assert n_options > 1, "It doesn't make sense to have a layer containing only a single option."
             action_option_spaces.append(Discrete(n_options))
         action_option_spaces.append(action_space)
         self.action_option_spaces = action_option_spaces
@@ -27,7 +28,6 @@ class OptionsHierarchy(nn.Module):
 
         self.options = []  # higher-level options first, lower-level options last
         for h, n_options in enumerate(self.shape):
-            # assert n_options > 1, "It doesn't make sense to have a layer containing only a single option."
             action_option_space = self.action_option_spaces[h + 1]
             level_options = [make_option(action_option_space) for _ in range(n_options)]
             self.options.append(level_options)

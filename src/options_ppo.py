@@ -7,8 +7,8 @@ import torch as th
 import yaml
 from gymnasium import spaces
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.utils import obs_as_tensor, explained_variance
-from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv
+from stable_baselines3.common.utils import obs_as_tensor, explained_variance, update_learning_rate
+from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.ppo.ppo import PPO
 from torch.nn import functional as F
 
@@ -173,6 +173,20 @@ class OptionsPPO(PPO):
 
         rollout_buffer.compute_returns_and_advantage(dones=dones)
 
+        # Log option activity
+        for level, n_options in enumerate(self.policy.hierarchy_shape):
+            level_options = self.rollout_buffer.option_traces[:, :, level].astype(int)
+            level_terminations = self.rollout_buffer.option_terminations[:, :, level].astype(bool)
+
+            for option_id in range(n_options):
+                option_count = np.sum(level_options == option_id)
+                option_activity_share = option_count / self.rollout_buffer.total_transitions
+                option_length = option_count / np.sum(level_terminations[level_options == option_id])
+
+                option_name = get_option_name(level, option_id)
+                self.logger.record(option_name + "/activity_share", option_activity_share)
+                self.logger.record(option_name + "/length", option_length)
+
         callback.on_rollout_end()
 
         return True
@@ -196,6 +210,12 @@ class OptionsPPO(PPO):
                 self._train_terminator(level, option_id)
 
         self._n_updates += self.n_epochs
+
+        # Parameter tracking
+        clip_range, clip_range_vf = self._get_current_clip_ranges()
+        self.logger.record("hyperparameter_schedule/clip_range", clip_range)
+        if self.clip_range_vf is not None:
+            self.logger.record("hyperparameter_schedule/clip_range_vf", clip_range_vf)
         self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
     def _train_actor_critic(self, level: int = None, option_id: int = None) -> None:
@@ -298,22 +318,18 @@ class OptionsPPO(PPO):
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 
         # Logs
-        policy_name = "global_policy" if level is None or option_id is None else f"option_{level}.{option_id}"
+        policy_name = "global_policy" if level is None or option_id is None else get_option_name(level, option_id)
         base_str = f"{policy_name}/actor_critic/"
-        self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
-        self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
-        self.logger.record(base_str + "value_loss", np.mean(value_losses))
-        self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
-        self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
         if loss is not None:
             self.logger.record(base_str + "loss", loss.item())
+        self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
+        self.logger.record(base_str + "value_loss", np.mean(value_losses))
+        self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
+        self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
+        self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
         self.logger.record(base_str + "explained_variance", explained_var)
         if hasattr(policy, "log_std"):
             self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
-
-        self.logger.record(base_str + "clip_range", clip_range)
-        if self.clip_range_vf is not None:
-            self.logger.record(base_str + "clip_range_vf", clip_range_vf)
 
     def _train_terminator(self, level: int, option_id: int) -> None:
         """Trains the terminator of each specified option."""
@@ -396,10 +412,6 @@ class OptionsPPO(PPO):
         if hasattr(policy, "log_std"):
             self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
-        self.logger.record(base_str + "clip_range", clip_range)
-        if self.clip_range_vf is not None:
-            self.logger.record(base_str + "clip_range_vf", clip_range_vf)
-
     def _get_current_clip_ranges(self) -> (float, float):
         # Compute current clip range
         clip_range = self.clip_range(self._current_progress_remaining)
@@ -422,6 +434,23 @@ class OptionsPPO(PPO):
         with th.no_grad():
             obs = obs_as_tensor(obs, self.device)
             return self.policy.forward_all_terminators(obs, *args, **kwargs)
+
+    def _update_learning_rate(self, optimizers: Union[list[th.optim.Optimizer], th.optim.Optimizer]) -> None:
+        """
+        Update the optimizers learning rate using the current learning rate schedule
+        and the current progress remaining (from 1 to 0).
+
+        :param optimizers:
+            An optimizer or a list of optimizers.
+        """
+        # Log the current learning rate
+        self.logger.record("hyperparameter_schedule/learning_rate",
+                           self.lr_schedule(self._current_progress_remaining))
+
+        if not isinstance(optimizers, list):
+            optimizers = [optimizers]
+        for optimizer in optimizers:
+            update_learning_rate(optimizer, self.lr_schedule(self._current_progress_remaining))
 
 
 def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.Tensor, th.Tensor):

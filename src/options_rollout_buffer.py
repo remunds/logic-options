@@ -61,6 +61,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.gamma = gamma
         self.generator_ready = False
         self.reset()
+        self.total_transitions = self.buffer_size * self.n_envs
 
     def reset(self) -> None:
         base_shape = (self.buffer_size, self.n_envs)
