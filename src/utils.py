@@ -335,7 +335,7 @@ def init_envs(name: str,
 
     else:
         env = make_atari_env(name,
-                             n_envs=4,
+                             n_envs=n_envs,
                              seed=seed,
                              vec_env_cls=SubprocVecEnv,
                              vec_env_kwargs={"start_method": MULTIPROCESSING_START_METHOD},
@@ -343,7 +343,7 @@ def init_envs(name: str,
         env = VecFrameStack(env, n_stack=framestack)
 
         eval_env = make_atari_env(name,
-                                  n_envs=4,
+                                  n_envs=n_eval_envs,
                                   seed=eval_env_seed,
                                   vec_env_cls=SubprocVecEnv,
                                   vec_env_kwargs={"start_method": MULTIPROCESSING_START_METHOD},

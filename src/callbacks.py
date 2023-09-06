@@ -19,6 +19,10 @@ from options_ppo import OptionsPPO
 
 class OptionEvalCallback(EvalCallback):
     model: OptionsPPO
+    
+    def __init__(self, *args, early_stop: int = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.early_stop = early_stop
 
     def init_callback(self, model: OptionsPPO) -> None:
         """
@@ -45,6 +49,9 @@ class OptionEvalCallback(EvalCallback):
             # Reset success rate buffer
             self._is_success_buffer = []
 
+            if self.verbose >= 1:
+                print("\nRunning evaluation... ", end="")
+
             episode_rewards, episode_lengths = evaluate_policy(
                 self.model,
                 self.eval_env,
@@ -52,6 +59,7 @@ class OptionEvalCallback(EvalCallback):
                 render=self.render,
                 deterministic=self.deterministic,
                 return_episode_rewards=True,
+                early_stop=self.early_stop,
                 warn=self.warn,
                 callback=self._log_success_callback,
             )
@@ -80,7 +88,7 @@ class OptionEvalCallback(EvalCallback):
             self.last_mean_reward = mean_reward
 
             if self.verbose >= 1:
-                print(f"Step {self.num_timesteps} - Eval results:")
+                print(f"Done.")
                 print(f"\tReturn: \t{mean_reward:.2f} +/- {std_reward:.2f}")
                 print(f"\tEpisode length: \t{mean_ep_length:.2f} +/- {std_ep_length:.2f}")
             # Add to current Logger
@@ -160,10 +168,12 @@ def evaluate_policy(
         callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
         reward_threshold: Optional[float] = None,
         return_episode_rewards: bool = False,
+        early_stop: int = None,
         warn: bool = True,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
     """Same as evaluate_policy from stable_baselines3.common.evaluation
     but for options."""
+
     is_monitor_wrapped = False
     # Avoid circular import
     from stable_baselines3.common.monitor import Monitor
@@ -191,6 +201,7 @@ def evaluate_policy(
 
     current_rewards = np.zeros(n_envs)
     current_lengths = np.zeros(n_envs, dtype="int")
+    last_positive_rewards = np.zeros(n_envs)
     observations = env.reset()
     states = None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
@@ -204,6 +215,10 @@ def evaluate_policy(
         new_observations, rewards, dones, infos = env.step(actions)
         current_rewards += rewards
         current_lengths += 1
+
+        last_positive_rewards[rewards > 0] = 0
+        last_positive_rewards[rewards <= 0] += 1
+
         for i in range(n_envs):
             if episode_counts[i] < episode_count_targets[i]:
                 # unpack values so that the callback can access the local variables
@@ -215,8 +230,15 @@ def evaluate_policy(
                 if callback is not None:
                     callback(locals(), globals())
 
+                if early_stop is not None and last_positive_rewards[i] >= early_stop:
+                    dones[i] = True
+                    stop_early = True
+                    new_observations[i] = env.env_method("reset", indices=[i])[0][0]
+                else:
+                    stop_early = False
+
                 if dones[i]:
-                    if is_monitor_wrapped:
+                    if is_monitor_wrapped and not stop_early:
                         # Atari wrapper can send a "done" signal when
                         # the agent loses a life, but it does not correspond
                         # to the true end of episode
@@ -262,7 +284,8 @@ def init_callbacks(exp_name: str,
                    eval_frequency: int = 100_000,
                    eval_callback_cls=OptionEvalCallback,
                    eval_render: bool = False,
-                   eval_deterministic: bool = True) -> CallbackList:
+                   eval_deterministic: bool = True,
+                   eval_early_stop: int = None) -> CallbackList:
     checkpoint_frequency = 1_000_000
     rtpt_frequency = 100_000
 
@@ -274,7 +297,8 @@ def init_callbacks(exp_name: str,
         log_path=str(ckpt_path),
         eval_freq=max(eval_frequency // n_envs, 1),
         deterministic=eval_deterministic,
-        render=eval_render)
+        render=eval_render,
+        early_stop=eval_early_stop)
 
     checkpoint_callback = CheckpointCallback(
         save_freq=max(checkpoint_frequency // n_envs, 1),
