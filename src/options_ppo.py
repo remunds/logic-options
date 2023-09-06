@@ -14,8 +14,8 @@ from torch.nn import functional as F
 
 from option_critic_policy import GlobalOptionsPolicy
 from options_rollout_buffer import OptionsRolloutBuffer
-from utils import get_option_name, get_atari_identifier, get_pruned_focus_file_from_env_name, make_scobi_env, \
-    REWARD_MODE
+from utils import get_option_name, get_atari_identifier, make_scobi_env, \
+    REWARD_MODE, num2text
 
 
 class OptionsPPO(PPO):
@@ -170,6 +170,10 @@ class OptionsPPO(PPO):
             self._last_active_options = options
             terminations[dones] = True
             self._last_option_terminations = terminations
+
+        progress_percent = (1 - self._current_progress_remaining) * 100
+        print(f"\rTotal steps: {num2text(self.num_timesteps)} ({progress_percent:.1f} %) - "
+              f"Total updates: {num2text(self._n_updates)}", end="")
 
         rollout_buffer.compute_returns_and_advantage(dones=dones)
 
