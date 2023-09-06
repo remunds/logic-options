@@ -2,13 +2,14 @@ import numpy as np
 import torch as th
 
 from options_ppo import load_agent
+from render import render_oc_overlay
 
-name = "debug"
-env_name = "ALE/Pong-v5"
+name = "no-option/with-lives-and-divers"
+env_name = "ALE/Seaquest-v5"
 
 deterministic = True
 
-model = load_agent(name, env_name, render_mode="human")
+model = load_agent(name, env_name, render_mode="rgb_array", render_oc_overlay=False)
 env = model.get_env()
 
 # Prepare loop
@@ -21,6 +22,9 @@ while True:
 
     new_obs, _, dones, _ = env.step(actions)
 
+    image = env.render()
+    render_oc_overlay(image, new_obs, option_trace=options[0].tolist())
+
     option_terminations, _ = model.forward_all_terminators(new_obs, options)
     option_terminations[dones] = True
 
@@ -29,5 +33,3 @@ while True:
     if np.any(dones):
         ret = env.envs[0].get_episode_rewards()[-1]
         print(f"Return: {ret}")
-
-    env.render()
