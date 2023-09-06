@@ -490,14 +490,20 @@ def load_agent(name: str, env_name: str, **kwargs):
     exclude_properties = config["environment"]["exclude_properties"]
     device = "gpu" if config["cuda"] else "cpu"
 
-    pruned_ff_name = get_pruned_focus_file_from_env_name(env_name)
+    reward_mode = config["environment"].get("reward_mode")
+    exclude_properties = config["environment"].get("exclude_properties")
+    normalize = config["environment"].get("normalize")
+    freeze_invisible_obj = config["environment"].get("freeze_invisible_obj")
+
     env = make_scobi_env(name=env_name,
                          reward_mode=REWARD_MODE[reward_mode],
-                         focus_dir="in/focusfiles",
-                         pruned_ff_name=pruned_ff_name,
+                         focus_dir=model_dir,
+                         pruned_ff_name="prune.yaml",
                          exclude_properties=exclude_properties,
                          silent=False,
                          refresh=False,
+                         normalize=normalize,
+                         freeze_invisible_obj=freeze_invisible_obj,
                          **kwargs)()
 
     model = OptionsPPO.load(model_path,

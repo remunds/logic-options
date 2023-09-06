@@ -275,14 +275,16 @@ MULTIPROCESSING_START_METHOD = "spawn" if os.name == 'nt' else "fork"  # 'nt' ==
 def init_envs(name: str,
               n_envs: int,
               n_eval_envs: int,
-              prune_concept: str,
-              exclude_properties: bool,
-              reward_mode: str,
               seed: int,
+              prune_concept: str = None,
+              exclude_properties: bool = None,
+              reward_mode: str = None,
               object_centric: bool = True,
               frameskip: int = 4,
               framestack: int = 1,
-              eval_render: bool = False) -> (SubprocVecEnv, SubprocVecEnv):
+              eval_render: bool = False,
+              normalize: bool = True,
+              freeze_invisible_obj: bool = False) -> (SubprocVecEnv, SubprocVecEnv):
     eval_env_seed = (seed + 42) * 2  # different seeds for eval
 
     if object_centric:
@@ -301,7 +303,9 @@ def init_envs(name: str,
                                  focus_dir=focus_dir,
                                  pruned_ff_name=pruned_ff_name,
                                  exclude_properties=exclude_properties,
-                                 reward_mode=REWARD_MODE[reward_mode])()
+                                 reward_mode=REWARD_MODE[reward_mode],
+                                 normalize=normalize,
+                                 freeze_invisible_obj=freeze_invisible_obj)()
         check_env(monitor.env)
         del monitor
 
@@ -316,7 +320,9 @@ def init_envs(name: str,
                                      seed=seed,
                                      silent=True,
                                      refresh=False,
-                                     reward_mode=REWARD_MODE[reward_mode]) for i in range(n_envs)]
+                                     reward_mode=REWARD_MODE[reward_mode],
+                                     normalize=normalize,
+                                     freeze_invisible_obj=freeze_invisible_obj) for i in range(n_envs)]
         eval_envs = [make_scobi_env(name=name,
                                     focus_dir=focus_dir,
                                     pruned_ff_name=pruned_ff_name,
@@ -326,7 +332,9 @@ def init_envs(name: str,
                                     silent=True,
                                     refresh=False,
                                     reward_mode=0,
-                                    render_mode=eval_render_mode) for i in range(n_eval_envs)]
+                                    render_mode=eval_render_mode,
+                                    normalize=normalize,
+                                    freeze_invisible_obj=freeze_invisible_obj) for i in range(n_eval_envs)]
 
         env = SubprocVecEnv(train_envs, start_method=MULTIPROCESSING_START_METHOD)
         eval_env = SubprocVecEnv(eval_envs, start_method=MULTIPROCESSING_START_METHOD)

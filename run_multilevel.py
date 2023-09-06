@@ -56,10 +56,12 @@ def run(name: str = None,
                              ckpt_path=ckpt_path,
                              eval_frequency=evaluation["frequency"],
                              eval_render=evaluation["render"],
-                             eval_deterministic=evaluation["deterministic"])
+                             eval_deterministic=evaluation["deterministic"],
+                             eval_early_stop=evaluation.get("early_stop"))
 
     policy_kwargs = {"options_hierarchy": model["options_hierarchy"],
-                     "net_arch": model["net_arch"]}
+                     "net_arch": model["net_arch"],
+                     "normalize_images": not object_centric}
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
 
