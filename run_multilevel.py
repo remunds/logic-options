@@ -80,6 +80,7 @@ def run(name: str = None,
 
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")
+    os.remove(config_path)
     prune_file_path = Path(FOCUS_FILES_DIR, get_pruned_focus_file_from_env_name(environment["name"]))
     shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
@@ -95,5 +96,4 @@ if __name__ == "__main__":
         with open(config_path, "r") as f:
             config = yaml.load(f, Loader=yaml.Loader)
         run(config_path=config_path, **config)
-        os.remove(config_path)
         config_files = os.listdir(QUEUE_PATH)

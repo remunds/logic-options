@@ -486,9 +486,7 @@ def load_agent(name: str, env_name: str, **kwargs):
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.Loader)
 
-    reward_mode = config["environment"]["reward_mode"]
-    exclude_properties = config["environment"]["exclude_properties"]
-    device = "gpu" if config["cuda"] else "cpu"
+    device = "cuda" if config["cuda"] else "cpu"
 
     reward_mode = config["environment"].get("reward_mode")
     exclude_properties = config["environment"].get("exclude_properties")

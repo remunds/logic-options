@@ -267,7 +267,8 @@ def get_atari_identifier(env_name: str):
 REWARD_MODE = {
     "env": 0,
     "human": 1,
-    "mixed": 2
+    "mixed": 2,
+    None: None,
 }
 MULTIPROCESSING_START_METHOD = "spawn" if os.name == 'nt' else "fork"  # 'nt' == Windows
 
