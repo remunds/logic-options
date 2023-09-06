@@ -36,7 +36,9 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
 
         super().__init__(observation_space,
                          action_space=options_hierarchy.action_option_spaces[0],
-                         lr_schedule=lr_schedule, **kwargs)
+                         lr_schedule=lr_schedule,
+                         net_arch=net_arch,
+                         **kwargs)
 
         self.options_hierarchy = options_hierarchy
 
