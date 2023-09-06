@@ -4,21 +4,20 @@ This repository implements the combination of the **Option-Critic** framework ([
 The idea is to apply both **temporal abstraction** (options) with **state abstraction** (object-centricity) to create **eXplainable Reinforcement Learning (XRL)** agents.
 
 ## Features
-* Supports `gymnasium` Atari environments with all respective features (framestacking, frameskipping etc.)
-* Options: define number of options, regularize options length and options entropy
+* Multi-level option hierarchy consisting of SB3 models trained with PPO
+* SCOBI: object-centric observation input, optionally transformed into an interpretable concept bottleneck
+* Supports `gymnasium` Atari environments with all respective features
+* Options: define number of hierarchy levels and number of option per level individually, regularize options length and options entropy
 * Control model's action selection temperature
 * Parameter scheduling
-* Replay buffer
-* Specify experiment parameters via YAML file
+* Specify experiment parameters via YAML and experiment queueing
 
 ### More to come...
-* Higher-level options hierarchy (currently only one options level supported)
-* PPO2
 * Reward shaping
 * Reward cropping
 
 ## Issues
-* Implicit float32-to-float64 conversions (and vice versa) cause floating point imprecision, may affect model training performance
+* Implicit float32-to-float64 conversions (and vice versa) cause floating point imprecision, may affect model training performance (to be investigated)
 
 ## Requirements
 ```

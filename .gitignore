@@ -14,3 +14,5 @@ analysis/*
 /baselines_checkpoints/
 /baselines_logs/
 /in/config/queue/
+Digraph.gv
+Digraph.gv.pdf
