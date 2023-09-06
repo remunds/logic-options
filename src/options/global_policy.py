@@ -1,11 +1,11 @@
 from typing import Tuple, Any
 
 import torch as th
-from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.distributions import BernoulliDistribution
+from stable_baselines3.common.policies import ActorCriticPolicy
 
-from option import OptionCollection
-from options_hierarchy import OptionsHierarchy
+from options.option import OptionCollection
+from options.hierarchy import OptionsHierarchy
 
 
 class GlobalOptionsPolicy(ActorCriticPolicy):

@@ -12,10 +12,11 @@ from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.ppo.ppo import PPO
 from torch.nn import functional as F
 
-from option_critic_policy import GlobalOptionsPolicy
-from options_rollout_buffer import OptionsRolloutBuffer
-from utils import get_option_name, get_atari_identifier, make_scobi_env, \
-    REWARD_MODE, num2text
+from options.global_policy import GlobalOptionsPolicy
+from options.rollout_buffer import OptionsRolloutBuffer
+from utils.common import get_option_name, num2text
+from envs.common import get_atari_identifier, make_scobi_env
+from common import REWARD_MODE
 
 
 class OptionsPPO(PPO):

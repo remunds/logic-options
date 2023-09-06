@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+from typing import Callable
+
 import numpy as np
 
-from utils import is_sorted
+from utils.common import is_sorted
 
 
 class ParamScheduler:
@@ -106,3 +110,38 @@ class ParamScheduler:
             elif self.decay_mode in ["step", "lin"]:
                 config.update({"milestones": self.milestones})
         return config
+
+
+def get_linear_schedule(initial_value: float) -> Callable[[float], float]:
+    def linear(progress_remaining: float) -> float:
+        return progress_remaining * initial_value
+
+    return linear
+
+
+def get_exponential_schedule(initial_value: float, half_life_period: float = 0.25) -> Callable[[float], float]:
+    """It holds exponential(half_life_period) = 0.5. If half_life_period == 0.25, then
+    exponential(0) ~= 0.06"""
+    assert 0 < half_life_period < 1
+
+    def exponential(progress_remaining: float) -> float:
+        return initial_value * np.exp((1 - progress_remaining) * np.log(0.5) / half_life_period)
+
+    return exponential
+
+
+def maybe_make_schedule(args):
+    if isinstance(args, (int, float)):
+        return args
+    elif isinstance(args, dict):
+        schedule_type = args.pop("schedule_type")
+        if schedule_type == "linear":
+            return get_linear_schedule(**args)
+        if schedule_type == "exponential":
+            return get_exponential_schedule(**args)
+        elif schedule_type is None:
+            return args["initial_value"]
+        else:
+            ValueError(f"Unrecognized schedule type {schedule_type} provided.")
+    else:
+        raise ValueError("Invalid parameter schedule specification.")

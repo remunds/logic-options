@@ -1,15 +1,14 @@
 import numpy as np
 import torch as th
 
-from options_ppo import load_agent
-from render import render_oc_overlay
+from options.ppo import load_agent
 
 name = "no-option/with-lives-and-divers"
 env_name = "ALE/Seaquest-v5"
 
 deterministic = True
 
-model = load_agent(name, env_name, render_mode="rgb_array", render_oc_overlay=False)
+model = load_agent(name, env_name, render_mode="human", render_oc_overlay=True)
 env = model.get_env()
 
 # Prepare loop
@@ -23,7 +22,7 @@ while True:
     new_obs, _, dones, _ = env.step(actions)
 
     image = env.render()
-    render_oc_overlay(image, new_obs, option_trace=options[0].tolist())
+    # render_oc_overlay(image, new_obs, option_trace=options[0].tolist())
 
     option_terminations, _ = model.forward_all_terminators(new_obs, options)
     option_terminations[dones] = True

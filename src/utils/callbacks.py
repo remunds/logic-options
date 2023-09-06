@@ -14,7 +14,7 @@ from stable_baselines3.common.vec_env import VecMonitor, is_vecenv_wrapped
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, EvalCallback, CheckpointCallback, \
     EveryNTimesteps
 
-from options_ppo import OptionsPPO
+from options.ppo import OptionsPPO
 
 
 class OptionEvalCallback(EvalCallback):

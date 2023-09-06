@@ -6,10 +6,12 @@ import yaml
 from stable_baselines3.common.logger import configure
 import torch as th
 
-from utils import maybe_make_schedule, get_experiment_name_from_hyperparams, init_envs, get_torch_device, \
-    get_atari_identifier, get_pruned_focus_file_from_env_name, FOCUS_FILES_DIR
-from options_ppo import OptionsPPO
-from callbacks import init_callbacks
+from utils.common import hyperparams_to_experiment_name, get_torch_device
+from utils.param_schedule import maybe_make_schedule
+from envs.common import get_atari_identifier, init_envs, get_pruned_focus_file_from_env_name
+from common import FOCUS_FILES_DIR
+from options.ppo import OptionsPPO
+from utils.callbacks import init_callbacks
 
 OUT_BASE_PATH = "out/"
 QUEUE_PATH = "in/queue/"
@@ -30,7 +32,7 @@ def run(name: str = None,
 
     # Set experiment name
     if name is None:
-        name = get_experiment_name_from_hyperparams(environment_kwargs=environment, seed=seed)
+        name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
 
     model_path = Path(OUT_BASE_PATH, game_identifier, name)
 

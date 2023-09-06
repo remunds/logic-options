@@ -1,8 +1,8 @@
-from torch import nn
 from gymnasium.spaces import Discrete, Space
+from torch import nn
 
-from option import Option
-from utils import get_option_name
+from options.option import Option
+from utils.common import get_option_name
 
 
 class OptionsHierarchy(nn.Module):

@@ -1,10 +1,9 @@
-import numpy as np
-import torch as th
-
 from typing import Optional, Generator, Union, NamedTuple, Callable
 
-from stable_baselines3.common.buffers import BaseBuffer
+import numpy as np
+import torch as th
 from gymnasium.spaces import Space, Discrete
+from stable_baselines3.common.buffers import BaseBuffer
 from stable_baselines3.common.type_aliases import ReplayBufferSamples, RolloutBufferSamples
 from stable_baselines3.common.vec_env import VecNormalize
 
@@ -310,7 +309,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         reward = np.zeros(self.advantages.shape[1:], dtype=np.float32)
         next_decision = np.ones(self.advantages.shape[1:], dtype=bool)
         next_value = np.zeros(self.advantages.shape[1:], dtype=np.float32)
-        last_gae = np.zeros(self.advantages.shape[1:], dtype=np.float32)
+        last_gae = np.zeros(self.advantages.shape[1:], dtype=np.float64)
 
         values_upon_arrival = self.get_values_upon_arrival()
 
@@ -338,10 +337,12 @@ class OptionsRolloutBuffer(BaseBuffer):
 
             reward += np.expand_dims(self.rewards[step], axis=1)
 
+            dtype = np.float64 if step == self.buffer_size - 1 else np.float32
+
             # Compute Generalized Advantage Estimate (GAE)
-            td_0_estimate = reward + episode_continues * self.gamma * next_value
+            td_0_estimate = reward + (self.gamma * next_value * episode_continues).astype(dtype)
             delta = td_0_estimate - self.values[step]  # TD error
-            gae = delta + policy_continues * self.gamma * self.gae_lambda * last_gae
+            gae = delta + (self.gamma * self.gae_lambda * policy_continues).astype(dtype) * last_gae
             self.advantages[step, decision] = gae[decision]
             last_gae[decision] = gae[decision]
 

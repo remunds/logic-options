@@ -10,9 +10,9 @@ from stable_baselines3.common.policies import ActorCriticPolicy, BaseModel
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
 from stable_baselines3.common.torch_layers import FlattenExtractor
 from torch import nn
-from torchviz import make_dot
+# from torchviz import make_dot
 
-from utils import get_net_from_layer_dims
+from utils.common import get_net_from_layer_dims
 
 
 class Option(ActorCriticPolicy):
@@ -36,11 +36,11 @@ class Option(ActorCriticPolicy):
         self._build_tn_net(net_arch)
 
         # Create and plot computation graph (for verification)
-        x = th.randn(1, *self.observation_space.shape)
-        y = (*self(x), self.predict_termination(x))
-        make_dot(y,
-                 params=dict(self.named_parameters()),
-                 show_attrs=True)
+        # x = th.randn(1, *self.observation_space.shape)
+        # y = (*self(x), self.predict_termination(x))
+        # make_dot(y,
+        #          params=dict(self.named_parameters()),
+        #          show_attrs=True)
 
     def _build_tn_net(self, net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None):
         """Constructs the termination network, consisting of an MLP extractor
@@ -96,7 +96,7 @@ class Option(ActorCriticPolicy):
 
 
 class OptionCollection:
-    """Rudimentary implementation to handle multiple options passes at once.
+    """Rudimentary implementation to handle multiple options at once.
     Efficiency of this code can be increased greatly (especially for high
     number of options)."""
 

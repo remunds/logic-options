@@ -13,6 +13,6 @@ analysis/*
 /out/
 /baselines_checkpoints/
 /baselines_logs/
-/in/config/queue/
+/in/queue/
 Digraph.gv
 Digraph.gv.pdf
