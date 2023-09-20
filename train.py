@@ -61,9 +61,11 @@ def run(name: str = None,
                              eval_deterministic=evaluation["deterministic"],
                              eval_early_stop=evaluation.get("early_stop"))
 
-    policy_kwargs = {"options_hierarchy": model["options_hierarchy"],
-                     "net_arch": model["net_arch"],
+    policy_kwargs = {"options_hierarchy": model.get("options_hierarchy"),
                      "normalize_images": not object_centric}
+    if "net_arch" in model.keys():
+        policy_kwargs["net_arch"] = model["net_arch"]
+
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
 
@@ -83,8 +85,9 @@ def run(name: str = None,
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")
     os.remove(config_path)
-    prune_file_path = Path(FOCUS_FILES_DIR, get_pruned_focus_file_from_env_name(environment["name"]))
-    shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
+    if object_centric:
+        prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
+        shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
     print(f"Experiment name: {name}")
     print(f"Started {type(model).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")

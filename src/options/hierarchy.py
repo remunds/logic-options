@@ -6,10 +6,16 @@ from utils.common import get_option_name
 
 
 class OptionsHierarchy(nn.Module):
-    def __init__(self, shape: list[int], observation_space: Space, action_space: Space,
-                 lr_schedule, net_arch):
+    def __init__(self,
+                 shape: list[int],
+                 observation_space: Space,
+                 action_space: Space,
+                 lr_schedule,
+                 net_arch=None):
         super().__init__()
 
+        if shape is None:
+            shape = []
         self.shape = shape
         self.size = len(shape)  # 0 => no options, 1 => one level of options...
 

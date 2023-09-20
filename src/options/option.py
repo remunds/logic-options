@@ -21,7 +21,7 @@ class Option(ActorCriticPolicy):
     def __init__(self,
                  observation_space: Space,
                  action_space: Space,
-                 net_arch: Optional[Union[list[int], dict[str, list[int]]]],
+                 net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
                  activation_fn: Type[nn.Module] = nn.Tanh,
                  **kwargs):
         super().__init__(observation_space,

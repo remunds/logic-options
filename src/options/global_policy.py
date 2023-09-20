@@ -17,7 +17,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
                  action_space,
                  lr_schedule,
                  options_hierarchy: list[int],
-                 net_arch: list[int],
+                 net_arch: list[int] = None,
                  **kwargs):
         """
         :param observation_space:

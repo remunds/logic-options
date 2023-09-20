@@ -36,8 +36,9 @@ class OptionsPPO(PPO):
     rollout_buffer: OptionsRolloutBuffer
     policy: GlobalOptionsPolicy
 
-    def __init__(self, termination_regularizer: float = 0, policy=None, **kwargs):
-        super().__init__(policy=GlobalOptionsPolicy, **kwargs)
+    def __init__(self, termination_regularizer: float = 0, **kwargs):
+        kwargs["policy"] = GlobalOptionsPolicy
+        super().__init__(**kwargs)
         self.termination_regularizer = termination_regularizer
 
     def _setup_model(self) -> None:
