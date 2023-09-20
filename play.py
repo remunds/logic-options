@@ -3,32 +3,39 @@ import torch as th
 
 from options.ppo import load_agent
 
-name = "no-option/with-lives-and-divers"
-env_name = "ALE/Seaquest-v5"
 
-deterministic = True
+if __name__ == "__main__":
+    name = "debug"
+    env_name = "ALE/Seaquest-v5"
 
-model = load_agent(name, env_name, render_mode="human", render_oc_overlay=True)
-env = model.get_env()
+    deterministic = True
 
-# Prepare loop
-obs = env.reset()
-option_terminations = th.ones(1, model.hierarchy_size).type(th.BoolTensor)
-options = th.zeros(1, model.hierarchy_size).type(th.LongTensor)
+    model = load_agent(name, env_name, render_mode="human", render_oc_overlay=True, reward_mode="human")
+    env = model.get_env()
 
-while True:
-    (options, actions), _, _ = model.forward_all(obs, options, option_terminations, deterministic)
+    # Prepare loop
+    obs = env.reset()
+    option_terminations = th.ones(1, model.hierarchy_size).type(th.BoolTensor)
+    options = th.zeros(1, model.hierarchy_size).type(th.LongTensor)
 
-    new_obs, _, dones, _ = env.step(actions)
+    while True:
+        (options, actions), _, _ = model.forward_all(obs, options, option_terminations, deterministic)
 
-    image = env.render()
-    # render_oc_overlay(image, new_obs, option_trace=options[0].tolist())
+        new_obs, reward, dones, _ = env.step(actions)
 
-    option_terminations, _ = model.forward_all_terminators(new_obs, options)
-    option_terminations[dones] = True
+        if reward[0] != 0:
+            print("Reward:", reward[0])
 
-    obs = new_obs
+        image = env.render()
+        # render_oc_overlay(image, new_obs, option_trace=options[0].tolist())
 
-    if np.any(dones):
-        ret = env.envs[0].get_episode_rewards()[-1]
-        print(f"Return: {ret}")
+        option_terminations, _ = model.forward_all_terminators(new_obs, options)
+        option_terminations[dones] = True
+
+        obs = new_obs
+
+        if np.any(dones):
+            rewards = env.envs[0].get_episode_rewards()
+            if len(rewards) > 0:
+                ret = rewards[-1]
+                print(f"Return: {ret}")

@@ -159,6 +159,27 @@ class TensorboardCallback(BaseCallback):
         self.logger.record("rollout/original_return", np.mean(list(self.buffer)))
 
 
+class SaveBestModelCallback(BaseCallback):
+    """Saves both the model and the model's VecNormalize env's statistics."""
+    def __init__(self, save_path: str):
+        super(SaveBestModelCallback, self).__init__()
+        self.save_path = save_path
+
+    def _init_callback(self) -> None:
+        if self.save_path is not None:
+            os.makedirs(self.save_path, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        save_path_name = os.path.join(self.save_path, "best_vecnormalize.pkl")
+        vec_norm_env = self.model.get_vec_normalize_env()
+        if vec_norm_env is not None:
+            vec_norm_env.save(save_path_name)
+
+        self.model.save(os.path.join(self.save_path, "best_model"))
+
+        return True
+
+
 def evaluate_policy(
         model: OptionsPPO,
         env: Union[gym.Env, VecEnv],
@@ -282,7 +303,6 @@ def init_callbacks(exp_name: str,
                    n_eval_episodes: int,
                    ckpt_path: Path,
                    eval_frequency: int = 100_000,
-                   eval_callback_cls=OptionEvalCallback,
                    eval_render: bool = False,
                    eval_deterministic: bool = True,
                    eval_early_stop: int = None) -> CallbackList:
@@ -290,10 +310,10 @@ def init_callbacks(exp_name: str,
     rtpt_frequency = 100_000
 
     rtpt_iters = total_timestamps // rtpt_frequency
-    eval_callback = eval_callback_cls(
+    eval_callback = OptionEvalCallback(
         eval_env,
         n_eval_episodes=n_eval_episodes,
-        best_model_save_path=str(ckpt_path),
+        callback_on_new_best=SaveBestModelCallback(str(ckpt_path)),
         log_path=str(ckpt_path),
         eval_freq=max(eval_frequency // n_envs, 1),
         deterministic=eval_deterministic,
@@ -304,7 +324,7 @@ def init_callbacks(exp_name: str,
         save_freq=max(checkpoint_frequency // n_envs, 1),
         save_path=str(ckpt_path),
         name_prefix="model",
-        save_vecnormalize=False)
+        save_vecnormalize=True)
 
     rtpt_callback = RtptCallback(
         exp_name=exp_name,

@@ -8,8 +8,7 @@ import torch as th
 
 from utils.common import hyperparams_to_experiment_name, get_torch_device
 from utils.param_schedule import maybe_make_schedule
-from envs.common import get_atari_identifier, init_envs, get_pruned_focus_file_from_env_name
-from common import FOCUS_FILES_DIR
+from envs.common import get_atari_identifier, init_train_eval_envs, get_focus_file_path
 from options.ppo import OptionsPPO
 from utils.callbacks import init_callbacks
 
@@ -47,7 +46,10 @@ def run(name: str = None,
     log_path.mkdir(parents=True, exist_ok=True)
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
-    train_env, eval_env = init_envs(n_envs=n_envs, n_eval_envs=n_eval_envs, seed=seed, **environment)
+    train_env, eval_env = init_train_eval_envs(n_train_envs=n_envs,
+                                               n_eval_envs=n_eval_envs,
+                                               seed=seed,
+                                               **environment)
 
     cb_list = init_callbacks(exp_name=name,
                              total_timestamps=total_timestamps,

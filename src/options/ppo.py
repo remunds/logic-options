@@ -15,8 +15,7 @@ from torch.nn import functional as F
 from options.global_policy import GlobalOptionsPolicy
 from options.rollout_buffer import OptionsRolloutBuffer
 from utils.common import get_option_name, num2text
-from envs.common import get_atari_identifier, make_scobi_env
-from common import REWARD_MODE
+from envs.common import get_atari_identifier, init_vec_env
 
 
 class OptionsPPO(PPO):
@@ -481,39 +480,39 @@ def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.T
 MODELS_BASE_PATH = "out/"
 
 
-def load_agent(name: str, env_name: str, **kwargs):
+def load_agent(name: str,
+               env_name: str,
+               n_envs: int = 1,
+               reward_mode: str = None,
+               render_mode: str = None,
+               render_oc_overlay: bool = False):
     env_identifier = get_atari_identifier(env_name)
 
     model_dir = f"{MODELS_BASE_PATH}{env_identifier}/{name}/"
 
     config_path = model_dir + "config.yaml"
     model_path = model_dir + "checkpoints/best_model.zip"
+    vec_norm_path = model_dir + "checkpoints/best_vecnormalize.pkl"
 
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.Loader)
 
+    if reward_mode is not None:
+        config["environment"]["reward_mode"] = reward_mode
+
+    env = init_vec_env(n_envs=n_envs,
+                       seed=123,
+                       vec_norm_path=vec_norm_path,
+                       **config["environment"],
+                       render_mode=render_mode,
+                       render_oc_overlay=render_oc_overlay)
+
     device = "cuda" if config["cuda"] else "cpu"
-
-    reward_mode = config["environment"].get("reward_mode")
-    exclude_properties = config["environment"].get("exclude_properties")
-    normalize = config["environment"].get("normalize")
-    freeze_invisible_obj = config["environment"].get("freeze_invisible_obj")
-
-    env = make_scobi_env(name=env_name,
-                         reward_mode=REWARD_MODE[reward_mode],
-                         focus_dir=model_dir,
-                         pruned_ff_name="prune.yaml",
-                         exclude_properties=exclude_properties,
-                         silent=False,
-                         refresh=False,
-                         normalize=normalize,
-                         freeze_invisible_obj=freeze_invisible_obj,
-                         **kwargs)()
 
     model = OptionsPPO.load(model_path,
                             env=env,
                             verbose=1,
-                            render_mode="human",
+                            render_mode=render_mode,
                             device=device)
 
     return model

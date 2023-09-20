@@ -11,7 +11,8 @@ environment:
   exclude_properties: False  # exclude object properties (like position) from feature vector
   framestack: 1
   frameskip: 4
-  normalize: True
+  normalize_observation: True
+  normalize_reward: False
   freeze_invisible_obj: False
 
 model:  # if an existing model is reloaded, these parameters are ignored
