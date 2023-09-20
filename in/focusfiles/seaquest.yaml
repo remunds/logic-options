@@ -8,14 +8,31 @@ AVAILABLE_CONCEPTS:
     - Diver3
     - Diver4
     - PlayerMissile1
-    - Enemy1
-    - Enemy2
-    - Enemy3
-    - Enemy4
-    - EnemySubmarine1
-    - EnemySubmarine2
-    - EnemySubmarine3
-    - EnemySubmarine4
+    - Shark1
+    - Shark2
+    - Shark3
+    - Shark4
+    - Shark5
+    - Shark6
+    - Shark7
+    - Shark8
+    - Shark9
+    - Shark10
+    - Shark11
+    - Shark12
+    - Submarine1
+    - Submarine2
+    - Submarine3
+    - Submarine4
+    - Submarine5
+    - Submarine6
+    - Submarine7
+    - Submarine8
+    - Submarine9
+    - Submarine10
+    - Submarine11
+    - Submarine12
+    - SurfaceSubmarine1
     - EnemyMissile1
     - EnemyMissile2
     - EnemyMissile3
@@ -105,14 +122,31 @@ SELECTION:
     - Diver3
     - Diver4
     - PlayerMissile1
-    - Enemy1
-    - Enemy2
-    - Enemy3
-    - Enemy4
-    - EnemySubmarine1
-    - EnemySubmarine2
-    - EnemySubmarine3
-    - EnemySubmarine4
+    - Shark1
+    - Shark2
+    - Shark3
+    - Shark4
+    - Shark5
+    - Shark6
+    - Shark7
+    - Shark8
+    - Shark9
+    - Shark10
+    - Shark11
+    - Shark12
+    - Submarine1
+    - Submarine2
+    - Submarine3
+    - Submarine4
+    - Submarine5
+    - Submarine6
+    - Submarine7
+    - Submarine8
+    - Submarine9
+    - Submarine10
+    - Submarine11
+    - Submarine12
+    - SurfaceSubmarine1
     - EnemyMissile1
     - EnemyMissile2
     - EnemyMissile3
@@ -135,14 +169,31 @@ SELECTION:
     - POSITION_HISTORY: Diver3
     - POSITION_HISTORY: Diver4
     - POSITION_HISTORY: PlayerMissile1
-    - POSITION_HISTORY: Enemy1
-    - POSITION_HISTORY: Enemy2
-    - POSITION_HISTORY: Enemy3
-    - POSITION_HISTORY: Enemy4
-    - POSITION_HISTORY: EnemySubmarine1
-    - POSITION_HISTORY: EnemySubmarine2
-    - POSITION_HISTORY: EnemySubmarine3
-    - POSITION_HISTORY: EnemySubmarine4
+    - POSITION_HISTORY: Shark1
+    - POSITION_HISTORY: Shark2
+    - POSITION_HISTORY: Shark3
+    - POSITION_HISTORY: Shark4
+    - POSITION_HISTORY: Shark5
+    - POSITION_HISTORY: Shark6
+    - POSITION_HISTORY: Shark7
+    - POSITION_HISTORY: Shark8
+    - POSITION_HISTORY: Shark9
+    - POSITION_HISTORY: Shark10
+    - POSITION_HISTORY: Shark11
+    - POSITION_HISTORY: Shark12
+    - POSITION_HISTORY: Submarine1
+    - POSITION_HISTORY: Submarine2
+    - POSITION_HISTORY: Submarine3
+    - POSITION_HISTORY: Submarine4
+    - POSITION_HISTORY: Submarine5
+    - POSITION_HISTORY: Submarine6
+    - POSITION_HISTORY: Submarine7
+    - POSITION_HISTORY: Submarine8
+    - POSITION_HISTORY: Submarine9
+    - POSITION_HISTORY: Submarine10
+    - POSITION_HISTORY: Submarine11
+    - POSITION_HISTORY: Submarine12
+    - POSITION_HISTORY: SurfaceSubmarine1
     - POSITION_HISTORY: EnemyMissile1
     - POSITION_HISTORY: EnemyMissile2
     - POSITION_HISTORY: EnemyMissile3
@@ -170,21 +221,21 @@ SELECTION:
 #  - DIR_VELOCITY:
 #    - POSITION_HISTORY: PlayerMissile1
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: Enemy1
+#    - POSITION_HISTORY: Shark1
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: Enemy2
+#    - POSITION_HISTORY: Shark2
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: Enemy3
+#    - POSITION_HISTORY: Shark3
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: Enemy4
+#    - POSITION_HISTORY: Shark4
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: EnemySubmarine1
+#    - POSITION_HISTORY: Submarine1
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: EnemySubmarine2
+#    - POSITION_HISTORY: Submarine2
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: EnemySubmarine3
+#    - POSITION_HISTORY: Submarine3
 #  - DIR_VELOCITY:
-#    - POSITION_HISTORY: EnemySubmarine4
+#    - POSITION_HISTORY: Submarine4
 #  - DIR_VELOCITY:
 #    - POSITION_HISTORY: EnemyMissile1
 #  - DIR_VELOCITY:
@@ -205,28 +256,28 @@ SELECTION:
 #    - POSITION: Diver4
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: Enemy1
+#    - POSITION: Shark1
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: Enemy2
+#    - POSITION: Shark2
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: Enemy3
+#    - POSITION: Shark3
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: Enemy4
+#    - POSITION: Shark4
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: EnemySubmarine1
+#    - POSITION: Submarine1
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: EnemySubmarine2
+#    - POSITION: Submarine2
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: EnemySubmarine3
+#    - POSITION: Submarine3
 #  - DISTANCE:
 #    - POSITION: Player1
-#    - POSITION: EnemySubmarine4
+#    - POSITION: Submarine4
 #  - DISTANCE:
 #    - POSITION: Player1
 #    - POSITION: EnemyMissile1

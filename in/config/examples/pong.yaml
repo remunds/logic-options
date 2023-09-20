@@ -9,8 +9,8 @@ environment:
   reward_mode: mixed  # env, human, mixed
   prune_concept: default  # default or external: use pruned focusfile (from default 'focusfiles' dir or external 'baselines_focusfiles' dir. for custom pruning and or docker mount)
   exclude_properties: True  # exclude properties from feature vector
-  framestack: 4  # ignored when object-centric (1 in that case)
-  frameskip: 1  # ignored when object-centric (1 in that case)
+  framestack: 1
+  frameskip: 4
 
 model:  # if an existing model is reloaded, these parameters are ignored
   options_hierarchy: [1]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options

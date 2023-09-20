@@ -1,10 +1,10 @@
-name: "no-option/larger-net-2"
+name: "no-option/0"
 cuda: False
 cores: 4
 seed: 0
 
 environment:
-  name: "ALE/Seaquest-v5"
+  name: "ALE/Kangaroo-v5"
   object_centric: True
   reward_mode: env  # env, human, mixed
   prune_concept: default
@@ -16,7 +16,7 @@ environment:
 
 model:  # if an existing model is reloaded, these parameters are ignored
   options_hierarchy: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch: [128, 128]  # the network architecture of each individual option policy
+  net_arch: [64, 64]  # the network architecture of each individual option policy
   ppo:
     n_steps: 256
     n_epochs: 4
@@ -33,7 +33,7 @@ model:  # if an existing model is reloaded, these parameters are ignored
     gae_lambda: 0.95
 
 training:
-  total_timesteps: 5e8
+  total_timesteps: 5e7
   learning_rate:  # Adam
     initial_value: 0.001
     schedule_type: exponential
