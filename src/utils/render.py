@@ -5,6 +5,9 @@ surface = None
 clock = None
 
 
+ROT_MATRIX = np.array([[0, -1], [1, 0]])
+
+
 def render_oc_overlay(image, obs: np.ndarray = None, option_trace: list[int] = None) -> None:
     """Displays an RGB pixel image using pygame.
         Optional: Show the currently used option_id and/or the detected objects
@@ -65,3 +68,23 @@ def render_oc_overlay(image, obs: np.ndarray = None, option_trace: list[int] = N
 
     pygame.display.flip()
     pygame.event.pump()
+
+
+def draw_arrow(surface: pygame.Surface, start_pos: (float, float), end_pos: (float, float),
+               tip_length: int = 6, tip_width: int = 6, **kwargs):
+    start_pos = np.asarray(start_pos)
+    end_pos = np.asarray(end_pos)
+
+    # Arrow body
+    pygame.draw.line(surface, start_pos=start_pos, end_pos=end_pos, **kwargs)
+
+    # Arrow tip
+    arrow_dir = end_pos - start_pos
+    arrow_dir_norm = arrow_dir / np.linalg.norm(arrow_dir)
+    tip_anchor = end_pos - tip_length * arrow_dir_norm
+
+    left_tip_end = tip_anchor + tip_width / 2 * np.matmul(ROT_MATRIX, arrow_dir_norm)
+    right_tip_end = tip_anchor - tip_width / 2 * np.matmul(ROT_MATRIX, arrow_dir_norm)
+
+    pygame.draw.line(surface, start_pos=left_tip_end, end_pos=end_pos, **kwargs)
+    pygame.draw.line(surface, start_pos=right_tip_end, end_pos=end_pos, **kwargs)
