@@ -8,16 +8,25 @@ import gymnasium as gym
 from ocatari import OCAtari
 from scobi import Environment as ScobiEnv
 from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.env_util import make_atari_env
+from stable_baselines3.common.env_util import make_atari_env, make_vec_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStack, VecNormalize, DummyVecEnv
+
+from envs.meeting_room import MeetingRoom
 
 from common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
 
 
 def get_env_name(env: Union[gymnasium.Env, OCAtari]):
     return env.spec.name if isinstance(env, gymnasium.Env) else env.game_name
+
+
+def get_env_identifier(env_name: str):
+    if "/" in env_name:
+        return get_atari_identifier(env_name)
+    else:
+        return env_name.lower()
 
 
 def get_atari_identifier(env_name: str):
@@ -56,7 +65,7 @@ def make_scobi_env(name: str,
 def init_train_eval_envs(n_train_envs: int,
                          n_eval_envs: int,
                          seed: int,
-                         reward_mode: str,
+                         reward_mode: str = None,
                          render_eval: bool = False,
                          **kwargs) -> (VecEnv, VecEnv):
     eval_seed = (seed + 42) * 2  # different seeds for eval
@@ -78,8 +87,8 @@ def init_train_eval_envs(n_train_envs: int,
 def init_vec_env(name: str,
                  n_envs: int,
                  seed: int,
-                 object_centric: bool,
-                 reward_mode: str,
+                 reward_mode: str = None,
+                 object_centric: bool = False,
                  prune_concept: str = None,
                  exclude_properties: bool = None,
                  frameskip: int = 4,
@@ -98,7 +107,23 @@ def init_vec_env(name: str,
 
     reward_mode = REWARD_MODE[reward_mode]
 
-    if object_centric:
+    if name == "MeetingRoom":
+        if n_envs > 1:
+            vec_env_cls = SubprocVecEnv
+            vec_env_kwargs = {"start_method": MULTIPROCESSING_START_METHOD}
+        else:
+            vec_env_cls = DummyVecEnv
+            vec_env_kwargs = None
+        vec_env = make_vec_env(MeetingRoom,
+                               n_envs=n_envs,
+                               seed=seed,
+                               env_kwargs={"render_mode": render_mode},
+                               vec_env_cls=vec_env_cls,
+                               vec_env_kwargs=vec_env_kwargs,
+                               wrapper_kwargs={"frame_skip": frameskip})
+        env = VecFrameStack(vec_env, n_stack=framestack)
+
+    elif object_centric:
         if prune_concept == "unpruned":
             focus_dir = FOCUS_FILES_DIR_UNPRUNED
             pruned_ff_name = None

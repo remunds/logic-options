@@ -16,7 +16,7 @@ from torch.nn import functional as F
 from options.global_policy import GlobalOptionsPolicy
 from options.rollout_buffer import OptionsRolloutBuffer
 from utils.common import get_option_name, num2text, get_most_recent_checkpoint_steps
-from envs.common import get_atari_identifier, init_vec_env
+from envs.common import get_env_identifier, init_vec_env
 
 
 class OptionsPPO(PPO):
@@ -494,7 +494,7 @@ def load_agent(name: str = None,
     assert name is not None and env_name is not None or model_dir is not None
 
     if model_dir is None:
-        env_identifier = get_atari_identifier(env_name)
+        env_identifier = get_env_identifier(env_name)
         model_dir = Path(MODELS_BASE_PATH, env_identifier, name)
 
     checkpoint_dir = model_dir / "checkpoints"

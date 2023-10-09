@@ -8,7 +8,7 @@ import torch as th
 
 from utils.common import hyperparams_to_experiment_name, get_torch_device, ask_to_override_model
 from utils.param_schedule import maybe_make_schedule
-from envs.common import get_atari_identifier, init_train_eval_envs, get_focus_file_path
+from envs.common import get_env_identifier, init_train_eval_envs, get_focus_file_path
 from options.ppo import OptionsPPO
 from utils.callbacks import init_callbacks
 
@@ -28,7 +28,7 @@ def run(name: str = None,
         description: str = None):
     th.manual_seed(seed)
 
-    game_identifier = get_atari_identifier(environment["name"])
+    game_identifier = get_env_identifier(environment["name"])
 
     # Set experiment name
     if name is None:
@@ -38,12 +38,12 @@ def run(name: str = None,
     log_path = model_path / "logs"
     ckpt_path = model_path / "checkpoints"
 
-    if os.path.exists(ckpt_path):
+    if name != "debug" and os.path.exists(ckpt_path):
         ask_to_override_model(model_path)
 
     device = get_torch_device(cuda)
 
-    object_centric = environment["object_centric"]
+    object_centric = environment.get("object_centric")
     n_envs = cores
     n_eval_envs = cores
     n_eval_episodes = evaluation.get("n_episodes")

@@ -5,10 +5,13 @@ from queue import Queue
 import pygame
 import numpy as np
 from numpy.random import randint
-from gymnasium import Env
+from gymnasium import Env, spaces
 from gymnasium.core import RenderFrame, ActType, ObsType
 
-from utils.render import draw_arrow, draw_label
+from utils.render import draw_arrow
+
+
+MAX_EPISODE_LEN = 1000
 
 MARGIN = 50
 FIELD_SIZE = 40
@@ -47,9 +50,10 @@ class MeetingRoom(Env):
     :param render_mode:
     """
 
+    action_space = spaces.Discrete(len(Action))
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': 60
+        'video.frames_per_second': 4
     }
 
     map: dict[int, dict[str | int, Any]]
@@ -61,6 +65,19 @@ class MeetingRoom(Env):
             floor_shape = np.array([11, 11], dtype=int)
         else:
             floor_shape = np.asarray(floor_shape)
+
+        # self.observation_space = spaces.Dict(
+        #     {
+        #         "current_pos": spaces.Box(0, 255, shape=(4,), dtype=np.int32),
+        #         "floor_map": spaces.Box(0, 1, shape=floor_shape, dtype=np.int32),
+        #         "target": spaces.Box(0, 255, shape=(4,), dtype=np.int32),
+        #         "elevator": spaces.Box(0, 255, shape=(2,), dtype=np.int32),
+        #         "entrance": spaces.Box(0, 255, shape=(2,), dtype=np.int32),
+        #         "inside_building": spaces.Box(0, 1, shape=(1,), dtype=np.int32),
+        #     }
+        # )
+        self.observation_space = spaces.Box(0, 255, shape=(13 + np.prod(floor_shape),), dtype=np.int32)
+
         self.render_mode = render_mode
         self.n_buildings = n_buildings
         self.n_floors = n_floors
@@ -68,6 +85,7 @@ class MeetingRoom(Env):
         self.floor_shape = floor_shape
         self.inside_building = True
         self.terminated = False
+        self.n_steps = 0
         if self.render_mode == "human":
             self._init_pygame()
 
@@ -186,11 +204,19 @@ class MeetingRoom(Env):
         return np.array([b, f, x, y])
 
     def _get_observation(self):
-        b, f, x, y = self.current_pos
-        floor_map = self.map[b][f]
-        elevator = self.map[b]["elevator"]
-        entrance = self.map[b]["entrance"]
-        return self.current_pos, floor_map, self.target, elevator, entrance, self.inside_building
+        # obs = {
+        #     "current_pos": self.current_pos,
+        #     "floor_map": self._get_current_floor_map(),
+        #     "target": self.target,
+        #     "elevator": self._get_current_elevator(),
+        #     "entrance": self._get_current_entrance(),
+        #     "inside_building": 1 if self.inside_building else 0,
+        # }
+        floor_map = self._get_current_floor_map().flatten()
+        elevator = self._get_current_elevator()
+        entrance = self._get_current_entrance()
+        inside_building = 1 if self.inside_building else 0
+        return np.hstack([self.current_pos, floor_map, self.target, elevator, entrance, inside_building])
 
     def _get_info(self):
         return dict()
@@ -201,9 +227,10 @@ class MeetingRoom(Env):
         target_reached = np.all(self.current_pos == self.target)
         obs = self._get_observation()
         reward = self._get_reward(previous_pos)  # 1 if target_reached and not self.terminated else 0
-        self.terminated |= target_reached
-        truncated = False
+        truncated = self.n_steps >= 1000
+        self.terminated |= target_reached | truncated
         info = self._get_info()
+        self.n_steps += 1
         return obs, reward, self.terminated, truncated, info
 
     def _get_reward(self, previous_pos):
@@ -330,11 +357,8 @@ class MeetingRoom(Env):
 
     def _is_valid_next_step(self, x, y):
         floor_map = self._get_current_floor_map()
-        elevator = self._get_current_elevator()
-        entrance = self._get_current_entrance()
         return 0 <= x < self.floor_shape[0] and \
-            0 <= y < self.floor_shape[1] and \
-            (not floor_map[x, y] or np.all([x, y] == elevator) or np.all([x, y] == entrance))
+            0 <= y < self.floor_shape[1] and not floor_map[x, y]
 
     def _get_current_floor_map(self):
         b, f, _, _ = self.current_pos
@@ -359,7 +383,7 @@ class MeetingRoom(Env):
         if self.render_mode == "rgb_array":
             return pygame.surfarray.array3d(self.window)
         else:
-            self.clock.tick()
+            self.clock.tick(self.metadata["video.frames_per_second"])
             self._display_frame()
 
     def _render_frame(self):
