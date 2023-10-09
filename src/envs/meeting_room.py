@@ -11,7 +11,12 @@ from utils.render import draw_arrow
 
 MARGIN = 50
 FIELD_SIZE = 40
+FLOOR_HEIGHT = 40
+BUILDING_WIDTH = 70
 BORDER_WIDTH = 2
+
+PLAYER_COLOR = "#FF9911"
+TARGET_COLOR = "#11FF99"
 
 
 class Action(Enum):
@@ -261,6 +266,7 @@ class MeetingRoom(Env):
         pygame.init()
         pygame.display.set_caption("Meeting Room")
         self.window_shape = self.floor_shape * (FIELD_SIZE + BORDER_WIDTH) + 2 * BORDER_WIDTH + 2 * MARGIN
+        self.window_shape[1] += self.n_floors * FLOOR_HEIGHT + MARGIN
         self.window = pygame.display.set_mode(self.window_shape)
         self.clock = pygame.time.Clock()
 
@@ -275,6 +281,7 @@ class MeetingRoom(Env):
     def _render_frame(self):
         self.window.fill((255, 255, 255))  # clear the entire window
         self._render_grid()
+        self._render_buildings()
 
     def _render_grid(self):
         b, f, _, _ = self.current_pos
@@ -313,7 +320,7 @@ class MeetingRoom(Env):
     def _render_player(self, x_coord, y_coord):
         x, y = self._get_field_center(x_coord, y_coord)
         pygame.draw.circle(self.window, "#000000", [x, y], 0.35 * FIELD_SIZE)
-        pygame.draw.circle(self.window, "#FF9911", [x, y], 0.3 * FIELD_SIZE)
+        pygame.draw.circle(self.window, PLAYER_COLOR, [x, y], 0.3 * FIELD_SIZE)
 
     def _render_target(self, x_coord, y_coord):
         center = np.asarray(self._get_field_center(x_coord, y_coord))
@@ -324,7 +331,7 @@ class MeetingRoom(Env):
                               [0, -0.4],
                               [0.18, 0]]) * FIELD_SIZE
             polygon = center + np.dot(rot, shape.T).T
-            pygame.draw.polygon(self.window, "#11FF99", polygon)
+            pygame.draw.polygon(self.window, TARGET_COLOR, polygon)
 
     def _render_elevator(self, x_coord, y_coord):
         center = np.asarray(self._get_field_center(x_coord, y_coord))
@@ -345,6 +352,32 @@ class MeetingRoom(Env):
                    tip_width=int(0.4*FIELD_SIZE),
                    color="#11AAFF",
                    width=int(0.15 * FIELD_SIZE))
+
+    def _render_buildings(self):
+        margin_top = 2 * MARGIN + self.floor_shape[1] * (FIELD_SIZE + BORDER_WIDTH) + BORDER_WIDTH
+        margin_left = MARGIN
+
+        # Ground line
+        start_pos = [margin_left - 30, margin_top + self.n_floors * (FLOOR_HEIGHT - BORDER_WIDTH)]
+        end_pos = [margin_left + self.n_buildings * (BUILDING_WIDTH + 30), start_pos[1]]
+        pygame.draw.line(self.window, "#000000", start_pos, end_pos, width=BORDER_WIDTH)
+
+        # Buildings
+        for b in range(self.n_buildings):
+            for f in reversed(range(self.n_floors)):
+                x = margin_left + b * (BUILDING_WIDTH + 30)
+                y = margin_top + (self.n_floors - f - 1) * (FLOOR_HEIGHT - BORDER_WIDTH)
+                w = BUILDING_WIDTH
+                h = FLOOR_HEIGHT
+                pygame.draw.rect(self.window, "#000000", [x, y, w, h])
+                if b == self.current_pos[0] and f == self.current_pos[1]:
+                    floor_color = PLAYER_COLOR
+                elif b == self.target[0] and f == self.target[1]:
+                    floor_color = TARGET_COLOR
+                else:
+                    floor_color = "#FFFFFF"
+                pygame.draw.rect(self.window, floor_color, [x + BORDER_WIDTH, y + BORDER_WIDTH,
+                                                          w - 2 * BORDER_WIDTH, h - 2 * BORDER_WIDTH])
 
     def _get_center_direction(self, x, y):
         width, height = self.floor_shape
