@@ -6,7 +6,7 @@ import yaml
 from stable_baselines3.common.logger import configure
 import torch as th
 
-from utils.common import hyperparams_to_experiment_name, get_torch_device
+from utils.common import hyperparams_to_experiment_name, get_torch_device, ask_to_override_model
 from utils.param_schedule import maybe_make_schedule
 from envs.common import get_atari_identifier, init_train_eval_envs, get_focus_file_path
 from options.ppo import OptionsPPO
@@ -24,7 +24,8 @@ def run(name: str = None,
         model: dict = None,
         training: dict = None,
         evaluation: dict = None,
-        config_path: str = ""):
+        config_path: str = "",
+        description: str = None):
     th.manual_seed(seed)
 
     game_identifier = get_atari_identifier(environment["name"])
@@ -34,15 +35,21 @@ def run(name: str = None,
         name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
 
     model_path = Path(OUT_BASE_PATH, game_identifier, name)
+    log_path = model_path / "logs"
+    ckpt_path = model_path / "checkpoints"
+
+    if os.path.exists(ckpt_path):
+        ask_to_override_model(model_path)
 
     device = get_torch_device(cuda)
 
     object_centric = environment["object_centric"]
     n_envs = cores
     n_eval_envs = cores
+    n_eval_episodes = evaluation.get("n_episodes")
+    if n_eval_episodes is None:
+        n_eval_episodes = 4 * n_eval_envs
     total_timestamps = int(float(training["total_timesteps"]))
-    log_path = model_path / "logs"
-    ckpt_path = model_path / "checkpoints"
     log_path.mkdir(parents=True, exist_ok=True)
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +63,7 @@ def run(name: str = None,
                              object_centric=object_centric,
                              n_envs=n_envs,
                              eval_env=eval_env,
-                             n_eval_episodes=4 * n_eval_envs,
+                             n_eval_episodes=n_eval_episodes,
                              ckpt_path=ckpt_path,
                              eval_frequency=evaluation["frequency"],
                              eval_render=evaluation["render"],
@@ -65,8 +72,9 @@ def run(name: str = None,
 
     policy_kwargs = {"options_hierarchy": model.get("options_hierarchy"),
                      "normalize_images": not object_centric}
-    if "net_arch" in model.keys():
-        policy_kwargs["net_arch"] = model["net_arch"]
+    net_arch = model.get("net_arch")
+    if net_arch is not None:
+        policy_kwargs["net_arch"] = net_arch
 
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
@@ -91,7 +99,9 @@ def run(name: str = None,
         prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
         shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
-    print(f"Experiment name: {name}")
+    print(f"Running experiment '{name}'")
+    if description is not None:
+        print(description)
     print(f"Started {type(model).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")
     model.learn(total_timesteps=total_timestamps, callback=cb_list)
 

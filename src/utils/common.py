@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from typing import Sequence, Type
+import os
+import re
+from pathlib import Path
+import ctypes  # for flashing window in taskbar under Windows
+import shutil
 
 import numpy as np
 import torch
@@ -59,17 +64,34 @@ def sec2hhmmss(s):
     return "%d:%02d:%02d h" % (h, m % 60, s % 60)
 
 
-def categorize_objects_into_dict(objects: Sequence[GameObject]) -> dict[str, Sequence[GameObject]]:
-    """Converts a list of objects into a dict where each key is an object
-    category and the value all objects of that category."""
-    objects_categorized = {}
-    for obj in objects:
-        category = type(obj).__name__
-        if category not in objects_categorized.keys():
-            objects_categorized[category] = [obj]
+def ask_to_override_model(path: Path):
+    question = f"There is already a model saved at '{path.as_posix()}'. Override? (y/n)"
+    if user_agrees_to(question):
+        remove_folder(path)
+    else:
+        print("No files changed. Shutting down program.")
+        quit()
+
+
+def user_agrees_to(question):
+    """Makes a yes/no query to the user. Returns True if user answered yes, False if no, and repeats if
+    the user's question was invalid."""
+    # let window flash in Windows
+    ctypes.windll.user32.FlashWindow(ctypes.windll.kernel32.GetConsoleWindow(), True)
+
+    # ask question to user and handle answer
+    while True:
+        ans = input(question + "\n")
+        if ans == "y":
+            return True
+        elif ans == "n":
+            return False
         else:
-            objects_categorized[category].append(obj)
-    return objects_categorized
+            print("Invalid answer. Please type 'y' for 'Yes' or type 'n' for 'No.'")
+
+
+def remove_folder(path):
+    shutil.rmtree(path)
 
 
 def get_category_counts(objects_categorized: dict[str, Sequence[GameObject]]):
