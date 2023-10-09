@@ -45,3 +45,4 @@ evaluation:
   deterministic: True
   render: False
   early_stop: 1000
+  n_episodes: 4
