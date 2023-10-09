@@ -1,5 +1,6 @@
 from typing import SupportsFloat, Any
 from enum import Enum
+from queue import Queue
 
 import pygame
 import numpy as np
@@ -7,7 +8,7 @@ from numpy.random import randint
 from gymnasium import Env
 from gymnasium.core import RenderFrame, ActType, ObsType
 
-from utils.render import draw_arrow
+from utils.render import draw_arrow, draw_label
 
 MARGIN = 50
 FIELD_SIZE = 40
@@ -195,14 +196,97 @@ class MeetingRoom(Env):
         return dict()
 
     def step(self, action: ActType) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
+        previous_pos = self.current_pos.copy()
         self._act(Action(action))
         target_reached = np.all(self.current_pos == self.target)
         obs = self._get_observation()
-        reward = 1 if target_reached and not self.terminated else 0
+        reward = self._get_reward(previous_pos)  # 1 if target_reached and not self.terminated else 0
         self.terminated |= target_reached
         truncated = False
         info = self._get_info()
         return obs, reward, self.terminated, truncated, info
+
+    def _get_reward(self, previous_pos):
+        """Compares previous position with current position and gives a reward
+        according to the change of the distance to the target."""
+        previous_distance = self._distance(previous_pos, self.target)
+        current_distance = self._distance(self.current_pos, self.target)
+        return (previous_distance - current_distance) / 2
+
+    def _distance(self, pos1, pos2) -> float:
+        """Returns the number of steps it needs at least to get from pos1 to pos2."""
+        if np.all(pos1 == pos2):
+            return 0
+
+        b1, f1, x1, y1 = pos1
+        b2, f2, x2, y2 = pos2
+
+        if b1 == b2:
+            return self._same_building_distance(pos1, pos2)
+        else:
+            entrance1 = self.map[b1]["entrance"]
+            distance_entrance = self._same_building_distance(pos1, (b1, 0, *entrance1))
+            building_diff = abs(b2 - b1)
+            entrance2 = self.map[b2]["entrance"]
+            distance_target = self._same_building_distance((b2, 0, *entrance2), pos2)
+            return distance_entrance + building_diff + distance_target
+
+    def _floor_distance(self, pos1, pos2, floor_map) -> float:
+        """Applies Dijkstra to compute the distance (min #steps) from pos1 to pos2 that lie
+        on the same floor, given a specific floor map."""
+        x1, y1 = pos1
+        x2, y2 = pos2
+
+        assert not floor_map[x1, y1] and not floor_map[x2, y2]
+
+        if x1 == x2 and y1 == y2:
+            return 0
+
+        distance_map = np.zeros(floor_map.shape, dtype=float) - 1
+        distance_map[x1, y1] = 0.0
+        queue = Queue()
+        queue.put((x1, y1))
+        while not queue.empty():
+            x, y = queue.get()
+            d = distance_map[x, y]
+            neighbors = self._get_neighboring_empty_fields(x, y, floor_map)
+            for (n_x, n_y) in neighbors:
+                if n_x == x2 and n_y == y2:
+                    return d + 1
+                elif distance_map[n_x, n_y] == -1:
+                    distance_map[n_x, n_y] = d + 1
+                    queue.put((n_x, n_y))
+
+        # for x in range(distance_map.shape[0]):
+        #     for y in range(distance_map.shape[1]):
+        #         d = distance_map[x, y]
+        #         if d != -1:
+        #             label_x = MARGIN + BORDER_WIDTH + x * (FIELD_SIZE + BORDER_WIDTH)
+        #             label_y = MARGIN + BORDER_WIDTH + y * (FIELD_SIZE + BORDER_WIDTH)
+        #             draw_label(self.window, str(int(d)), (label_x, label_y), pygame.font.SysFont('Calibri', 16))
+
+        return -1.0
+
+    def _same_building_distance(self, pos1, pos2) -> float:
+        b1, f1, x1, y1 = pos1
+        b2, f2, x2, y2 = pos2
+        if f1 == f2:
+            return self._floor_distance((x1, y1), (x2, y2), self.map[b1][f1])
+        else:
+            elevator = self.map[b1]["elevator"]
+            d_to_elevator = self._floor_distance((x1, y1), elevator, self.map[b1][f1])
+            floor_diff = abs(f2 - f1)
+            d_to_target = self._floor_distance(elevator, (x2, y2), self.map[b1][f2])
+            return d_to_elevator + floor_diff + d_to_target
+
+    def _get_neighboring_empty_fields(self, x, y, floor_map):
+        neighbors = []
+        position = np.array([x, y])
+        for d in direction.values():
+            neighbor = position + d
+            if np.all(0 <= neighbor) and np.all(neighbor < self.floor_shape) and not floor_map[neighbor[0], neighbor[1]]:
+                neighbors.append(neighbor)
+        return neighbors
 
     def _act(self, action: Action):
         b, f, x, y = self.current_pos

@@ -88,3 +88,25 @@ def draw_arrow(surface: pygame.Surface, start_pos: (float, float), end_pos: (flo
 
     pygame.draw.line(surface, start_pos=left_tip_end, end_pos=end_pos, **kwargs)
     pygame.draw.line(surface, start_pos=right_tip_end, end_pos=end_pos, **kwargs)
+
+
+def draw_label(surface: pygame.Surface, text: str, position: (int, int), font: pygame.font.SysFont):
+    """Renders a framed label text to a pygame surface."""
+    text = font.render(text, True, (255, 255, 255), None)
+    text_rect = text.get_rect()
+
+    frame_rect = text_rect.copy()
+    frame_rect.topleft = position
+    frame_rect.w += 5
+    frame_rect.h += 6
+
+    frame_surface = pygame.Surface((frame_rect.w, frame_rect.h))
+    frame_surface.set_alpha(80)  # make transparent
+
+    # Draw label background
+    frame_surface.fill((0, 0, 0))
+    surface.blit(frame_surface, position)
+
+    # Draw text
+    text_rect.topleft = position[0] + 3, position[1] + 3
+    surface.blit(text, text_rect)

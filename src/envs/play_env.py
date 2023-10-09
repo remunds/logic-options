@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
         if action is not None:
             _, reward, _, _, _, = env.step(action)
-            if float(reward) > 0:
+            if float(reward) != 0:
                 print(f"Reward {reward}")
 
         env.render()
