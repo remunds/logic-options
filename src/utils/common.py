@@ -125,3 +125,16 @@ def get_net_from_layer_dims(layers_dims: list[int],
 
 def get_option_name(level: int, index: int) -> str:
     return f"option_{level}_{index}"
+
+
+def get_most_recent_checkpoint_steps(checkpoint_dir: str | Path) -> int | None:
+    checkpoints = os.listdir(checkpoint_dir)
+    highest_steps = 0
+    pattern = re.compile("[0-9]+")
+    for i, c in enumerate(checkpoints):
+        match = pattern.search(c)
+        if match is not None:
+            steps = int(match.group())
+            if steps > highest_steps:
+                highest_steps = steps
+    return highest_steps

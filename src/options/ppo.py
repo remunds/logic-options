@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Union
+from pathlib import Path
 
 import numpy as np
 import torch as th
@@ -14,7 +15,7 @@ from torch.nn import functional as F
 
 from options.global_policy import GlobalOptionsPolicy
 from options.rollout_buffer import OptionsRolloutBuffer
-from utils.common import get_option_name, num2text
+from utils.common import get_option_name, num2text, get_most_recent_checkpoint_steps
 from envs.common import get_atari_identifier, init_vec_env
 
 
@@ -480,19 +481,35 @@ def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.T
 MODELS_BASE_PATH = "out/"
 
 
-def load_agent(name: str,
-               env_name: str,
+def load_agent(name: str = None,
+               env_name: str = None,
+               model_dir: str | Path = None,
+               best_model: bool = True,
                n_envs: int = 1,
                reward_mode: str = None,
                render_mode: str = None,
-               render_oc_overlay: bool = False):
-    env_identifier = get_atari_identifier(env_name)
+               render_oc_overlay: bool = False,
+               train: bool = False,
+               verbose: int = 1):
+    assert name is not None and env_name is not None or model_dir is not None
 
-    model_dir = f"{MODELS_BASE_PATH}{env_identifier}/{name}/"
+    if model_dir is None:
+        env_identifier = get_atari_identifier(env_name)
+        model_dir = Path(MODELS_BASE_PATH, env_identifier, name)
 
-    config_path = model_dir + "config.yaml"
-    model_path = model_dir + "checkpoints/best_model.zip"
-    vec_norm_path = model_dir + "checkpoints/best_vecnormalize.pkl"
+    checkpoint_dir = model_dir / "checkpoints"
+    if best_model:
+        checkpoint_path = checkpoint_dir / "best_model.zip"
+        vec_norm_path = model_dir / "checkpoints/best_vecnormalize.pkl"
+    else:
+        done_steps = get_most_recent_checkpoint_steps(checkpoint_dir)
+        if done_steps is None:
+            raise RuntimeError(f"No checkpoints found in '{checkpoint_dir.as_posix()}'.")
+        checkpoint_path = checkpoint_dir / f"model_{done_steps}_steps.zip"
+        vec_norm_path = checkpoint_dir / f"model_vecnormalize_{done_steps}_steps.pkl"
+        print(f"Found most recent checkpoint '{checkpoint_path}'.")
+
+    config_path = model_dir / "config.yaml"
 
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.Loader)
@@ -505,13 +522,14 @@ def load_agent(name: str,
                        vec_norm_path=vec_norm_path,
                        **config["environment"],
                        render_mode=render_mode,
-                       render_oc_overlay=render_oc_overlay)
+                       render_oc_overlay=render_oc_overlay,
+                       train=train)
 
     device = "cuda" if config["cuda"] else "cpu"
 
-    model = OptionsPPO.load(model_path,
+    model = OptionsPPO.load(checkpoint_path,
                             env=env,
-                            verbose=1,
+                            verbose=verbose,
                             render_mode=render_mode,
                             device=device)
 

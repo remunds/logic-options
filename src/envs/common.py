@@ -63,13 +63,13 @@ def init_train_eval_envs(n_train_envs: int,
     train_env = init_vec_env(n_envs=n_train_envs,
                              seed=seed,
                              train=True,
-                             reward_mode=REWARD_MODE[reward_mode],
+                             reward_mode=reward_mode,
                              **kwargs)
     eval_render_mode = "human" if render_eval else None
     eval_env = init_vec_env(n_envs=n_eval_envs,
                             seed=eval_seed,
                             train=False,
-                            reward_mode=0,
+                            reward_mode="env",
                             render_mode=eval_render_mode,
                             **kwargs)
     return train_env, eval_env
@@ -79,7 +79,7 @@ def init_vec_env(name: str,
                  n_envs: int,
                  seed: int,
                  object_centric: bool,
-                 reward_mode: int,
+                 reward_mode: str,
                  prune_concept: str = None,
                  exclude_properties: bool = None,
                  frameskip: int = 4,
@@ -90,8 +90,13 @@ def init_vec_env(name: str,
                  train: bool = False,
                  freeze_invisible_obj: bool = False,
                  render_mode: str = None,
-                 render_oc_overlay: bool = False) -> VecEnv:
+                 render_oc_overlay: bool = False) -> VecEnv | None:
     """Helper function to initialize a vector environment with specified parameters."""
+
+    if n_envs == 0:
+        return None
+
+    reward_mode = REWARD_MODE[reward_mode]
 
     if object_centric:
         if prune_concept == "unpruned":
@@ -103,7 +108,7 @@ def init_vec_env(name: str,
         else:
             raise ValueError(f"Unknown prune concept '{prune_concept}'.")
 
-        # Verify compatibility with Gymnasium
+        # Verify compatibility with Gymnasium and refresh focus YAML file
         monitor = make_scobi_env(name=name,
                                  focus_dir=focus_dir,
                                  pruned_ff_name=pruned_ff_name,
