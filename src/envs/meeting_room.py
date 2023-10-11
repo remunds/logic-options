@@ -10,8 +10,7 @@ from gymnasium.core import RenderFrame, ActType, ObsType
 
 from utils.render import draw_arrow
 
-
-MAX_EPISODE_LEN = 1000
+PLAYER_VIEW_SIZE = 7  # odd number
 
 MARGIN = 50
 FIELD_SIZE = 40
@@ -21,6 +20,8 @@ BORDER_WIDTH = 2
 
 PLAYER_COLOR = "#FF9911"
 TARGET_COLOR = "#11FF99"
+ENTRANCE_COLOR = "#11AAFF"
+ELEVATOR_COLOR = ENTRANCE_COLOR
 
 
 class Action(Enum):
@@ -28,9 +29,8 @@ class Action(Enum):
     EAST = 1
     SOUTH = 2
     WEST = 3
-    UP = 4
-    DOWN = 5
-    ENTER = 6
+    NEXT = 4  # next level or building
+    PREV = 5  # previous level or building
 
 
 direction = {
@@ -53,14 +53,20 @@ class MeetingRoom(Env):
     action_space = spaces.Discrete(len(Action))
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': 4
+        'video.frames_per_second': 10
     }
 
     map: dict[int, dict[str | int, Any]]
     current_pos: np.array
+    previous_pos: np.array
     target: np.array
 
-    def __init__(self, n_buildings=4, n_floors=4, floor_shape=None, render_mode: str = "human"):
+    def __init__(self,
+                 n_buildings: int = 4,
+                 n_floors: int = 4,
+                 floor_shape: [int, int] = None,
+                 max_steps: int = 1000,
+                 render_mode: str = "human"):
         if floor_shape is None:
             floor_shape = np.array([11, 11], dtype=int)
         else:
@@ -76,16 +82,18 @@ class MeetingRoom(Env):
         #         "inside_building": spaces.Box(0, 1, shape=(1,), dtype=np.int32),
         #     }
         # )
-        self.observation_space = spaces.Box(0, 255, shape=(13 + np.prod(floor_shape),), dtype=np.int32)
+        self.observation_space = spaces.Box(0, 255, shape=(12 + PLAYER_VIEW_SIZE**2,), dtype=np.int32)
 
         self.render_mode = render_mode
         self.n_buildings = n_buildings
         self.n_floors = n_floors
         assert np.all(floor_shape[0] >= 5)
         self.floor_shape = floor_shape
-        self.inside_building = True
         self.terminated = False
         self.n_steps = 0
+        self.max_steps = max_steps
+        self._current_distance_to_target = -1
+        self._previous_distance_to_target = -1
         if self.render_mode == "human":
             self._init_pygame()
 
@@ -182,12 +190,16 @@ class MeetingRoom(Env):
     ) -> tuple[ObsType, dict[str, Any]]:
         self._generate_map()
         self.current_pos = self._pick_random_position()
-        self.target = self.current_pos.copy()
-        while np.all(self.target == self.current_pos):
-            self.target = self._pick_random_position()
-        self.inside_building = True
+        self.previous_pos = None
+        target = self._pick_random_position()
+        while np.all(target == self.current_pos):
+            target = self._pick_random_position()
+        self.target = target
+        self.update_current_distance_to_target()
         self.terminated = False
-
+        self.n_steps = 0
+        if self.render_mode == "human":
+            self.render()
         return self._get_observation(), self._get_info()
 
     def _pick_random_position(self):
@@ -197,7 +209,7 @@ class MeetingRoom(Env):
         # Find valid position on floor, not occupied by a wall
         floor_map = self.map[b][f]
         while True:
-            x, y = randint(1, self.floor_shape - 1, size=2)
+            x, y = randint(1, self.floor_shape - 2, size=2)
             if not floor_map[x, y]:  # empty spot
                 break
 
@@ -212,33 +224,59 @@ class MeetingRoom(Env):
         #     "entrance": self._get_current_entrance(),
         #     "inside_building": 1 if self.inside_building else 0,
         # }
-        floor_map = self._get_current_floor_map().flatten()
         elevator = self._get_current_elevator()
         entrance = self._get_current_entrance()
-        inside_building = 1 if self.inside_building else 0
-        return np.hstack([self.current_pos, floor_map, self.target, elevator, entrance, inside_building])
+        player_view = self._get_player_view().flatten()
+        return np.hstack([self.current_pos, self.target, elevator, entrance, player_view])
+
+    def _get_player_view(self):
+        floor_map = self._get_current_floor_map()
+        x, y = self.current_pos[2:4]
+        view_distance = PLAYER_VIEW_SIZE // 2
+        view = floor_map[
+               max(x - view_distance, 0):x + view_distance + 1,
+               max(y - view_distance, 0):y + view_distance + 1
+               ]
+        padded_view = np.ones((PLAYER_VIEW_SIZE, PLAYER_VIEW_SIZE))
+        x_p = max(view_distance - x, 0)
+        y_p = max(view_distance - y, 0)
+        padded_view[x_p: x_p + view.shape[0], y_p: y_p + view.shape[1]] = view
+        return padded_view
 
     def _get_info(self):
         return dict()
 
     def step(self, action: ActType) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
-        previous_pos = self.current_pos.copy()
         self._act(Action(action))
         target_reached = np.all(self.current_pos == self.target)
         obs = self._get_observation()
-        reward = self._get_reward(previous_pos)  # 1 if target_reached and not self.terminated else 0
-        truncated = self.n_steps >= 1000
+        reward = self._get_reward(target_reached)
+        truncated = self.n_steps >= self.max_steps
         self.terminated |= target_reached | truncated
         info = self._get_info()
         self.n_steps += 1
         return obs, reward, self.terminated, truncated, info
 
-    def _get_reward(self, previous_pos):
+    @property
+    def current_distance_to_target(self):
+        return self._current_distance_to_target
+
+    @property
+    def previous_distance_to_target(self):
+        return self._previous_distance_to_target
+
+    def update_current_distance_to_target(self):
+        self._previous_distance_to_target = self._current_distance_to_target
+        self._current_distance_to_target = self._distance(self.current_pos, self.target)
+
+    def _get_reward(self, target_reached: bool):
         """Compares previous position with current position and gives a reward
         according to the change of the distance to the target."""
-        previous_distance = self._distance(previous_pos, self.target)
-        current_distance = self._distance(self.current_pos, self.target)
-        return (previous_distance - current_distance) / 2
+        target_bonus = 100 if target_reached else 0
+        distance_diff = self.previous_distance_to_target - self.current_distance_to_target
+        if distance_diff < 0:
+            distance_diff *= 2
+        return distance_diff / 2 + target_bonus
 
     def _distance(self, pos1, pos2) -> float:
         """Returns the number of steps it needs at least to get from pos1 to pos2."""
@@ -311,49 +349,48 @@ class MeetingRoom(Env):
         position = np.array([x, y])
         for d in direction.values():
             neighbor = position + d
-            if np.all(0 <= neighbor) and np.all(neighbor < self.floor_shape) and not floor_map[neighbor[0], neighbor[1]]:
+            if np.all(0 <= neighbor) and np.all(neighbor < self.floor_shape) and not floor_map[
+                neighbor[0], neighbor[1]]:
                 neighbors.append(neighbor)
         return neighbors
 
     def _act(self, action: Action):
+        self.previous_pos = self.current_pos.copy()
         b, f, x, y = self.current_pos
-        elevator = self.map[b]["elevator"]
-        entrance = self.map[b]["entrance"]
+        elevator = self._get_current_elevator()
+        entrance = self._get_current_entrance()
 
-        if not self.inside_building:
-            if action in [Action.EAST, Action.WEST]:
-                if action == Action.EAST and b < self.n_buildings - 1:
-                    self.current_pos[0] += 1
-                elif action == Action.WEST and b > 0:
-                    self.current_pos[0] -= 1
-                entrance = self._get_current_entrance()
-                self.current_pos[2:4] = entrance
-                return
-
-        elif action in [Action.NORTH, Action.EAST, Action.SOUTH, Action.WEST]:
+        if action in [Action.NORTH, Action.EAST, Action.SOUTH, Action.WEST]:
             next_pos = None
             match action:
-                case Action.NORTH: next_pos = self.current_pos[2:4] + direction["north"]
-                case Action.EAST: next_pos = self.current_pos[2:4] + direction["east"]
-                case Action.SOUTH: next_pos = self.current_pos[2:4] + direction["south"]
-                case Action.WEST: next_pos = self.current_pos[2:4] + direction["west"]
+                case Action.NORTH:
+                    next_pos = self.current_pos[2:4] + direction["north"]
+                case Action.EAST:
+                    next_pos = self.current_pos[2:4] + direction["east"]
+                case Action.SOUTH:
+                    next_pos = self.current_pos[2:4] + direction["south"]
+                case Action.WEST:
+                    next_pos = self.current_pos[2:4] + direction["west"]
 
             if self._is_valid_next_step(*next_pos):
                 self.current_pos[2:4] = next_pos
-            return
 
-        match action:
-            case Action.UP:
-                if np.all(self.current_pos[2:4] == elevator) and f < self.n_floors - 1:
+        elif action in [Action.NEXT, Action.PREV]:
+            if np.all(self.current_pos[2:4] == elevator):
+                if action == Action.NEXT and f < self.n_floors - 1:
                     self.current_pos[1] += 1
-
-            case Action.DOWN:
-                if np.all(self.current_pos[2:4] == elevator) and f > 0:
+                elif action == Action.PREV and f > 0:
                     self.current_pos[1] -= 1
 
-            case Action.ENTER:
-                if np.all(self.current_pos[2:4] == entrance) and f == 0:
-                    self.inside_building = not self.inside_building
+            elif np.all(self.current_pos[2:4] == entrance) and f == 0:
+                if action == Action.NEXT and b < self.n_buildings - 1:
+                    self.current_pos[0] += 1
+                elif action == Action.PREV and b > 0:
+                    self.current_pos[0] -= 1
+                entrance = self._get_current_entrance()
+                self.current_pos[2:4] = entrance
+
+        self.update_current_distance_to_target()
 
     def _is_valid_next_step(self, x, y):
         floor_map = self._get_current_floor_map()
@@ -382,9 +419,9 @@ class MeetingRoom(Env):
         self._render_frame()
         if self.render_mode == "rgb_array":
             return pygame.surfarray.array3d(self.window)
-        else:
-            self.clock.tick(self.metadata["video.frames_per_second"])
+        elif self.previous_pos is None or not np.all(self.current_pos == self.previous_pos):
             self._display_frame()
+            self.clock.tick(self.metadata["video.frames_per_second"])
 
     def _render_frame(self):
         self.window.fill((255, 255, 255))  # clear the entire window
@@ -411,12 +448,12 @@ class MeetingRoom(Env):
                     self._render_field(x, y, color="white")
                 else:  # wall
                     self._render_field(x, y, color="#555555")
-                if np.all((b, f, x, y) == self.target) and not self.terminated:  # target
-                    self._render_target(x, y)
                 if np.all((x, y) == entrance) and f == 0:  # entrance
                     self._render_entrance(x, y)
                 if np.all((x, y) == elevator):  # elevator
                     self._render_elevator(x, y)
+                if np.all((b, f, x, y) == self.target) and not self.terminated:  # target
+                    self._render_target(x, y)
                 if np.all((x, y) == self.current_pos[2:4]):  # player
                     self._render_player(x, y)
 
@@ -442,23 +479,25 @@ class MeetingRoom(Env):
             pygame.draw.polygon(self.window, TARGET_COLOR, polygon)
 
     def _render_elevator(self, x_coord, y_coord):
+        self._render_field(x_coord, y_coord, color=ELEVATOR_COLOR)
         center = np.asarray(self._get_field_center(x_coord, y_coord))
-        shape = np.array([[-0.45, -0.1],
-                          [0, -0.45],
-                          [0.45, -0.1]]) * FIELD_SIZE
+        shape = np.array([[-0.3, -0.1],
+                          [0, -0.4],
+                          [0.3, -0.1]]) * FIELD_SIZE
         up = center + shape
         down = center + shape * np.asarray([1, -1])
-        pygame.draw.polygon(self.window, "#FF2211", up)
-        pygame.draw.polygon(self.window, "#FF2211", down)
+        pygame.draw.polygon(self.window, "white", up)
+        pygame.draw.polygon(self.window, "white", down)
 
     def _render_entrance(self, x_coord, y_coord):
+        self._render_field(x_coord, y_coord, color=ENTRANCE_COLOR)
         center = np.asarray(self._get_field_center(x_coord, y_coord))
-        dir = self._get_center_direction(x_coord, y_coord) * 0.3 * FIELD_SIZE
+        dir = self._get_center_direction(x_coord, y_coord) * 0.25 * FIELD_SIZE
         draw_arrow(self.window,
                    start_pos=center - dir,
                    end_pos=center + dir,
-                   tip_width=int(0.4*FIELD_SIZE),
-                   color="#11AAFF",
+                   tip_width=int(0.4 * FIELD_SIZE),
+                   color="white",
                    width=int(0.15 * FIELD_SIZE))
 
     def _render_buildings(self):
@@ -485,7 +524,7 @@ class MeetingRoom(Env):
                 else:
                     floor_color = "#FFFFFF"
                 pygame.draw.rect(self.window, floor_color, [x + BORDER_WIDTH, y + BORDER_WIDTH,
-                                                          w - 2 * BORDER_WIDTH, h - 2 * BORDER_WIDTH])
+                                                            w - 2 * BORDER_WIDTH, h - 2 * BORDER_WIDTH])
 
     def _get_center_direction(self, x, y):
         width, height = self.floor_shape
@@ -526,9 +565,8 @@ class MeetingRoom(Env):
             (pygame.K_d,): 1,  # east
             (pygame.K_s,): 2,  # south
             (pygame.K_a,): 3,  # west
-            (pygame.K_PLUS,): 4,  # up
-            (pygame.K_MINUS,): 5,  # down
-            (pygame.K_SPACE,): 6,  # enter
+            (pygame.K_PLUS,): 4,  # next
+            (pygame.K_MINUS,): 5,  # prev
         }
 
 
