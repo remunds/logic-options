@@ -94,7 +94,8 @@ def run(name: str = None,
 
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")
-    os.remove(config_path)
+    if name != "debug":
+        os.remove(config_path)
     if object_centric:
         prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
         shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")

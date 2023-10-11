@@ -99,11 +99,16 @@ def init_vec_env(name: str,
                  train: bool = False,
                  freeze_invisible_obj: bool = False,
                  render_mode: str = None,
-                 render_oc_overlay: bool = False) -> VecEnv | None:
+                 render_oc_overlay: bool = False,
+                 settings: dict = None) -> VecEnv | None:
     """Helper function to initialize a vector environment with specified parameters."""
 
     if n_envs == 0:
         return None
+
+    if settings is None:
+        settings = dict()
+    settings["render_mode"] = render_mode
 
     reward_mode = REWARD_MODE[reward_mode]
 
@@ -117,11 +122,11 @@ def init_vec_env(name: str,
         vec_env = make_vec_env(MeetingRoom,
                                n_envs=n_envs,
                                seed=seed,
-                               env_kwargs={"render_mode": render_mode},
+                               env_kwargs=settings,
                                vec_env_cls=vec_env_cls,
                                vec_env_kwargs=vec_env_kwargs,
                                wrapper_kwargs={"frame_skip": frameskip})
-        env = VecFrameStack(vec_env, n_stack=framestack)
+        vec_env = VecFrameStack(vec_env, n_stack=framestack)
 
     elif object_centric:
         if prune_concept == "unpruned":
@@ -161,16 +166,6 @@ def init_vec_env(name: str,
         else:
             vec_env = DummyVecEnv(envs)
 
-        # Wrap with (either existing or new) VecNormalize to normalize obs and/or reward
-        if vec_norm_path is not None:
-            env = VecNormalize.load(vec_norm_path, vec_env)
-            env.training = train
-        else:
-            env = VecNormalize(vec_env,
-                               norm_obs=normalize_observation,
-                               norm_reward=normalize_reward,
-                               training=train)
-
     else:
         if n_envs > 1:
             vec_env_cls = SubprocVecEnv
@@ -181,11 +176,21 @@ def init_vec_env(name: str,
         vec_env = make_atari_env(name,
                                  n_envs=n_envs,
                                  seed=seed,
-                                 env_kwargs={"render_mode": render_mode},
+                                 env_kwargs=settings,
                                  vec_env_cls=vec_env_cls,
                                  vec_env_kwargs=vec_env_kwargs,
                                  wrapper_kwargs={"frame_skip": frameskip})
-        env = VecFrameStack(vec_env, n_stack=framestack)
+        vec_env = VecFrameStack(vec_env, n_stack=framestack)
+
+    # Wrap with (either existing or new) VecNormalize to normalize obs and/or reward
+    if vec_norm_path is not None:
+        env = VecNormalize.load(vec_norm_path, vec_env)
+        env.training = train
+    else:
+        env = VecNormalize(vec_env,
+                           norm_obs=normalize_observation,
+                           norm_reward=normalize_reward,
+                           training=train)
 
     return env
 
