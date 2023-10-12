@@ -124,8 +124,7 @@ def init_vec_env(name: str,
                                seed=seed,
                                env_kwargs=settings,
                                vec_env_cls=vec_env_cls,
-                               vec_env_kwargs=vec_env_kwargs,
-                               wrapper_kwargs={"frame_skip": frameskip})
+                               vec_env_kwargs=vec_env_kwargs)
         vec_env = VecFrameStack(vec_env, n_stack=framestack)
 
     elif object_centric:

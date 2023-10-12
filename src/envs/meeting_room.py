@@ -10,7 +10,7 @@ from gymnasium.core import RenderFrame, ActType, ObsType
 
 from utils.render import draw_arrow
 
-PLAYER_VIEW_SIZE = 7  # odd number
+PLAYER_VIEW_SIZE = 9  # odd number
 
 MARGIN = 50
 FIELD_SIZE = 40
@@ -48,6 +48,8 @@ class MeetingRoom(Env):
     :param n_floors:
     :param floor_shape: (width, height)
     :param render_mode:
+    :param walls_fixed: if True, wall positions/floor maps remain the same over different
+        episodes AND the walls are the same on all floors of a building
     """
 
     action_space = spaces.Discrete(len(Action))
@@ -66,34 +68,31 @@ class MeetingRoom(Env):
                  n_floors: int = 4,
                  floor_shape: [int, int] = None,
                  max_steps: int = 1000,
-                 render_mode: str = "human"):
+                 render_mode: str = "human",
+                 walls_fixed: bool = False):
         if floor_shape is None:
             floor_shape = np.array([11, 11], dtype=int)
         else:
             floor_shape = np.asarray(floor_shape)
-
-        # self.observation_space = spaces.Dict(
-        #     {
-        #         "current_pos": spaces.Box(0, 255, shape=(4,), dtype=np.int32),
-        #         "floor_map": spaces.Box(0, 1, shape=floor_shape, dtype=np.int32),
-        #         "target": spaces.Box(0, 255, shape=(4,), dtype=np.int32),
-        #         "elevator": spaces.Box(0, 255, shape=(2,), dtype=np.int32),
-        #         "entrance": spaces.Box(0, 255, shape=(2,), dtype=np.int32),
-        #         "inside_building": spaces.Box(0, 1, shape=(1,), dtype=np.int32),
-        #     }
-        # )
-        self.observation_space = spaces.Box(0, 255, shape=(12 + PLAYER_VIEW_SIZE**2,), dtype=np.int32)
 
         self.render_mode = render_mode
         self.n_buildings = n_buildings
         self.n_floors = n_floors
         assert np.all(floor_shape[0] >= 5)
         self.floor_shape = floor_shape
+        self.walls_fixed = walls_fixed
+
+        obs_len = 9 if self.walls_fixed else 9 + PLAYER_VIEW_SIZE ** 2
+        self.observation_space = spaces.Box(0, np.max(floor_shape), shape=(obs_len,), dtype=np.int32)
+
+        self.map_generated = False
         self.terminated = False
         self.n_steps = 0
         self.max_steps = max_steps
+
         self._current_distance_to_target = -1
         self._previous_distance_to_target = -1
+
         if self.render_mode == "human":
             self._init_pygame()
 
@@ -104,8 +103,14 @@ class MeetingRoom(Env):
             entrance_position = self._generate_entrance_position()
             self.map[b] = {"elevator": elevator_position,
                            "entrance": entrance_position}
+
+            floor_base_map = self._generate_floor_map()
+
             for f in range(self.n_floors):
-                floor_map = self._generate_floor_map()
+                if self.walls_fixed:
+                    floor_map = floor_base_map.copy()
+                else:
+                    floor_map = self._generate_floor_map()
 
                 # Remove walls in special cases
                 if f == 0:
@@ -113,6 +118,7 @@ class MeetingRoom(Env):
                     floor_map[entrance_x, entrance_y] = 0
                     c_dir = self._get_center_direction(*entrance_position)
                     floor_map[entrance_x + c_dir[0], entrance_y + c_dir[1]] = 0
+
                 elevator_x, elevator_y = elevator_position
                 floor_map[elevator_x, elevator_y] = 0
                 if self._surrounded_by_walls(*elevator_position, floor_map):
@@ -188,7 +194,9 @@ class MeetingRoom(Env):
             seed: int | None = None,
             options: dict[str, Any] | None = None,
     ) -> tuple[ObsType, dict[str, Any]]:
-        self._generate_map()
+        if not self.map_generated or not self.walls_fixed:
+            self._generate_map()
+            self.map_generated = True
         self.current_pos = self._pick_random_position()
         self.previous_pos = None
         target = self._pick_random_position()
@@ -224,10 +232,15 @@ class MeetingRoom(Env):
         #     "entrance": self._get_current_entrance(),
         #     "inside_building": 1 if self.inside_building else 0,
         # }
-        elevator = self._get_current_elevator()
-        entrance = self._get_current_entrance()
-        player_view = self._get_player_view().flatten()
-        return np.hstack([self.current_pos, self.target, elevator, entrance, player_view])
+        obs = [
+            self.target - self.current_pos,
+            self._get_current_elevator() - self.current_pos[2:4],
+            self._get_current_entrance() - self.current_pos[2:4],
+            self.current_pos[1],
+        ]
+        if not self.walls_fixed:
+            obs.append(self._get_player_view().flatten())
+        return np.hstack(obs)
 
     def _get_player_view(self):
         floor_map = self._get_current_floor_map()
@@ -271,12 +284,16 @@ class MeetingRoom(Env):
 
     def _get_reward(self, target_reached: bool):
         """Compares previous position with current position and gives a reward
-        according to the change of the distance to the target."""
+        according to the change of the distance to the target. Penalizes non-movement."""
         target_bonus = 100 if target_reached else 0
         distance_diff = self.previous_distance_to_target - self.current_distance_to_target
         if distance_diff < 0:
             distance_diff *= 2
-        return distance_diff / 2 + target_bonus
+        if self.previous_pos is not None and np.all(self.previous_pos == self.current_pos):
+            rest_penalty = -1
+        else:
+            rest_penalty = 0
+        return distance_diff / 2 + rest_penalty
 
     def _distance(self, pos1, pos2) -> float:
         """Returns the number of steps it needs at least to get from pos1 to pos2."""

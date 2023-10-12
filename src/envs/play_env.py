@@ -3,7 +3,7 @@ from meeting_room import MeetingRoom
 
 
 if __name__ == "__main__":
-    env = MeetingRoom(render_mode="human")
+    env = MeetingRoom(render_mode="human", walls_fixed=True)
     env.metadata['video.frames_per_second'] = 60
     env.reset()
     keys2actions = env.get_keys_to_action()
