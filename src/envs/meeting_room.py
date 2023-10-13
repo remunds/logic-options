@@ -1,4 +1,4 @@
-from typing import SupportsFloat, Any
+from typing import SupportsFloat, Any, Dict, Tuple
 from enum import Enum
 from queue import Queue
 
@@ -10,7 +10,7 @@ from gymnasium.core import RenderFrame, ActType, ObsType
 
 from utils.render import draw_arrow
 
-PLAYER_VIEW_SIZE = 9  # odd number
+PLAYER_VIEW_SIZE = 7  # odd number
 
 MARGIN = 50
 FIELD_SIZE = 40
@@ -58,7 +58,7 @@ class MeetingRoom(Env):
         'video.frames_per_second': 10
     }
 
-    map: dict[int, dict[str | int, Any]]
+    map: Dict[int, Dict[Any, Any]]
     current_pos: np.array
     previous_pos: np.array
     target: np.array
@@ -92,7 +92,13 @@ class MeetingRoom(Env):
 
         self._current_distance_to_target = -1
         self._previous_distance_to_target = -1
+        self._best_distance_to_target = -1
+        self._previous_best_distance_to_target = -1
 
+        # Setup rendering
+        self.window_shape = self.floor_shape * (FIELD_SIZE + BORDER_WIDTH) + 2 * BORDER_WIDTH + 2 * MARGIN
+        self.window_shape[1] += self.n_floors * FLOOR_HEIGHT + MARGIN
+        self.window = pygame.display.set_mode(self.window_shape)
         if self.render_mode == "human":
             self._init_pygame()
 
@@ -177,23 +183,22 @@ class MeetingRoom(Env):
         pos_in_wall = randint(1, wall_length - 1)
 
         # Return final entrance door position
-        match side:
-            case 0:
-                x, y = 0, pos_in_wall
-            case 1:
-                x, y = pos_in_wall, self.floor_shape[1] - 1
-            case 2:
-                x, y = self.floor_shape[0] - 1, pos_in_wall
-            case _:
-                x, y = pos_in_wall, 0
+        if side == 0:
+            x, y = 0, pos_in_wall
+        elif side == 1:
+            x, y = pos_in_wall, self.floor_shape[1] - 1
+        elif side == 2:
+            x, y = self.floor_shape[0] - 1, pos_in_wall
+        else:
+            x, y = pos_in_wall, 0
         return np.array([x, y], dtype=int)
 
     def reset(
             self,
             *,
-            seed: int | None = None,
-            options: dict[str, Any] | None = None,
-    ) -> tuple[ObsType, dict[str, Any]]:
+            seed: int = None,
+            options: Dict[str, Any] = None,
+    ) -> Tuple[ObsType, Dict[str, Any]]:
         if not self.map_generated or not self.walls_fixed:
             self._generate_map()
             self.map_generated = True
@@ -203,7 +208,10 @@ class MeetingRoom(Env):
         while np.all(target == self.current_pos):
             target = self._pick_random_position()
         self.target = target
+        self._best_distance_to_target = np.inf
         self.update_current_distance_to_target()
+        self._previous_best_distance_to_target = None
+        self._previous_distance_to_target = None
         self.terminated = False
         self.n_steps = 0
         if self.render_mode == "human":
@@ -224,14 +232,6 @@ class MeetingRoom(Env):
         return np.array([b, f, x, y])
 
     def _get_observation(self):
-        # obs = {
-        #     "current_pos": self.current_pos,
-        #     "floor_map": self._get_current_floor_map(),
-        #     "target": self.target,
-        #     "elevator": self._get_current_elevator(),
-        #     "entrance": self._get_current_entrance(),
-        #     "inside_building": 1 if self.inside_building else 0,
-        # }
         obs = [
             self.target - self.current_pos,
             self._get_current_elevator() - self.current_pos[2:4],
@@ -259,7 +259,7 @@ class MeetingRoom(Env):
     def _get_info(self):
         return dict()
 
-    def step(self, action: ActType) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
+    def step(self, action: ActType) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         self._act(Action(action))
         target_reached = np.all(self.current_pos == self.target)
         obs = self._get_observation()
@@ -281,19 +281,28 @@ class MeetingRoom(Env):
     def update_current_distance_to_target(self):
         self._previous_distance_to_target = self._current_distance_to_target
         self._current_distance_to_target = self._distance(self.current_pos, self.target)
+        self._best_distance_to_target = min(self._best_distance_to_target, self.current_distance_to_target)
 
     def _get_reward(self, target_reached: bool):
         """Compares previous position with current position and gives a reward
         according to the change of the distance to the target. Penalizes non-movement."""
-        target_bonus = 100 if target_reached else 0
         distance_diff = self.previous_distance_to_target - self.current_distance_to_target
+        if self.target[0] == self.current_pos[0]:  # player in target building
+            floor_diff = abs(self.target[1] - self.previous_pos[1]) - abs(self.target[1] - self.current_pos[1])
+        else:
+            floor_diff = self.previous_pos[1] - self.current_pos[1]
+        floor_switch_bonus = floor_diff * 2
         if distance_diff < 0:
             distance_diff *= 2
+        distance_reward = distance_diff / 2
+
+        # TODO: Give only reward on best distance improvement
+
         if self.previous_pos is not None and np.all(self.previous_pos == self.current_pos):
             rest_penalty = -1
         else:
             rest_penalty = 0
-        return distance_diff / 2 + rest_penalty
+        return distance_reward + floor_switch_bonus
 
     def _distance(self, pos1, pos2) -> float:
         """Returns the number of steps it needs at least to get from pos1 to pos2."""
@@ -379,14 +388,13 @@ class MeetingRoom(Env):
 
         if action in [Action.NORTH, Action.EAST, Action.SOUTH, Action.WEST]:
             next_pos = None
-            match action:
-                case Action.NORTH:
+            if action == Action.NORTH:
                     next_pos = self.current_pos[2:4] + direction["north"]
-                case Action.EAST:
+            elif action == Action.EAST:
                     next_pos = self.current_pos[2:4] + direction["east"]
-                case Action.SOUTH:
+            elif action == Action.SOUTH:
                     next_pos = self.current_pos[2:4] + direction["south"]
-                case Action.WEST:
+            elif action == Action.WEST:
                     next_pos = self.current_pos[2:4] + direction["west"]
 
             if self._is_valid_next_step(*next_pos):
@@ -427,15 +435,12 @@ class MeetingRoom(Env):
     def _init_pygame(self):
         pygame.init()
         pygame.display.set_caption("Meeting Room")
-        self.window_shape = self.floor_shape * (FIELD_SIZE + BORDER_WIDTH) + 2 * BORDER_WIDTH + 2 * MARGIN
-        self.window_shape[1] += self.n_floors * FLOOR_HEIGHT + MARGIN
-        self.window = pygame.display.set_mode(self.window_shape)
         self.clock = pygame.time.Clock()
 
-    def render(self) -> RenderFrame | list[RenderFrame] | None:
+    def render(self):
         self._render_frame()
         if self.render_mode == "rgb_array":
-            return pygame.surfarray.array3d(self.window)
+            return pygame.surfarray.array3d(self.window).transpose((1, 0, 2))
         elif self.previous_pos is None or not np.all(self.current_pos == self.previous_pos):
             self._display_frame()
             self.clock.tick(self.metadata["video.frames_per_second"])
