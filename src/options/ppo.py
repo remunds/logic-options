@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Union
+from typing import Union, Tuple, List
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +13,7 @@ from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.ppo.ppo import PPO
 from torch.nn import functional as F
 
-from options.global_policy import GlobalOptionsPolicy
+from options.agent import OptionsAgent
 from options.rollout_buffer import OptionsRolloutBuffer
 from utils.common import get_option_name, num2text, get_most_recent_checkpoint_steps
 from envs.common import get_env_identifier, init_vec_env
@@ -21,7 +21,7 @@ from envs.common import get_env_identifier, init_vec_env
 
 class OptionsPPO(PPO):
     """
-    Proximal Policy Optimization algorithm (PPO) with options
+    Proximal Policy Optimization (PPO) algorithm with options
 
     :param options_hierarchy: Number of options
     :param net_arch: The network architecture of each individual option policy,
@@ -34,10 +34,10 @@ class OptionsPPO(PPO):
     """
 
     rollout_buffer: OptionsRolloutBuffer
-    policy: GlobalOptionsPolicy
+    policy: OptionsAgent
 
     def __init__(self, termination_regularizer: float = 0, **kwargs):
-        kwargs["policy"] = GlobalOptionsPolicy
+        kwargs["policy"] = OptionsAgent
         super().__init__(**kwargs)
         self.termination_regularizer = termination_regularizer
 
@@ -136,9 +136,9 @@ class OptionsPPO(PPO):
                         and infos[idx].get("terminal_observation") is not None
                         and infos[idx].get("TimeLimit.truncated", False)
                 ):
-                    terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                    terminal_obs = self.policy.meta_policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                     with th.no_grad():
-                        terminal_value = self.policy.predict_values(terminal_obs)[0]
+                        terminal_value = self.policy.meta_policy.predict_values(terminal_obs)[0]
                     rewards[idx] += self.gamma * terminal_value
 
             with th.no_grad():
@@ -209,7 +209,6 @@ class OptionsPPO(PPO):
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
         # Update optimizer learning rate
-        self._update_learning_rate(self.policy.optimizer)
 
         # Train global policy
         self._train_actor_critic()
@@ -233,9 +232,11 @@ class OptionsPPO(PPO):
         """Trains the actor and critic of the global policy or, if specified, of
         the option."""
         if level is None or option_id is None:
-            policy = self.policy
+            policy = self.policy.meta_policy
         else:
             policy = self.policy.options_hierarchy[level][option_id]
+
+        self._update_learning_rate(policy.optimizer)
 
         clip_range, clip_range_vf = self._get_current_clip_ranges()
 
@@ -462,6 +463,11 @@ class OptionsPPO(PPO):
             optimizers = [optimizers]
         for optimizer in optimizers:
             update_learning_rate(optimizer, self.lr_schedule(self._current_progress_remaining))
+
+    def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
+        state_dicts = ["policy", "policy.meta_policy", "policy.options_hierarchy"]
+
+        return state_dicts, []
 
 
 def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.Tensor, th.Tensor):

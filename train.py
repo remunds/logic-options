@@ -70,7 +70,7 @@ def run(name: str = None,
                              eval_deterministic=evaluation["deterministic"],
                              eval_early_stop=evaluation.get("early_stop"))
 
-    policy_kwargs = {"options_hierarchy": model.get("options_hierarchy"),
+    policy_kwargs = {"hierarchy_shape": model.get("hierarchy_shape"),
                      "normalize_images": not object_centric}
     net_arch = model.get("net_arch")
     if net_arch is not None:

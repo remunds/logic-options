@@ -2,48 +2,51 @@ from typing import Tuple, Any
 
 import torch as th
 from stable_baselines3.common.distributions import BernoulliDistribution
-from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
 
 from options.option import OptionCollection
 from options.hierarchy import OptionsHierarchy
 
 
-class GlobalOptionsPolicy(ActorCriticPolicy):
-    """Policy representing an entirety of an option hierarchy with all its levels.
-    Acts itself as the global (inter-option) policy."""
+class OptionsAgent(BasePolicy):
+    """The agent with options, containing the entire option hierarchy with all its levels
+    and the meta policy.
+    :param observation_space:
+    :param action_space:
+    :param lr_schedule:
+    :param hierarchy_shape: List of options per hierarchy level; from highest to lowest level.
+        Example: [2, 4, 8]. If empty, no options used => standard actor-critic PPO.
+    :param symbolic_meta_policy: Whether the meta policy should be modeled with NUDGE or
+        with an NN
+    """
 
     def __init__(self,
                  observation_space,
                  action_space,
                  lr_schedule,
-                 options_hierarchy: list[int],
+                 hierarchy_shape: list[int],
+                 symbolic_meta_policy: bool = False,
                  net_arch: list[int] = None,
                  **kwargs):
-        """
-        :param observation_space:
-        :param action_space:
-        :param lr_schedule:
-        :param options_hierarchy: List of options per hierarchy level; from highest to lowest level.
-            Example: [2, 4, 8]. If empty, no options used => standard actor-critic PPO.
-        :param device:
-        """
+        super().__init__(observation_space=observation_space, action_space=action_space)
 
         if net_arch is None:
             net_arch = [64, 64]
 
-        options_hierarchy = OptionsHierarchy(options_hierarchy,
+        options_hierarchy = OptionsHierarchy(hierarchy_shape,
                                              observation_space,
                                              action_space,
                                              lr_schedule,
                                              net_arch)
 
-        super().__init__(observation_space,
-                         action_space=options_hierarchy.action_option_spaces[0],
-                         lr_schedule=lr_schedule,
-                         net_arch=net_arch,
-                         **kwargs)
+        self.meta_policy = ActorCriticPolicy(observation_space,
+                                             action_space=options_hierarchy.action_option_spaces[0],
+                                             lr_schedule=lr_schedule,
+                                             net_arch=net_arch,
+                                             **kwargs)
 
         self.options_hierarchy = options_hierarchy
+        self.symbolic_meta_policy = symbolic_meta_policy
 
     @property
     def hierarchy_size(self):
@@ -66,16 +69,19 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         return OptionCollection(options)
 
     def set_training_mode(self, mode: bool) -> None:
-        super().set_training_mode(mode)
+        self.meta_policy.set_training_mode(mode)
         for level in self.options_hierarchy:
             for option in level:
                 option.set_training_mode(mode)
 
     def reset_noise(self, n_envs: int = 1) -> None:
-        super().reset_noise(n_envs)
+        self.meta_policy.reset_noise(n_envs)
         for level in self.options_hierarchy:
             for option in level:
                 option.reset_noise(n_envs)
+
+    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+        raise NotImplementedError()
 
     def forward_option(
             self,
@@ -84,7 +90,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
-        Forward pass in actor and critic on global level.
+        Forward pass in actor and critic for specified option.
 
         :param obs: Observation
         :param option_id: The target option's index [level, ID]
@@ -116,15 +122,15 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         options = option_traces.clone()
 
         if self.hierarchy_size == 0:
-            actions, values, log_probs = self(obs, deterministic)
+            actions, values, log_probs = self.meta_policy(obs, deterministic)
             return (options, actions), values, log_probs.unsqueeze(1)
 
-        actions = th.zeros(n_envs, *self.action_space.shape)
+        actions = th.zeros(n_envs, *self.meta_policy.action_space.shape)
         values = th.zeros(n_envs, options.shape[1] + 1)
         log_probs = th.zeros(n_envs, options.shape[1] + 1)
 
-        # Forward global policy
-        new_options, global_values, log_probs[:, 0] = self(obs, deterministic)
+        # Forward meta policy
+        new_options, global_values, log_probs[:, 0] = self.meta_policy(obs, deterministic)
         values[:, 0] = global_values.squeeze()
         is_terminated = option_terminations[:, 0]
         options[is_terminated, 0] = new_options[is_terminated]
@@ -160,6 +166,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
             option_id: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
+        """Forward in the terminator of a specified option."""
         option = self.get_option_by_id(option_id)
         return option.forward_terminator(obs, deterministic)
 
@@ -167,7 +174,7 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         """Computes state-value for the global policy and each option as
         specified in the option trace."""
         values = th.zeros(option_traces.shape[0], option_traces.shape[1] + 1)
-        values[:, 0] = self.predict_values(obs).squeeze()
+        values[:, 0] = self.meta_policy.predict_values(obs).squeeze()
         for env_id, trace in enumerate(option_traces):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level_id, option_id in enumerate(trace):
@@ -211,6 +218,13 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         return option.evaluate_terminations(obs=obs, terminations=terminations)
 
     def _get_constructor_parameters(self) -> dict[str, Any]:
-        data = super()._get_constructor_parameters()
-        data.update(dict(options_hierarchy=self.hierarchy_shape))
+        data = dict(options_hierarchy=self.hierarchy_shape,
+                    symbolic_meta_policy=self.symbolic_meta_policy)
         return data
+
+    def to(self, device):
+        self.meta_policy = self.meta_policy.to(device)
+        for l, level in enumerate(self.options_hierarchy):
+            for o, option in enumerate(level):
+                self.options_hierarchy[l][o] = option.to(device)
+        return self
