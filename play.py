@@ -2,15 +2,17 @@ import numpy as np
 import torch as th
 
 from options.ppo import load_agent
+from utils.render import render_options_overlay
 
 
 if __name__ == "__main__":
-    name = "debug"
-    env_name = "ALE/Seaquest-v5"
+    name = "4b4f/entropy"
+    env_name = "MeetingRoom"
 
-    deterministic = True
+    deterministic = False
+    print(f"Playing with {'' if deterministic else 'non-'}deterministic policy.")
 
-    model = load_agent(name, env_name, render_mode="human", render_oc_overlay=True, reward_mode="human")
+    model = load_agent(name, env_name, render_mode="rgb_array", render_oc_overlay=True, reward_mode="human")
     env = model.get_env()
 
     # Prepare loop
@@ -27,7 +29,9 @@ if __name__ == "__main__":
             print("Reward:", reward[0])
 
         image = env.render()
-        # render_oc_overlay(image, new_obs, option_trace=options[0].tolist())
+        render_options_overlay(image,
+                               option_trace=options[0].tolist(),
+                               fps=env.metadata.get("video.frames_per_second"))
 
         option_terminations, _ = model.forward_all_terminators(new_obs, options)
         option_terminations[dones] = True

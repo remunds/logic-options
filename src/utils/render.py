@@ -4,14 +4,16 @@ import pygame
 surface = None
 clock = None
 
-
 ROT_MATRIX = np.array([[0, -1], [1, 0]])
 
 
-def render_oc_overlay(image, obs: np.ndarray = None, option_trace: list[int] = None) -> None:
+def render_options_overlay(image, option_trace: list[int] = None, fps=None) -> None:
     """Displays an RGB pixel image using pygame.
         Optional: Show the currently used option_id and/or the detected objects
         and their velocities."""
+
+    if fps is None:
+        fps = 15
 
     global surface, clock
 
@@ -20,11 +22,11 @@ def render_oc_overlay(image, obs: np.ndarray = None, option_trace: list[int] = N
         if image is None:
             return
         pygame.init()
-        pygame.display.set_caption("OCOC Environment")
+        pygame.display.set_caption("Environment")
         surface = pygame.display.set_mode((image.shape[1], image.shape[0]), flags=pygame.SCALED)
         clock = pygame.time.Clock()
 
-    clock.tick(15)  # reduce FPS for Atari games
+    clock.tick(fps)  # reduce FPS for Atari games
 
     # Render RGB image
     image = np.transpose(image, (1, 0, 2))
@@ -35,36 +37,9 @@ def render_oc_overlay(image, obs: np.ndarray = None, option_trace: list[int] = N
         option_text = f"Option {option_trace[0]}"
         for option_id in option_trace[1:]:
             option_text += "-%d" % option_id
-        font = pygame.font.SysFont('Pixel12x10', 12)
-        text = font.render(option_text, True, (255, 255, 255), None)
-        rect = text.get_rect()
-        rect.bottomright = (surface.get_size()[0], surface.get_size()[1])
-        pygame.draw.rect(surface, color=(20, 20, 20), rect=rect)
-        surface.blit(text, rect)
-
-    # If given, render object coordinates and velocity vectors
-    if obs is not None:
-        # TODO: generalize to arbitrary focus files
-        obj_positions = obs[0, :18*4].reshape(-1, 4) * 164
-        for (x, y, prev_x, prev_y) in obj_positions:
-            if x == np.nan:
-                continue
-
-            # Draw an 'X' at object center
-            pygame.draw.line(surface, color=(255, 255, 255),
-                             start_pos=(x - 2, y - 2), end_pos=(x + 2, y + 2))
-            pygame.draw.line(surface, color=(255, 255, 255),
-                             start_pos=(x - 2, y + 2), end_pos=(x + 2, y - 2))
-
-            dx = x - prev_x
-            dy = y - prev_y
-
-            # Draw velocity vector
-            if dx != 0 or dy != 0:
-                # if abs(dx) > 100 or abs(dy) > 100:
-                #     print(f"Large velocity dx={dx}, dy={dy} encountered!")
-                pygame.draw.line(surface, color=(100, 200, 255),
-                                 start_pos=(float(x), float(y)), end_pos=(x + 8 * dx, y + 8 * dy))
+        draw_label(surface, option_text, (10, surface.get_size()[1] - 50),
+                   font=pygame.font.SysFont('Source Code Pro', 30),
+                   text_color=(0, 0, 0), bg_color=(255, 255, 255))
 
     pygame.display.flip()
     pygame.event.pump()
@@ -90,9 +65,19 @@ def draw_arrow(surface: pygame.Surface, start_pos: (float, float), end_pos: (flo
     pygame.draw.line(surface, start_pos=right_tip_end, end_pos=end_pos, **kwargs)
 
 
-def draw_label(surface: pygame.Surface, text: str, position: (int, int), font: pygame.font.SysFont):
+def draw_label(surface: pygame.Surface,
+               text: str,
+               position: (int, int),
+               font: pygame.font.SysFont,
+               text_color=None,
+               bg_color=None):
     """Renders a framed label text to a pygame surface."""
-    text = font.render(text, True, (255, 255, 255), None)
+    if text_color is None:
+        text_color = (255, 255, 255)
+    if bg_color is None:
+        bg_color = (0, 0, 0)
+
+    text = font.render(text, True, text_color, None)
     text_rect = text.get_rect()
 
     frame_rect = text_rect.copy()
@@ -104,7 +89,7 @@ def draw_label(surface: pygame.Surface, text: str, position: (int, int), font: p
     frame_surface.set_alpha(80)  # make transparent
 
     # Draw label background
-    frame_surface.fill((0, 0, 0))
+    frame_surface.fill(bg_color)
     surface.blit(frame_surface, position)
 
     # Draw text
