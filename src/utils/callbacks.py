@@ -192,8 +192,20 @@ def evaluate_policy(
         early_stop: int = None,
         warn: bool = True,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
-    """Same as evaluate_policy from stable_baselines3.common.evaluation
-    but for options."""
+    """Similar to evaluate_policy from stable_baselines3.common.evaluation
+    but for options.
+    :param model:
+    :param env:
+    :param n_eval_episodes:
+    :param deterministic:
+    :param render:
+    :param callback:
+    :param reward_threshold:
+    :param return_episode_rewards:
+    :param early_stop: Premature stop of episode if last early_stop transitions
+        had no positive reward.
+    :param warn:
+    :return: """
 
     is_monitor_wrapped = False
     # Avoid circular import
@@ -277,6 +289,7 @@ def evaluate_policy(
                         episode_counts[i] += 1
                     current_rewards[i] = 0
                     current_lengths[i] = 0
+                    last_positive_rewards[i] = 0
 
         option_terminations, _ = model.forward_all_terminators(new_observations, options)
         option_terminations[dones] = True
