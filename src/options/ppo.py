@@ -187,7 +187,12 @@ class OptionsPPO(PPO):
             for option_id in range(n_options):
                 option_count = np.sum(level_options == option_id)
                 option_activity_share = option_count / self.rollout_buffer.total_transitions
-                option_length = option_count / np.sum(level_terminations[level_options == option_id])
+
+                if option_count > 0:
+                    option_length = option_count / np.sum(level_terminations[level_options == option_id] + 1)
+                    # FIXME: options can be longer than a rollout, need to track this
+                else:
+                    option_length = np.nan
 
                 option_name = get_option_name(level, option_id)
                 self.logger.record(option_name + "/activity_share", option_activity_share)
@@ -324,18 +329,18 @@ class OptionsPPO(PPO):
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 
         # Logs
-        policy_name = "global_policy" if level is None or option_id is None else get_option_name(level, option_id)
-        base_str = f"{policy_name}/actor_critic/"
         if loss is not None:
+            policy_name = "global_policy" if level is None or option_id is None else get_option_name(level, option_id)
+            base_str = f"{policy_name}/actor_critic/"
             self.logger.record(base_str + "loss", loss.item())
-        self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
-        self.logger.record(base_str + "value_loss", np.mean(value_losses))
-        self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
-        self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
-        self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
-        self.logger.record(base_str + "explained_variance", explained_var)
-        if hasattr(policy, "log_std"):
-            self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
+            self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
+            self.logger.record(base_str + "value_loss", np.mean(value_losses))
+            self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
+            self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
+            self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
+            self.logger.record(base_str + "explained_variance", explained_var)
+            if hasattr(policy, "log_std"):
+                self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
     def _train_terminator(self, level: int, option_id: int) -> None:
         """Trains the terminator of each specified option."""
@@ -407,16 +412,16 @@ class OptionsPPO(PPO):
                 break
 
         # Logs
-        policy_name = get_option_name(level, option_id)
-        base_str = f"{policy_name}/terminator/"
-        self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
-        self.logger.record(base_str + "termination_loss", np.mean(losses))
-        self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
-        self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
         if loss is not None:
+            policy_name = get_option_name(level, option_id)
+            base_str = f"{policy_name}/terminator/"
+            self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
+            self.logger.record(base_str + "termination_loss", np.mean(losses))
+            self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
+            self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
             self.logger.record(base_str + "loss", loss.item())
-        if hasattr(policy, "log_std"):
-            self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
+            if hasattr(policy, "log_std"):
+                self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
     def _get_current_clip_ranges(self) -> (float, float):
         # Compute current clip range

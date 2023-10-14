@@ -28,6 +28,9 @@ class GlobalOptionsPolicy(ActorCriticPolicy):
         :param device:
         """
 
+        if net_arch is None:
+            net_arch = [64, 64]
+
         options_hierarchy = OptionsHierarchy(options_hierarchy,
                                              observation_space,
                                              action_space,
