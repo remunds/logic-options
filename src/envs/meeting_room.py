@@ -66,8 +66,8 @@ class MeetingRoom(Env):
                  n_buildings: int = 4,
                  n_floors: int = 4,
                  floor_shape: [int, int] = None,
-                 max_steps: int = 1000,
-                 render_mode: str = "human",
+                 max_steps: int = 100,
+                 render_mode: str = None,
                  walls_fixed: bool = False):
         if floor_shape is None:
             floor_shape = np.array([11, 11], dtype=int)
@@ -275,10 +275,10 @@ class MeetingRoom(Env):
         target_reached = np.all(self.current_pos == self.target)
         obs = self._get_observation()
         reward = self._get_reward(target_reached, new_improvement)
+        self.n_steps += 1
         truncated = self.n_steps >= self.max_steps
         self.terminated |= target_reached | truncated
         info = self._get_info()
-        self.n_steps += 1
         return obs, reward, self.terminated, truncated, info
 
     def _compute_distances(self):
@@ -306,29 +306,36 @@ class MeetingRoom(Env):
         previous_distance = self.distance_map[tuple(self.previous_pos)]
         current_distance = self.distance_map[tuple(self.current_pos)]
         distance_diff = previous_distance - current_distance
-        if distance_diff < 0:
-            distance_diff *= 2
-        distance_reward = distance_diff / 2
+        # if distance_diff > 0:
+        #     distance_diff = 0
+        distance_reward = distance_diff / 100
 
-        if new_improvement:
-            improvement_reward = 1
-        else:
-            improvement_reward = 0
+        improvement_reward = 1 if new_improvement else 0
 
         # Floor switch reward
         if self.target[0] == self.current_pos[0]:  # player in target building
             floor_diff = abs(self.target[1] - self.previous_pos[1]) - abs(self.target[1] - self.current_pos[1])
         else:
             floor_diff = self.previous_pos[1] - self.current_pos[1]
-        floor_switch_bonus = floor_diff
+        floor_switch_bonus = floor_diff * 0.2
 
-        # Penalize non-movement
+        # Building switch reward
+        building_diff = abs(self.target[0] - self.previous_pos[0]) - abs(self.target[0] - self.current_pos[0])
+        building_switch_bonus = building_diff * 0.5
+
+        # Target reward
+        target_reward = 1 if target_reached else 0
+
+        # Penalize non-movement: Has undesired side effects
         if self.previous_pos is not None and np.all(self.previous_pos == self.current_pos):
             rest_penalty = -1
         else:
             rest_penalty = 0
 
-        return improvement_reward + floor_switch_bonus
+        # Penalize each time step: Turns out to be not useful
+        time_penalty = -0.1 if not target_reached else 0
+
+        return target_reward + floor_switch_bonus + building_switch_bonus + distance_reward
 
     def _at_elevator(self, position):
         b, f, x, y = position
