@@ -35,7 +35,7 @@ def run(name: str = None,
         name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
 
     model_path = Path(OUT_BASE_PATH, game_identifier, name)
-    log_path = model_path / "logs"
+    log_path = model_path
     ckpt_path = model_path / "checkpoints"
 
     if name != "debug" and os.path.exists(ckpt_path):

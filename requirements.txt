@@ -1,0 +1,12 @@
+gymnasium[atari, accept-rom-license]
+stable-baselines3
+rtpt
+termcolor
+torch
+numpy
+opencv_python
+joblib
+tensorboard
+tqdm
+pandas
+pyyaml

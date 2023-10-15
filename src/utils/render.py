@@ -1,5 +1,6 @@
 import numpy as np
 import pygame
+from typing import List
 
 surface = None
 clock = None
@@ -7,7 +8,7 @@ clock = None
 ROT_MATRIX = np.array([[0, -1], [1, 0]])
 
 
-def render_options_overlay(image, option_trace: list[int] = None, fps=None) -> None:
+def render_options_overlay(image, option_trace: List[int] = None, fps=None) -> None:
     """Displays an RGB pixel image using pygame.
         Optional: Show the currently used option_id and/or the detected objects
         and their velocities."""

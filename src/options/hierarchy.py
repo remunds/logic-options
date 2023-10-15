@@ -1,3 +1,5 @@
+from typing import List
+
 from gymnasium.spaces import Discrete, Space
 from torch import nn
 
@@ -7,7 +9,7 @@ from utils.common import get_option_name
 
 class OptionsHierarchy(nn.Module):
     def __init__(self,
-                 shape: list[int],
+                 shape: List[int],
                  observation_space: Space,
                  action_space: Space,
                  lr_schedule,

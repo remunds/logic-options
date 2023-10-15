@@ -24,9 +24,9 @@ class OptionsAgent(BasePolicy):
                  observation_space,
                  action_space,
                  lr_schedule,
-                 hierarchy_shape: list[int],
+                 hierarchy_shape: List[int],
                  symbolic_meta_policy: bool = False,
-                 net_arch: list[int] = None,
+                 net_arch: List[int] = None,
                  **kwargs):
         super().__init__(observation_space=observation_space, action_space=action_space)
 
@@ -217,7 +217,7 @@ class OptionsAgent(BasePolicy):
         option = self.get_option_by_id(option_id)
         return option.evaluate_terminations(obs=obs, terminations=terminations)
 
-    def _get_constructor_parameters(self) -> dict[str, Any]:
+    def _get_constructor_parameters(self) -> Dict[str, Any]:
         data = dict(options_hierarchy=self.hierarchy_shape,
                     symbolic_meta_policy=self.symbolic_meta_policy)
         return data
