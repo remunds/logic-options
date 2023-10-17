@@ -13,7 +13,7 @@ from ocatari.ram.game_objects import GameObject
 from tensorboard import program
 from torch import nn
 
-from envs.common import get_atari_identifier
+from envs.util import get_atari_identifier
 
 
 def to_tensor(obs):

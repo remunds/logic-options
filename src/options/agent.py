@@ -6,6 +6,7 @@ from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
 
 from options.option import OptionCollection
 from options.hierarchy import OptionsHierarchy
+from logic.policy import NudgePolicy
 
 
 class OptionsAgent(BasePolicy):
@@ -20,6 +21,8 @@ class OptionsAgent(BasePolicy):
         with an NN
     """
 
+    meta_policy: ActorCriticPolicy
+
     def __init__(self,
                  observation_space,
                  action_space,
@@ -27,6 +30,7 @@ class OptionsAgent(BasePolicy):
                  hierarchy_shape: List[int],
                  symbolic_meta_policy: bool = False,
                  net_arch: List[int] = None,
+                 env_name: str = None,
                  **kwargs):
         super().__init__(observation_space=observation_space, action_space=action_space)
 
@@ -39,11 +43,24 @@ class OptionsAgent(BasePolicy):
                                              lr_schedule,
                                              net_arch)
 
-        self.meta_policy = ActorCriticPolicy(observation_space,
-                                             action_space=options_hierarchy.action_option_spaces[0],
-                                             lr_schedule=lr_schedule,
-                                             net_arch=net_arch,
-                                             **kwargs)
+        self.symbolic_meta_policy = symbolic_meta_policy
+        if self.symbolic_meta_policy:
+            self.meta_policy = NudgePolicy(
+                env_name=env_name,
+                observation_space=observation_space,
+                action_space=options_hierarchy.action_option_spaces[0],
+                lr_schedule=lr_schedule,
+                net_arch=net_arch,
+                **kwargs
+            )
+        else:
+            self.meta_policy = ActorCriticPolicy(
+                observation_space=observation_space,
+                action_space=options_hierarchy.action_option_spaces[0],
+                lr_schedule=lr_schedule,
+                net_arch=net_arch,
+                **kwargs
+            )
 
         self.options_hierarchy = options_hierarchy
 

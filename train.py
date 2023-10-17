@@ -8,7 +8,8 @@ import torch as th
 
 from utils.common import hyperparams_to_experiment_name, get_torch_device, ask_to_override_model
 from utils.param_schedule import maybe_make_schedule
-from envs.common import get_env_identifier, init_train_eval_envs, get_focus_file_path
+from envs.common import init_train_eval_envs, get_focus_file_path
+from envs.util import get_env_identifier
 from options.ppo import OptionsPPO
 from utils.callbacks import init_callbacks
 
@@ -56,6 +57,7 @@ def run(name: str = None,
     train_env, eval_env = init_train_eval_envs(n_train_envs=n_envs,
                                                n_eval_envs=n_eval_envs,
                                                seed=seed,
+                                               logic=model["logic_meta_policy"],
                                                **environment)
 
     cb_list = init_callbacks(exp_name=name,

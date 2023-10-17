@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Union, Callable
+from typing import Callable
 from pathlib import Path
 
-import gymnasium
 import gymnasium as gym
 from ocatari import OCAtari
 from scobi import Environment as ScobiEnv
@@ -14,24 +13,10 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStack, VecNormalize, DummyVecEnv
 
 from envs.meeting_room import MeetingRoom
+from logic.env_wrapper import LogicEnvWrapper
 
 from common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
-
-
-def get_env_name(env: Union[gymnasium.Env, OCAtari]):
-    return env.spec.name if isinstance(env, gymnasium.Env) else env.game_name
-
-
-def get_env_identifier(env_name: str):
-    if "/" in env_name:
-        return get_atari_identifier(env_name)
-    else:
-        return env_name.lower()
-
-
-def get_atari_identifier(env_name: str):
-    """Extracts game name, e.g.: 'ALE/Pong-v5' => 'pong'"""
-    return env_name.split("/")[1].split("-")[0].lower()
+from envs.util import get_atari_identifier
 
 
 def make_scobi_env(name: str,
@@ -62,6 +47,18 @@ def make_scobi_env(name: str,
     return _init
 
 
+def make_logic_env(name: str, **kwargs):
+    def _init():
+        if name == "MeetingRoom":
+            raw_env = MeetingRoom(**kwargs)
+        elif "ALE" in name:
+            raw_env = OCAtari(name, mode="raw", hud=False, **kwargs)
+        else:
+            raise NotImplementedError()
+        return Monitor(LogicEnvWrapper(raw_env))
+    return _init
+
+
 def init_train_eval_envs(n_train_envs: int,
                          n_eval_envs: int,
                          seed: int,
@@ -87,8 +84,9 @@ def init_train_eval_envs(n_train_envs: int,
 def init_vec_env(name: str,
                  n_envs: int,
                  seed: int,
-                 reward_mode: str = None,
+                 logic: bool = False,
                  object_centric: bool = False,
+                 reward_mode: str = None,
                  prune_concept: str = None,
                  exclude_properties: bool = None,
                  frameskip: int = 4,
@@ -110,9 +108,13 @@ def init_vec_env(name: str,
         settings = dict()
     settings["render_mode"] = render_mode
 
-    reward_mode = REWARD_MODE[reward_mode]
+    if logic:
+        assert n_envs == 1
+        assert framestack == 1
+        assert not normalize_observation
+        vec_env = DummyVecEnv([make_logic_env(name, **settings)])
 
-    if name == "MeetingRoom":
+    elif name == "MeetingRoom":
         if n_envs > 1:
             vec_env_cls = SubprocVecEnv
             vec_env_kwargs = {"start_method": MULTIPROCESSING_START_METHOD}
@@ -136,6 +138,8 @@ def init_vec_env(name: str,
             pruned_ff_name = get_pruned_focus_file_from_env_name(name)
         else:
             raise ValueError(f"Unknown prune concept '{prune_concept}'.")
+
+        reward_mode = REWARD_MODE[reward_mode]
 
         # Verify compatibility with Gymnasium and refresh focus YAML file
         monitor = make_scobi_env(name=name,
