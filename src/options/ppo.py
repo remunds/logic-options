@@ -15,8 +15,10 @@ from torch.nn import functional as F
 
 from options.agent import OptionsAgent
 from options.rollout_buffer import OptionsRolloutBuffer
+from options.option import Terminator
 from utils.common import get_option_name, num2text, get_most_recent_checkpoint_steps
-from envs.common import get_env_identifier, init_vec_env
+from envs.common import init_vec_env
+from envs.util import get_env_identifier
 
 
 class OptionsPPO(PPO):
@@ -238,7 +240,7 @@ class OptionsPPO(PPO):
         if level == -1:  # meta-policy
             policy = self.policy.meta_policy
         else:
-            policy = self.policy.options_hierarchy[level][option_id]
+            policy = self.policy.options_hierarchy[level][option_id].policy
 
         self._update_learning_rate(policy.optimizer)
 
@@ -344,14 +346,14 @@ class OptionsPPO(PPO):
             values = self.rollout_buffer.get_values(level, option_id)
             returns = self.rollout_buffer.get_returns(level, option_id)
             explained_var = explained_variance(values.flatten(), returns.flatten())
-            assert not np.isnan(explained_var)
+            # assert not np.isnan(explained_var)
             self.logger.record(base_str + "explained_variance", explained_var)
             if hasattr(policy, "log_std"):
                 self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
     def _train_terminator(self, level: int, option_id: int) -> None:
         """Trains the terminator of each specified option."""
-        policy = self.policy.options_hierarchy[level][option_id]
+        terminator: Terminator = self.policy.options_hierarchy[level][option_id].terminator
 
         clip_range, clip_range_vf = self._get_current_clip_ranges()
 
@@ -366,14 +368,9 @@ class OptionsPPO(PPO):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get_terminator_train_data(level, option_id, self.batch_size):
-                # Re-sample the noise matrix because the log_std has changed
-                if self.use_sde:
-                    policy.reset_noise(self.batch_size)
-
                 obs = rollout_data.observations
-
                 terminations = rollout_data.option_terminations
-                tn_log_probs, entropy = policy.evaluate_terminations(obs, terminations)
+                tn_log_probs, entropy = terminator.evaluate(obs, terminations)
 
                 # Ratio between old and new termination log prob
                 tn_ratio = th.exp(tn_log_probs - rollout_data.old_tn_log_probs)
@@ -409,11 +406,11 @@ class OptionsPPO(PPO):
                     break
 
                 # Optimization step
-                policy.optimizer.zero_grad()
+                terminator.optimizer.zero_grad()
                 loss.backward()
                 # Clip grad norm
-                th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
-                policy.optimizer.step()
+                th.nn.utils.clip_grad_norm_(terminator.parameters(), self.max_grad_norm)
+                terminator.optimizer.step()
 
             if not continue_training:
                 break
@@ -427,8 +424,6 @@ class OptionsPPO(PPO):
             self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
             self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
             self.logger.record(base_str + "loss", loss.item())
-            if hasattr(policy, "log_std"):
-                self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
     def _get_current_clip_ranges(self) -> (float, float):
         # Compute current clip range

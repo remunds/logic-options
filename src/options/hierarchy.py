@@ -50,5 +50,5 @@ class OptionsHierarchy(nn.Module):
                 name = get_option_name(level_id, option_id)
                 setattr(self, name, option)
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> List[Option]:
         return self.options[item]

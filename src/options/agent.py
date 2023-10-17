@@ -1,4 +1,4 @@
-from typing import Tuple, Any
+from typing import Tuple, Any, List, Dict
 
 import torch as th
 from stable_baselines3.common.distributions import BernoulliDistribution
@@ -46,7 +46,6 @@ class OptionsAgent(BasePolicy):
                                              **kwargs)
 
         self.options_hierarchy = options_hierarchy
-        self.symbolic_meta_policy = symbolic_meta_policy
 
     @property
     def hierarchy_size(self):
@@ -166,9 +165,9 @@ class OptionsAgent(BasePolicy):
             option_id: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
-        """Forward in the terminator of a specified option."""
-        option = self.get_option_by_id(option_id)
-        return option.forward_terminator(obs, deterministic)
+        """Forward in the terminator of specified options."""
+        options = self.get_option_by_id(option_id)
+        return options.forward_terminator(obs, deterministic)
 
     def predict_all_values(self, obs: th.Tensor, option_traces: th.Tensor) -> th.Tensor:
         """Computes state-value for the global policy and each option as
@@ -179,7 +178,7 @@ class OptionsAgent(BasePolicy):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level_id, option_id in enumerate(trace):
                 option = self.options_hierarchy[level_id][option_id]
-                values[env_id, level_id + 1] = option.predict_values(env_obs)
+                values[env_id, level_id + 1] = option.policy.predict_values(env_obs)
         return values
 
     def forward_all_terminators(
@@ -198,7 +197,7 @@ class OptionsAgent(BasePolicy):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level, option_id in enumerate(trace):
                 option = self.options_hierarchy[level][option_id]
-                termination, log_prob = option.forward_terminator(env_obs, deterministic)
+                termination, log_prob = option.terminator.forward(env_obs, deterministic)
                 terminations[env_id, level] = termination
                 log_probs[env_id, level] = log_prob
 
@@ -224,7 +223,8 @@ class OptionsAgent(BasePolicy):
 
     def to(self, device):
         self.meta_policy = self.meta_policy.to(device)
-        for l, level in enumerate(self.options_hierarchy):
-            for o, option in enumerate(level):
-                self.options_hierarchy[l][o] = option.to(device)
+        for level in self.options_hierarchy:
+            for option in level:
+                option.policy = option.policy.to(device)
+                option.terminator = option.terminator.to(device)
         return self
