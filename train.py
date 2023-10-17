@@ -70,7 +70,10 @@ def run(name: str = None,
                              eval_deterministic=evaluation["deterministic"],
                              eval_early_stop=evaluation.get("early_stop"))
 
-    policy_kwargs = {"hierarchy_shape": model.get("hierarchy_shape"),
+    hierarchy_shape = model["hierarchy_shape"]
+    print(f"Hierarchy shape {hierarchy_shape}")
+
+    policy_kwargs = {"hierarchy_shape": hierarchy_shape,
                      "normalize_images": not object_centric}
     net_arch = model.get("net_arch")
     if net_arch is not None:
@@ -83,6 +86,7 @@ def run(name: str = None,
         policy_kwargs=policy_kwargs,
         env=train_env,
         learning_rate=learning_rate,
+        termination_regularizer=model["termination_regularizer"],
         clip_range=clip_range,
         **model["ppo"],
         device=device,

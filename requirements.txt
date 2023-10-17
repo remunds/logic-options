@@ -10,3 +10,8 @@ tensorboard
 tqdm
 pandas
 pyyaml
+scikit-image
+ocatari
+# scobi
+pygame
+# nudge

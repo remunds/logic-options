@@ -185,11 +185,12 @@ class OptionsPPO(PPO):
             level_terminations = self.rollout_buffer.option_terminations[:, :, level].astype(bool)
 
             for option_id in range(n_options):
-                option_count = np.sum(level_options == option_id)
+                option_active = level_options == option_id
+                option_count = np.sum(option_active)
                 option_activity_share = option_count / self.rollout_buffer.total_transitions
 
                 if option_count > 0:
-                    option_length = option_count / np.sum(level_terminations[level_options == option_id] + 1)
+                    option_length = option_count / (np.sum(level_terminations[option_active]) + 1)
                     # FIXME: options can be longer than a rollout, need to track this
                 else:
                     option_length = np.nan
@@ -206,11 +207,12 @@ class OptionsPPO(PPO):
         """
         Update policy using the currently gathered rollout buffer.
         """
+        print(" Train...", end="")
+
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
-        # Update optimizer learning rate
 
-        # Train global policy
+        # Train meta policy
         self._train_actor_critic()
 
         # Train actor, critic, and terminator of each option
@@ -228,10 +230,12 @@ class OptionsPPO(PPO):
             self.logger.record("hyperparameter_schedule/clip_range_vf", clip_range_vf)
         self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
-    def _train_actor_critic(self, level: int = None, option_id: int = None) -> None:
-        """Trains the actor and critic of the global policy or, if specified, of
+        print(" Done.", end="")
+
+    def _train_actor_critic(self, level: int = -1, option_id: int = None) -> None:
+        """Trains the actor and critic of the meta policy (level = -1) or, if specified, of
         the option."""
-        if level is None or option_id is None:
+        if level == -1:  # meta-policy
             policy = self.policy.meta_policy
         else:
             policy = self.policy.options_hierarchy[level][option_id]
@@ -327,11 +331,9 @@ class OptionsPPO(PPO):
             if not continue_training:
                 break
 
-        explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
-
         # Logs
         if loss is not None:
-            policy_name = "global_policy" if level is None or option_id is None else get_option_name(level, option_id)
+            policy_name = "meta_policy" if level == -1 else get_option_name(level, option_id)
             base_str = f"{policy_name}/actor_critic/"
             self.logger.record(base_str + "loss", loss.item())
             self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
@@ -339,6 +341,10 @@ class OptionsPPO(PPO):
             self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
             self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
             self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
+            values = self.rollout_buffer.get_values(level, option_id)
+            returns = self.rollout_buffer.get_returns(level, option_id)
+            explained_var = explained_variance(values.flatten(), returns.flatten())
+            assert not np.isnan(explained_var)
             self.logger.record(base_str + "explained_variance", explained_var)
             if hasattr(policy, "log_std"):
                 self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())

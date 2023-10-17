@@ -76,6 +76,9 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         self.advantages = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.advantages[:] = np.nan
+        # Higher-level policies do not always make a decision. For these non-decision
+        # time steps, no advantage is computed, represented as NaNs.
+
         self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.log_probs = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
@@ -133,7 +136,7 @@ class OptionsRolloutBuffer(BaseBuffer):
 
     def get_actor_critic_train_data(
             self,
-            level: int = None,
+            level: int = -1,
             option_id: int = None,
             batch_size: Optional[int] = None
     ) -> Generator[ActorCriticSamples, None, None]:
@@ -142,13 +145,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         if not self.generator_ready:
             self._prepare_generator()
 
-        is_global_policy = level is None or option_id is None
-
-        if is_global_policy:
-            decisions = self.get_global_policy_decisions()
-            level = -1
-        else:
-            decisions = self.get_option_decisions(level, option_id)
+        decisions = self.get_decisions(level, option_id)
 
         indices = np.where(decisions)[0]
 
@@ -269,8 +266,9 @@ class OptionsRolloutBuffer(BaseBuffer):
         assert self.generator_ready
         return self.option_traces[:, level] == option_id
 
-    def get_option_starts(self, level: Union[int, th.Tensor] = None):
-        if level is None or self.option_hierarchy_size == 0:
+    def get_option_starts(self, level: Union[int, th.Tensor] = -1):
+        assert isinstance(level, int)
+        if level == -1 or self.option_hierarchy_size == 0:
             shape = self.option_terminations.shape
             level = slice(None)
         else:
@@ -279,18 +277,23 @@ class OptionsRolloutBuffer(BaseBuffer):
         option_starts[1:] = self.option_terminations[:-1, ..., level]
         return option_starts
 
-    def get_global_policy_decisions(self) -> np.array:
-        if self.option_hierarchy_size > 0:
-            return self.get_option_starts(0)
-        else:
-            return np.ones(self.values.shape, dtype='bool')
+    def get_decisions(self, level: Union[int, th.Tensor], option_id: Union[int, th.Tensor]) -> np.array:
+        """The returned Boolean vector indicates at which time step the specified
+        policy/option made a decision. True iff decision made."""
+        assert isinstance(level, int)
 
-    def get_option_decisions(self, level: Union[int, th.Tensor], option_id: Union[int, th.Tensor]) -> np.array:
-        option_decisions = self.get_option_active(level, option_id)
+        if level == -1:  # meta policy
+            active = np.ones(self.advantages.shape[0], dtype=bool)  # meta policy is always active
+        else:
+            active = self.get_option_active(level, option_id)
+
         if level + 1 < self.option_hierarchy_size:
             lower_level_starts = self.get_option_starts(level + 1)
-            option_decisions &= lower_level_starts
-        return option_decisions
+            decisions = active & lower_level_starts
+        else:
+            decisions = active  # lowest-level option always makes decisions when active
+
+        return decisions
 
     def get_values_upon_arrival(self):
         """Returns for each option (not for the global policy) the value upon
@@ -300,20 +303,33 @@ class OptionsRolloutBuffer(BaseBuffer):
         next_local_value = self.next_values[..., 1:]  # in context of this option
         return termination_prob * next_outer_value + (1 - termination_prob) * next_local_value
 
+    def get_values(self, level: Union[int, th.Tensor] = -1, option_id: Union[int, th.Tensor] = None):
+        assert isinstance(level, int)
+        decisions = self.get_decisions(level, option_id)
+        return self.values[decisions, level+1]
+
+    def get_returns(self, level: Union[int, th.Tensor] = -1, option_id: Union[int, th.Tensor] = None):
+        assert isinstance(level, int)
+        decisions = self.get_decisions(level, option_id)
+        return self.returns[decisions, level+1]
+
     def compute_returns_and_advantage(self, dones: np.ndarray) -> None:
+        shape = self.advantages.shape
+
         # Identify policy decision points
-        decisions = np.ones(self.advantages.shape, dtype='bool')
-        decisions[..., :-1] = self.get_option_starts()  # Lowest-level option always makes a decision
+        decisions = np.ones(shape, dtype='bool')
+        decisions[..., :-1] = self.get_option_starts()
+        # Lowest-level options always make a decision, hence omitted here
 
         # Keep track of properties between decision points
-        reward = np.zeros(self.advantages.shape[1:], dtype=np.float32)
-        next_decision = np.ones(self.advantages.shape[1:], dtype=bool)
-        next_value = np.zeros(self.advantages.shape[1:], dtype=np.float32)
-        last_gae = np.zeros(self.advantages.shape[1:], dtype=np.float64)
+        reward = np.zeros(shape[1:], dtype=np.float32)
+        next_decision = np.ones(shape[1:], dtype=bool)
+        next_value = np.zeros(shape[1:], dtype=np.float32)
+        last_gae = np.zeros(shape[1:], dtype=np.float64)
 
         values_upon_arrival = self.get_values_upon_arrival()
 
-        policy_continues = np.ones(self.advantages.shape[1:], dtype=bool)
+        policy_continues = np.ones(shape[1:], dtype=bool)
 
         episode_continues = ~dones.astype(bool)
 
@@ -323,7 +339,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             next_value_tmp[..., 1:] = values_upon_arrival[step]
             next_value[next_decision] = next_value_tmp[next_decision]
 
-            # Only policies that actively made a decision receive an advantage estimate
+            # Only policies that actively made a decision receive an advantage estimate (others remain NaN)
             decision = decisions[step]
 
             # Determine policy continuation/termination

@@ -77,7 +77,8 @@ def user_agrees_to(question):
     """Makes a yes/no query to the user. Returns True if user answered yes, False if no, and repeats if
     the user's question was invalid."""
     # let window flash in Windows
-    ctypes.windll.user32.FlashWindow(ctypes.windll.kernel32.GetConsoleWindow(), True)
+    if hasattr(ctypes, "windll"):
+        ctypes.windll.user32.FlashWindow(ctypes.windll.kernel32.GetConsoleWindow(), True)
 
     # ask question to user and handle answer
     while True:
