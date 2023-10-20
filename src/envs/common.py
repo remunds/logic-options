@@ -47,7 +47,7 @@ def make_scobi_env(name: str,
     return _init
 
 
-def make_logic_env(name: str, **kwargs):
+def make_logic_env(name: str, seed: int = None, **kwargs):
     def _init():
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
@@ -55,6 +55,7 @@ def make_logic_env(name: str, **kwargs):
             raw_env = OCAtari(name, mode="raw", hud=False, **kwargs)
         else:
             raise NotImplementedError()
+        raw_env.reset(seed=seed)
         return Monitor(LogicEnvWrapper(raw_env))
     return _init
 

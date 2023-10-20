@@ -93,6 +93,7 @@ def run(name: str = None,
         **model["ppo"],
         device=device,
         verbose=1,
+        seed=seed,
     )
 
     new_logger = configure(str(log_path), ["tensorboard"])

@@ -4,7 +4,6 @@ from queue import Queue
 
 import pygame
 import numpy as np
-from numpy.random import randint
 from gymnasium import Env, spaces
 from gymnasium.core import ActType, ObsType
 
@@ -68,7 +67,8 @@ class MeetingRoom(Env):
                  floor_shape: [int, int] = None,
                  max_steps: int = 100,
                  render_mode: str = None,
-                 walls_fixed: bool = False):
+                 walls_fixed: bool = False,
+                 seed: int = None):
         if floor_shape is None:
             floor_shape = np.array([11, 11], dtype=int)
         else:
@@ -110,7 +110,7 @@ class MeetingRoom(Env):
     def _generate_map(self):
         """Renews map, entrances and elevators."""
         for b in range(self.n_buildings):
-            elevator = randint(1, self.floor_shape - 1)
+            elevator = self._np_random.integers(1, self.floor_shape - 1)
             entrance = self._generate_entrance_position()
             self.elevators[b] = elevator
             self.entrances[b] = entrance
@@ -148,44 +148,44 @@ class MeetingRoom(Env):
         floor_map[:, [0, -1]] = 1
 
         # Vertical wall
-        wall_v = randint(2, self.floor_shape[1] - 2)
+        wall_v = self._np_random.integers(2, self.floor_shape[1] - 2)
         floor_map[wall_v] = 1
 
         # Horizontal wall
-        wall_h = randint(2, self.floor_shape[0] - 2, size=2)
+        wall_h = self._np_random.integers(2, self.floor_shape[0] - 2, size=2)
         floor_map[:wall_v, wall_h[0]] = 1
         floor_map[wall_v:, wall_h[1]] = 1
 
         # Doorways
         # north
         n_choices = list(range(1, np.min(wall_h)))
-        door_pos = np.random.choice(n_choices)
+        door_pos = self._np_random.choice(n_choices)
         floor_map[wall_v, door_pos] = 0
 
         # east
         n_choices = list(range(wall_v + 1, self.floor_shape[0] - 1))
-        door_pos = np.random.choice(n_choices)
+        door_pos = self._np_random.choice(n_choices)
         floor_map[door_pos, wall_h[1]] = 0
 
         # south
         n_choices = list(range(np.max(wall_h) + 1, self.floor_shape[1] - 1))
-        door_pos = np.random.choice(n_choices)
+        door_pos = self._np_random.choice(n_choices)
         floor_map[wall_v, door_pos] = 0
 
         # west
         n_choices = list(range(1, wall_v))
-        door_pos = np.random.choice(n_choices)
+        door_pos = self._np_random.choice(n_choices)
         floor_map[door_pos, wall_h[0]] = 0
 
         return floor_map
 
     def _generate_entrance_position(self):
         # Pick one of the four sides of the building (0 north, 1 east etc.)
-        side = randint(0, 4)
+        side = self._np_random.integers(0, 4)
 
         # Determine entrance position inside wall
         wall_length = self.floor_shape[0] if side % 2 else self.floor_shape[1]
-        pos_in_wall = randint(1, wall_length - 1)
+        pos_in_wall = self._np_random.integers(1, wall_length - 1)
 
         # Return final entrance door position
         if side == 0:
@@ -204,6 +204,8 @@ class MeetingRoom(Env):
             seed: int = None,
             options: Dict[str, Any] = None,
     ) -> Tuple[ObsType, Dict[str, Any]]:
+        super().reset(seed=seed)
+
         if not self.map_generated or not self.walls_fixed:
             self._generate_map()
             self.map_generated = True
@@ -223,12 +225,12 @@ class MeetingRoom(Env):
         return self._get_observation(), self._get_info()
 
     def _pick_random_position(self):
-        b = randint(self.n_buildings)
-        f = randint(self.n_floors)
+        b = self._np_random.integers(self.n_buildings)
+        f = self._np_random.integers(self.n_floors)
 
         # Find valid position on floor, not occupied by a wall
         while True:
-            x, y = randint(1, self.floor_shape - 2, size=2)
+            x, y = self._np_random.integers(1, self.floor_shape - 2, size=2)
             if not self.map[b, f, x, y]:  # empty spot
                 break
 

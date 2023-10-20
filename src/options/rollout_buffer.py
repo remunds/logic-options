@@ -55,12 +55,14 @@ class OptionsRolloutBuffer(BaseBuffer):
             gae_lambda: float = 1,
             gamma: float = 0.99,
             n_envs: int = 1,
+            seed: int = None,
     ):
         super().__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
         self.option_hierarchy_size = option_hierarchy_size
         self.gae_lambda = gae_lambda
         self.gamma = gamma
         self.generator_ready = False
+        self.rng = np.random.default_rng(seed=seed)
         self.reset()
         self.total_transitions = self.buffer_size * self.n_envs
 
@@ -187,7 +189,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             return
 
         # Randomize index order
-        np.random.shuffle(indices)
+        self.rng.shuffle(indices)
 
         if batch_size is None:
             # Return everything, don't create mini-batches

@@ -60,6 +60,7 @@ class OptionsPPO(PPO):
             gamma=self.gamma,
             gae_lambda=self.gae_lambda,
             n_envs=self.n_envs,
+            seed=self.seed,
         )
 
     def collect_rollouts(

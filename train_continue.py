@@ -3,7 +3,8 @@ from pathlib import Path
 import yaml
 import torch as th
 
-from envs.common import get_atari_identifier, init_train_eval_envs
+from envs.common import init_train_eval_envs
+from envs.util import get_atari_identifier
 from utils.callbacks import init_callbacks
 from options.ppo import load_agent
 
