@@ -6,7 +6,7 @@ from utils.render import render_options_overlay
 
 
 if __name__ == "__main__":
-    name = "4-floor/reward-v1-1"
+    name = "4-floor/options/tn-reg-0"
     env_name = "MeetingRoom"
 
     deterministic = False

@@ -154,12 +154,19 @@ class OptionsPPO(PPO):
                 # TODO: efficiency can be improved as next values are needed only for terminated options
                 next_values = self.policy.predict_all_values(new_obs_tensor, self._last_active_options)
 
+            # When an episode terminates, new_obs is 1st frame of new episode, so we need
+            # to replace it and use the most recent obs as a surrogate
+            next_obs = np.array(new_obs).copy()
+            next_obs[dones] = self._last_obs[dones]
+
             # Save observed data to rollout buffer
             rollout_buffer.add(
                 self._last_obs,
                 actions,
                 rewards,
+                dones,
                 self._last_episode_starts,
+                next_obs,
                 values,
                 next_values,
                 log_probs,
@@ -185,6 +192,7 @@ class OptionsPPO(PPO):
         for level, n_options in enumerate(self.policy.hierarchy_shape):
             level_options = self.rollout_buffer.option_traces[:, :, level].astype(int)
             level_terminations = self.rollout_buffer.option_terminations[:, :, level].astype(bool)
+            dones = self.rollout_buffer.dones.astype(bool)
 
             for option_id in range(n_options):
                 option_active = level_options == option_id
@@ -192,7 +200,8 @@ class OptionsPPO(PPO):
                 option_activity_share = option_count / self.rollout_buffer.total_transitions
 
                 if option_count > 0:
-                    option_length = option_count / (np.sum(level_terminations[option_active]) + 1)
+                    option_terminates = level_terminations[option_active] | dones[option_active]
+                    option_length = option_count / (np.sum(option_terminates) + 1)
                     # FIXME: options can be longer than a rollout, need to track this
                 else:
                     option_length = np.nan
@@ -368,9 +377,9 @@ class OptionsPPO(PPO):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get_terminator_train_data(level, option_id, self.batch_size):
-                obs = rollout_data.observations
+                next_obs = rollout_data.next_observations
                 terminations = rollout_data.option_terminations
-                tn_log_probs, entropy = terminator.evaluate(obs, terminations)
+                tn_log_probs, entropy = terminator.evaluate(next_obs, terminations)
 
                 # Ratio between old and new termination log prob
                 tn_ratio = th.exp(tn_log_probs - rollout_data.old_tn_log_probs)

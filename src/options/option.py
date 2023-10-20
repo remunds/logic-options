@@ -5,7 +5,7 @@ from typing import Type, Union, Optional, Dict, List, Tuple
 import numpy as np
 import torch as th
 from gymnasium.spaces import Space
-from stable_baselines3.common.distributions import BernoulliDistribution
+from stable_baselines3.common.distributions import CategoricalDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy, BaseModel
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
 from stable_baselines3.common.type_aliases import Schedule
@@ -86,8 +86,8 @@ class Terminator(BaseModel):
             activation_fn=self.activation_fn
         )
         self.mlp_extractor = nn.Sequential(*layers).to(self.device)
-        self.bernoulli = BernoulliDistribution(1)
-        self.net = self.bernoulli.proba_distribution_net(latent_dim=self.net_arch[-1])
+        self.categorical = CategoricalDistribution(2)
+        self.net = self.categorical.proba_distribution_net(latent_dim=self.net_arch[-1])
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
 
     def forward(self, obs: th.Tensor, deterministic: bool = False):
@@ -103,7 +103,7 @@ class Terminator(BaseModel):
         log_prob = distribution.log_prob(termination)
         return termination.type(th.BoolTensor), log_prob
 
-    def get_distribution(self, obs: th.Tensor) -> BernoulliDistribution:
+    def get_distribution(self, obs: th.Tensor) -> CategoricalDistribution:
         latent_tn = self._get_latent(obs)
         return self._get_dist_from_latent(latent_tn)
 
@@ -111,9 +111,9 @@ class Terminator(BaseModel):
         features = self.extract_features(obs, self.features_extractor)
         return self.mlp_extractor.forward(features)
 
-    def _get_dist_from_latent(self, latent_tn: th.Tensor) -> BernoulliDistribution:
+    def _get_dist_from_latent(self, latent_tn: th.Tensor) -> CategoricalDistribution:
         mean_termination = self.net(latent_tn)
-        return self.bernoulli.proba_distribution(action_logits=mean_termination)
+        return self.categorical.proba_distribution(action_logits=mean_termination)
 
     def evaluate(self, obs: th.Tensor, terminations: th.Tensor) -> (th.Tensor, th.Tensor):
         """
@@ -177,7 +177,7 @@ class OptionCollection:
             all_log_likelihoods.append(log_prob)
         return th.hstack(all_log_likelihoods)
 
-    def get_termination_dist(self, obs: th.Tensor) -> BernoulliDistribution:
+    def get_termination_dist(self, obs: th.Tensor) -> CategoricalDistribution:
         assert len(self.options) == 1
         return self.options[0].terminator.get_distribution(obs)
 

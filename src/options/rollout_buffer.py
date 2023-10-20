@@ -19,7 +19,7 @@ class ActorCriticSamples(NamedTuple):
 
 
 class TerminatorSamples(NamedTuple):
-    observations: th.Tensor
+    next_observations: th.Tensor
     option_terminations: th.Tensor
     old_tn_log_probs: th.Tensor
     next_values: th.Tensor
@@ -30,7 +30,9 @@ class OptionsRolloutBuffer(BaseBuffer):
     observations: np.ndarray
     actions: np.ndarray
     rewards: np.ndarray
+    dones: np.ndarray
     episode_starts: np.ndarray
+    next_observations: np.ndarray
 
     option_traces: np.ndarray
     option_terminations: np.ndarray
@@ -68,7 +70,9 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.observations = np.zeros((*base_shape, *self.obs_shape), dtype=np.float32)
         self.actions = np.zeros((*base_shape, self.action_dim), dtype=np.float32)
         self.rewards = np.zeros(base_shape, dtype=np.float32)
+        self.dones = np.zeros(base_shape, dtype=np.float32)
         self.episode_starts = np.zeros(base_shape, dtype=np.float32)
+        self.next_observations = np.zeros((*base_shape, *self.obs_shape), dtype=np.float32)
 
         self.option_traces = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
         self.option_terminations = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
@@ -93,7 +97,9 @@ class OptionsRolloutBuffer(BaseBuffer):
             obs: np.ndarray,
             action: np.ndarray,
             reward: np.ndarray,
+            done: np.ndarray,
             episode_start: np.ndarray,
+            next_obs: np.ndarray,
             value: th.Tensor,
             next_value: th.Tensor,
             log_probs: th.Tensor,
@@ -117,7 +123,9 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.observations[self.pos] = np.array(obs).copy()
         self.actions[self.pos] = np.array(action).copy()
         self.rewards[self.pos] = np.array(reward).copy()
+        self.dones[self.pos] = np.array(done).copy()
         self.episode_starts[self.pos] = np.array(episode_start).copy()
+        self.next_observations[self.pos] = np.array(next_obs).copy()
 
         self.option_traces[self.pos] = np.array(option_trace).copy()
         self.log_probs[self.pos] = log_probs.clone().cpu().numpy()
@@ -195,7 +203,9 @@ class OptionsRolloutBuffer(BaseBuffer):
             "observations",
             "actions",
             "rewards",
+            "dones",
             "episode_starts",
+            "next_observations",
 
             "option_traces",
             "option_terminations",
@@ -248,7 +258,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             level: int,
     ) -> TerminatorSamples:
         data = (
-            self.observations[indices],
+            self.next_observations[indices],
             self.option_terminations[indices, level],
             self.option_tn_log_probs[indices, level],
             self.next_values[indices, ..., level + 1],
