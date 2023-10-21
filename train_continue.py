@@ -51,10 +51,7 @@ def run():
                              eval_env=eval_env,
                              n_eval_episodes=4 * n_eval_envs,
                              ckpt_path=ckpt_path,
-                             eval_frequency=evaluation["frequency"],
-                             eval_render=evaluation["render"],
-                             eval_deterministic=evaluation["deterministic"],
-                             eval_early_stop=evaluation.get("early_stop"))
+                             eval_kwargs=evaluation)
 
     remaining_timesteps = total_timestamps - model.num_timesteps
 
