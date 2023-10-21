@@ -19,7 +19,7 @@ class LogicStateExtractor(ABC):
 
     @property
     def state_shape(self):
-        return (self.n_objects, self.n_features)
+        return self.n_objects, self.n_features
 
     @staticmethod
     def create(env_name) -> LogicStateExtractor:

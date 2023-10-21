@@ -1,0 +1,46 @@
+name: "deterministic-eval"
+description: ""
+cuda: False
+cores: 1
+seed: 1
+
+environment:
+  name: "ALE/Freeway-v5"
+  framestack: 1
+  normalize_observation: False
+  normalize_reward: False
+
+model:
+  hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch:  # the network architecture of each individual option policy
+  logic_meta_policy: True
+  termination_regularizer: 0
+  ppo:
+    n_steps: 256
+    n_epochs: 3
+    batch_size: 256
+    gamma: 0.99
+    clip_range:  # clipping epsilon
+      initial_value: 0.1
+      schedule_type: linear
+    vf_coef: 1
+    policy_ent_coef: 0.1
+    terminator_ent_coef: 0
+    clip_range_vf: 0.1
+    normalize_advantage: True
+    gae_lambda: 0.95
+
+training:
+  total_timesteps: 2e5
+  learning_rate:  # Adam
+    initial_value: 0.0005
+    schedule_type: exponential
+    half_life_period: 0.25
+
+evaluation:
+  frequency: 2500
+  deterministic: True
+  n_episodes: 8
+  max_episode_len: 500
+  early_stop_on_no_reward:
+  render: False

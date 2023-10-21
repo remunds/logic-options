@@ -1,21 +1,14 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import torch as th
 from gymnasium import spaces
 from nsfr.nsfr import NSFReasoner
 from nsfr.facts_converter import FactsConverter
 from nsfr.logic_utils import build_infer_module, get_lang
-from stable_baselines3.common.distributions import Distribution, CategoricalDistribution, Categorical
+from stable_baselines3.common.distributions import Distribution, CategoricalDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
-from logic.valuation_modules import SeaquestValuationModule, FreewayValuationModule
 
-LARK_PATH = "in/logic/lark/exp.lark"
-LANG_PATH = "in/logic/data/lang"
-
-VALUATION_MODULES = {
-    "seaquest": SeaquestValuationModule,
-    "freeway": FreewayValuationModule,
-}
+from logic.base import LARK_PATH, LANG_PATH, VALUATION_MODULES
 
 
 class NudgePolicy(ActorCriticPolicy):
@@ -31,16 +24,15 @@ class NudgePolicy(ActorCriticPolicy):
                  net_arch,
                  device="cpu",
                  **kwargs):
+        assert isinstance(action_space, spaces.Discrete)
+
         super().__init__(observation_space, action_space, lr_schedule, net_arch, **kwargs)
 
         lang, clauses, bk, atoms = get_lang(LARK_PATH, LANG_PATH, "", env_name)
 
-        # Collect predicates (actions)
-        predicates = []
-        for clause in clauses:
-            if clause.head.pred.name not in predicates:
-                predicates.append(clause.head.pred.name)
-        self.predicates = predicates
+        self._init_predicates(clauses)
+
+        assert self.n_predicates == action_space.n
 
         if env_name not in VALUATION_MODULES.keys():
             raise NotImplementedError(f"No valuation module implemented for env '{env_name}'.")
@@ -51,7 +43,7 @@ class NudgePolicy(ActorCriticPolicy):
             clauses,
             atoms,
             lang,
-            m=len(predicates),
+            m=len(self.predicates),
             infer_step=2,
             train=True,
             device=device
@@ -63,12 +55,25 @@ class NudgePolicy(ActorCriticPolicy):
                                  clauses=clauses,
                                  train=True)
 
-        self.n_actions = len(self.predicates)
-        self.uniform = Categorical(th.ones(size=(self.n_actions,), device=device) / self.n_actions)
+        self.categorical = CategoricalDistribution(action_dim=action_space.n)
+
+        # Uniform distribution for epsilon-greedy policy
+        # self.uniform = Categorical(th.ones(size=(self.n_actions,), device=device) / self.n_actions)
+
+    def _init_predicates(self, clauses):
+        """Reads out all predicates and determines which predicate belongs to which action."""
+        predicates = []
+        for clause in clauses:
+            if clause.head.pred.name not in predicates:
+                predicate_name = clause.head.pred.name
+                predicates.append(predicate_name)
+        self.predicates = predicates
+        self.n_predicates = len(self.predicates)
 
     def get_distribution(self, obs: th.Tensor) -> Distribution:
-        action_probs = self.actor(obs)
-        dist = CategoricalDistribution(action_probs)
+        pred_probs = self.actor(obs)
+        pred_logits = th.log(pred_probs)
+        dist = self.categorical.proba_distribution(pred_logits)
         return dist
 
     def forward(
@@ -76,11 +81,11 @@ class NudgePolicy(ActorCriticPolicy):
             obs: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
-        dist = self.get_distribution(obs)
-        actions = dist.get_actions(deterministic)
-        log_probs = dist.log_prob(actions)
+        pred_dist = self.get_distribution(obs)
+        predicates = pred_dist.get_actions(deterministic)
+        log_probs = pred_dist.log_prob(predicates)
         values = self.predict_values(obs)
-        return actions, values, log_probs
+        return predicates, values, log_probs
 
     def evaluate_actions(
             self,

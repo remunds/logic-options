@@ -1,5 +1,6 @@
 from typing import Tuple, Any, List, Dict
 
+import numpy as np
 import torch as th
 from stable_baselines3.common.distributions import CategoricalDistribution
 from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
@@ -22,6 +23,7 @@ class OptionsAgent(BasePolicy):
     """
 
     meta_policy: ActorCriticPolicy
+    options_hierarchy: OptionsHierarchy
 
     def __init__(self,
                  observation_space,
@@ -74,8 +76,8 @@ class OptionsAgent(BasePolicy):
         return self.options_hierarchy.size
 
     @property
-    def hierarchy_shape(self):
-        return self.options_hierarchy.shape
+    def n_policies(self):
+        return np.sum(self.hierarchy_shape) + 1
 
     def get_option_by_id(self, option_id: th.Tensor) -> OptionCollection:
         """

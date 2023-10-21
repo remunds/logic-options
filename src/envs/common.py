@@ -52,7 +52,7 @@ def make_logic_env(name: str, seed: int = None, **kwargs):
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
         elif "ALE" in name:
-            raw_env = OCAtari(name, mode="raw", hud=False, **kwargs)
+            raw_env = OCAtari(name, mode="revised", hud=False, **kwargs)
         else:
             raise NotImplementedError()
         raw_env.reset(seed=seed)

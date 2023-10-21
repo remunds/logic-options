@@ -557,6 +557,7 @@ def load_agent(name: str = None,
                        **config["environment"],
                        render_mode=render_mode,
                        render_oc_overlay=render_oc_overlay,
+                       logic=config["model"]["logic_meta_policy"],
                        train=train)
 
     device = "cuda" if config["cuda"] else "cpu"
