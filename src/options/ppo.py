@@ -38,9 +38,15 @@ class OptionsPPO(PPO):
     rollout_buffer: OptionsRolloutBuffer
     policy: OptionsAgent
 
-    def __init__(self, termination_regularizer: float = 0, **kwargs):
+    def __init__(self,
+                 policy_ent_coef: float = 0,
+                 terminator_ent_coef: float = 0,
+                 termination_regularizer: float = 0,
+                 **kwargs):
         kwargs["policy"] = OptionsAgent
-        super().__init__(**kwargs)
+        super().__init__(ent_coef=policy_ent_coef, **kwargs)
+        self.pi_ent_coef = self.ent_coef
+        self.tn_ent_coef = terminator_ent_coef
         self.termination_regularizer = termination_regularizer
 
     def _setup_model(self) -> None:
@@ -281,7 +287,7 @@ class OptionsPPO(PPO):
                 advantages = rollout_data.advantages
                 # Normalization does not make sense if minibatch size == 1, see GH issue #325
                 if self.normalize_advantage and len(advantages) > 1:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    advantages = normalize_advantage(advantages)
 
                 # ratio between old and new policy, should be one at the first iteration
                 old_log_prob = rollout_data.old_log_probs
@@ -316,7 +322,7 @@ class OptionsPPO(PPO):
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+                loss = policy_loss + self.pi_ent_coef * entropy_loss + self.vf_coef * value_loss
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
@@ -386,7 +392,10 @@ class OptionsPPO(PPO):
                 tn_ratio = th.exp(tn_log_probs - rollout_data.old_tn_log_probs)
 
                 # Advantage estimate
-                next_advantages = rollout_data.next_higher_level_value - rollout_data.next_values
+                next_advantages = rollout_data.next_values - rollout_data.next_higher_level_value
+                if self.normalize_advantage and len(next_advantages) > 1:
+                    next_advantages = normalize_advantage(next_advantages)
+
                 adjusted_advantage = th.Tensor(next_advantages) + self.termination_regularizer
 
                 termination_loss, tn_clip_fraction = ppo_loss(tn_ratio, -adjusted_advantage, clip_range)
@@ -398,7 +407,7 @@ class OptionsPPO(PPO):
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = termination_loss + self.ent_coef * entropy_loss
+                loss = termination_loss + self.tn_ent_coef * entropy_loss
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
@@ -476,8 +485,7 @@ class OptionsPPO(PPO):
             update_learning_rate(optimizer, self.lr_schedule(self._current_progress_remaining))
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
-        state_dicts = ["policy", "policy.meta_policy", "policy.options_hierarchy"]
-
+        state_dicts = ["policy.meta_policy", "policy.options_hierarchy"]
         return state_dicts, []
 
 
@@ -498,6 +506,10 @@ def ppo_loss(ratio: th.Tensor, advantage: th.Tensor, clip_range: float) -> (th.T
     clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
 
     return loss, clip_fraction
+
+
+def normalize_advantage(advantages: th.tensor):
+    return (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
 
 MODELS_BASE_PATH = "out/"
