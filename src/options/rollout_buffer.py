@@ -308,8 +308,8 @@ class OptionsRolloutBuffer(BaseBuffer):
         return decisions
 
     def get_values_upon_arrival(self):
-        """Returns for each option (not for the global policy) the value upon
-        arrival. Implements the function U_omega(s')."""
+        """Returns for each option (not for the meta policy) the
+        value upon arrival."""
         termination_prob = np.exp(self.option_tn_log_probs)
         next_outer_value = self.next_values[..., :-1]  # in context of higher-level option
         next_local_value = self.next_values[..., 1:]  # in context of this option
@@ -363,6 +363,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             policy_continues[..., 1:] = ~option_terminates  # options continue if they don't terminate
             policy_continues &= episode_continues
 
+            # Sum up rewards during option arc for higher-level SMDP transition
             reward += np.expand_dims(self.rewards[step], axis=1)
 
             dtype = np.float64 if step == self.buffer_size - 1 else np.float32
@@ -374,7 +375,8 @@ class OptionsRolloutBuffer(BaseBuffer):
             self.advantages[step, decision] = gae[decision]
             last_gae[decision] = gae[decision]
 
-            reward[decision] = 0  # also takes done episodes into account, implicitly
+            # Reset the gathered reward at decision points
+            reward[decision] = 0  # also takes done episodes implicitly into account
 
             episode_continues = ~self.episode_starts[step].astype(bool)
             next_decision = decision

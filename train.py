@@ -77,6 +77,12 @@ def run(name: str = None,
 
     policy_kwargs = {"hierarchy_shape": hierarchy_shape,
                      "normalize_images": not object_centric}
+
+    logic = model["logic_meta_policy"]
+    if logic:
+        policy_kwargs.update({"env_name": game_identifier,
+                              "logic_meta_policy": True})
+
     net_arch = model.get("net_arch")
     if net_arch is not None:
         policy_kwargs["net_arch"] = net_arch

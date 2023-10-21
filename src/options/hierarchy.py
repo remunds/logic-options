@@ -8,6 +8,8 @@ from utils.common import get_option_name
 
 
 class OptionsHierarchy(nn.Module):
+    options: List[List[Option]]
+
     def __init__(self,
                  shape: List[int],
                  observation_space: Space,

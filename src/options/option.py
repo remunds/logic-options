@@ -15,8 +15,8 @@ from torch import nn
 from utils.common import get_net_from_layer_dims
 
 
-class Option:
-    """AC model extended by a flow for termination prediction."""
+class Option(nn.Module):
+    """Hosts an actor-critic module (policy and value function) and a terminator module."""
 
     def __init__(self,
                  observation_space: Space,
@@ -24,6 +24,8 @@ class Option:
                  lr_schedule: Schedule,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
                  **kwargs):
+        super().__init__()
+
         self.policy = ActorCriticPolicy(
             observation_space,
             action_space,

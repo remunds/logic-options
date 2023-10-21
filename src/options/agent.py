@@ -1,7 +1,7 @@
 from typing import Tuple, Any, List, Dict
 
 import torch as th
-from stable_baselines3.common.distributions import BernoulliDistribution
+from stable_baselines3.common.distributions import CategoricalDistribution
 from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
 
 from options.option import OptionCollection
@@ -17,7 +17,7 @@ class OptionsAgent(BasePolicy):
     :param lr_schedule:
     :param hierarchy_shape: List of options per hierarchy level; from highest to lowest level.
         Example: [2, 4, 8]. If empty, no options used => standard actor-critic PPO.
-    :param symbolic_meta_policy: Whether the meta policy should be modeled with NUDGE or
+    :param logic_meta_policy: Whether the meta policy should be modeled with NUDGE or
         with an NN
     """
 
@@ -28,7 +28,7 @@ class OptionsAgent(BasePolicy):
                  action_space,
                  lr_schedule,
                  hierarchy_shape: List[int],
-                 symbolic_meta_policy: bool = False,
+                 logic_meta_policy: bool = False,
                  net_arch: List[int] = None,
                  env_name: str = None,
                  **kwargs):
@@ -37,14 +37,19 @@ class OptionsAgent(BasePolicy):
         if net_arch is None:
             net_arch = [64, 64]
 
+        self.lr_schedule = lr_schedule
+        self.hierarchy_shape = hierarchy_shape
+        self.logic_meta_policy = logic_meta_policy
+        self.net_arch = net_arch
+        self.env_name = env_name
+
         options_hierarchy = OptionsHierarchy(hierarchy_shape,
                                              observation_space,
                                              action_space,
                                              lr_schedule,
                                              net_arch)
 
-        self.symbolic_meta_policy = symbolic_meta_policy
-        if self.symbolic_meta_policy:
+        if self.logic_meta_policy:
             self.meta_policy = NudgePolicy(
                 env_name=env_name,
                 observation_space=observation_space,
@@ -220,7 +225,7 @@ class OptionsAgent(BasePolicy):
 
         return terminations, log_probs
 
-    def get_option_termination_dist(self, obs: th.Tensor, option_id: th.Tensor) -> BernoulliDistribution:
+    def get_option_termination_dist(self, obs: th.Tensor, option_id: th.Tensor) -> CategoricalDistribution:
         option = self.get_option_by_id(option_id)
         return option.get_termination_dist(obs)
 
@@ -234,8 +239,15 @@ class OptionsAgent(BasePolicy):
         return option.evaluate_terminations(obs=obs, terminations=terminations)
 
     def _get_constructor_parameters(self) -> Dict[str, Any]:
-        data = dict(options_hierarchy=self.hierarchy_shape,
-                    symbolic_meta_policy=self.symbolic_meta_policy)
+        data = super()._get_constructor_parameters()
+        data.update(dict(
+            options_hierarchy=self.hierarchy_shape,
+            symbolic_meta_policy=self.logic_meta_policy,
+            lr_schedule=self.lr_schedule,
+            hierarchy_shape=self.hierarchy_shape,
+            net_arch=self.net_arch,
+            env_name=self.env_name,
+        ))
         return data
 
     def to(self, device):
