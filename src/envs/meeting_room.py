@@ -7,19 +7,20 @@ import numpy as np
 from gymnasium import Env, spaces
 from gymnasium.core import ActType, ObsType
 
-from utils.render import draw_arrow, draw_label
+from utils.render import draw_arrow
 
 PLAYER_VIEW_SIZE = 7  # odd number
 
 MARGIN = 50
 FIELD_SIZE = 40
-FLOOR_HEIGHT = 40
-BUILDING_WIDTH = 70
-BORDER_WIDTH = 2
+FLOOR_HEIGHT = 25
+BUILDING_WIDTH = 50
+BUILDING_MARGIN = 40
+BORDER_WIDTH = 1
 
-PLAYER_COLOR = "#FF9911"
-TARGET_COLOR = "#11FF99"
-ENTRANCE_COLOR = "#11AAFF"
+PLAYER_COLOR = "#0083CC"
+TARGET_COLOR = "#FDCA00"
+ENTRANCE_COLOR = "#009D81"
 ELEVATOR_COLOR = ENTRANCE_COLOR
 
 
@@ -110,7 +111,7 @@ class MeetingRoom(Env):
     def _generate_map(self):
         """Renews map, entrances and elevators."""
         for b in range(self.n_buildings):
-            elevator = self._np_random.integers(1, self.floor_shape - 1)
+            elevator = self.np_random.integers(1, self.floor_shape - 1)
             entrance = self._generate_entrance_position()
             self.elevators[b] = elevator
             self.entrances[b] = entrance
@@ -148,44 +149,44 @@ class MeetingRoom(Env):
         floor_map[:, [0, -1]] = 1
 
         # Vertical wall
-        wall_v = self._np_random.integers(2, self.floor_shape[1] - 2)
+        wall_v = self.np_random.integers(2, self.floor_shape[1] - 2)
         floor_map[wall_v] = 1
 
         # Horizontal wall
-        wall_h = self._np_random.integers(2, self.floor_shape[0] - 2, size=2)
+        wall_h = self.np_random.integers(2, self.floor_shape[0] - 2, size=2)
         floor_map[:wall_v, wall_h[0]] = 1
         floor_map[wall_v:, wall_h[1]] = 1
 
         # Doorways
         # north
         n_choices = list(range(1, np.min(wall_h)))
-        door_pos = self._np_random.choice(n_choices)
+        door_pos = self.np_random.choice(n_choices)
         floor_map[wall_v, door_pos] = 0
 
         # east
         n_choices = list(range(wall_v + 1, self.floor_shape[0] - 1))
-        door_pos = self._np_random.choice(n_choices)
+        door_pos = self.np_random.choice(n_choices)
         floor_map[door_pos, wall_h[1]] = 0
 
         # south
         n_choices = list(range(np.max(wall_h) + 1, self.floor_shape[1] - 1))
-        door_pos = self._np_random.choice(n_choices)
+        door_pos = self.np_random.choice(n_choices)
         floor_map[wall_v, door_pos] = 0
 
         # west
         n_choices = list(range(1, wall_v))
-        door_pos = self._np_random.choice(n_choices)
+        door_pos = self.np_random.choice(n_choices)
         floor_map[door_pos, wall_h[0]] = 0
 
         return floor_map
 
     def _generate_entrance_position(self):
         # Pick one of the four sides of the building (0 north, 1 east etc.)
-        side = self._np_random.integers(0, 4)
+        side = self.np_random.integers(0, 4)
 
         # Determine entrance position inside wall
         wall_length = self.floor_shape[0] if side % 2 else self.floor_shape[1]
-        pos_in_wall = self._np_random.integers(1, wall_length - 1)
+        pos_in_wall = self.np_random.integers(1, wall_length - 1)
 
         # Return final entrance door position
         if side == 0:
@@ -225,12 +226,12 @@ class MeetingRoom(Env):
         return self._get_observation(), self._get_info()
 
     def _pick_random_position(self):
-        b = self._np_random.integers(self.n_buildings)
-        f = self._np_random.integers(self.n_floors)
+        b = self.np_random.integers(self.n_buildings)
+        f = self.np_random.integers(self.n_floors)
 
         # Find valid position on floor, not occupied by a wall
         while True:
-            x, y = self._np_random.integers(1, self.floor_shape - 2, size=2)
+            x, y = self.np_random.integers(1, self.floor_shape - 2, size=2)
             if not self.map[b, f, x, y]:  # empty spot
                 break
 
@@ -491,8 +492,8 @@ class MeetingRoom(Env):
 
     def _render_player(self, x_coord, y_coord):
         x, y = self._get_field_center(x_coord, y_coord)
-        pygame.draw.circle(self.window, "#000000", [x, y], 0.35 * FIELD_SIZE)
-        pygame.draw.circle(self.window, PLAYER_COLOR, [x, y], 0.3 * FIELD_SIZE)
+        pygame.draw.circle(self.window, "#FFFFFF", [x, y], 0.36 * FIELD_SIZE)
+        pygame.draw.circle(self.window, PLAYER_COLOR, [x, y], 0.33 * FIELD_SIZE)
 
     def _render_target(self, x_coord, y_coord):
         center = np.asarray(self._get_field_center(x_coord, y_coord))
@@ -508,9 +509,9 @@ class MeetingRoom(Env):
     def _render_elevator(self, x_coord, y_coord):
         self._render_field(x_coord, y_coord, color=ELEVATOR_COLOR)
         center = np.asarray(self._get_field_center(x_coord, y_coord))
-        shape = np.array([[-0.3, -0.1],
-                          [0, -0.4],
-                          [0.3, -0.1]]) * FIELD_SIZE
+        shape = np.array([[-0.23, -0.08],
+                          [0, -0.33],
+                          [0.23, -0.08]]) * FIELD_SIZE
         up = center + shape
         down = center + shape * np.asarray([1, -1])
         pygame.draw.polygon(self.window, "white", up)
@@ -529,17 +530,18 @@ class MeetingRoom(Env):
 
     def _render_buildings(self):
         margin_top = 2 * MARGIN + self.floor_shape[1] * (FIELD_SIZE + BORDER_WIDTH) + BORDER_WIDTH
-        margin_left = MARGIN
+        building_map_width = BUILDING_MARGIN + self.n_buildings * (BUILDING_WIDTH + BUILDING_MARGIN)
+        margin_left = (self.window.get_width() - building_map_width) // 2
 
         # Ground line
-        start_pos = [margin_left - 30, margin_top + self.n_floors * (FLOOR_HEIGHT - BORDER_WIDTH)]
-        end_pos = [margin_left + self.n_buildings * (BUILDING_WIDTH + 30), start_pos[1]]
+        start_pos = [margin_left, margin_top + self.n_floors * (FLOOR_HEIGHT - BORDER_WIDTH)]
+        end_pos = [margin_left + building_map_width, start_pos[1]]
         pygame.draw.line(self.window, "#000000", start_pos, end_pos, width=BORDER_WIDTH)
 
         # Buildings
         for b in range(self.n_buildings):
             for f in reversed(range(self.n_floors)):
-                x = margin_left + b * (BUILDING_WIDTH + 30)
+                x = margin_left + BUILDING_MARGIN + b * (BUILDING_WIDTH + BUILDING_MARGIN)
                 y = margin_top + (self.n_floors - f - 1) * (FLOOR_HEIGHT - BORDER_WIDTH)
                 w = BUILDING_WIDTH
                 h = FLOOR_HEIGHT
