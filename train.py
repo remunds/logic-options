@@ -47,7 +47,7 @@ def run(name: str = None,
     object_centric = environment.get("object_centric")
     n_envs = cores
     n_eval_envs = cores
-    n_eval_episodes = evaluation.get("n_episodes")
+    n_eval_episodes = evaluation.pop("n_episodes")
     if n_eval_episodes is None:
         n_eval_episodes = 4 * n_eval_envs
     total_timestamps = int(float(training["total_timesteps"]))
@@ -58,6 +58,7 @@ def run(name: str = None,
                                                n_eval_envs=n_eval_envs,
                                                seed=seed,
                                                logic=model["logic_meta_policy"],
+                                               render_eval=evaluation["render"],
                                                **environment)
 
     cb_list = init_callbacks(exp_name=name,
@@ -67,10 +68,7 @@ def run(name: str = None,
                              eval_env=eval_env,
                              n_eval_episodes=n_eval_episodes,
                              ckpt_path=ckpt_path,
-                             eval_frequency=evaluation["frequency"],
-                             eval_render=evaluation["render"],
-                             eval_deterministic=evaluation["deterministic"],
-                             eval_early_stop=evaluation.get("early_stop"))
+                             eval_kwargs=evaluation)
 
     hierarchy_shape = model["hierarchy_shape"]
     print(f"Hierarchy shape {hierarchy_shape}")

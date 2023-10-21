@@ -19,10 +19,11 @@ from options.ppo import OptionsPPO
 
 class OptionEvalCallback(EvalCallback):
     model: OptionsPPO
-    
-    def __init__(self, *args, early_stop: int = None, **kwargs):
+
+    def __init__(self, *args, max_episode_len: int = None, early_stop_on_no_reward: int = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.early_stop = early_stop
+        self.max_episode_len = max_episode_len
+        self.early_stop_on_no_reward = early_stop_on_no_reward
 
     def init_callback(self, model: OptionsPPO) -> None:
         """
@@ -59,7 +60,8 @@ class OptionEvalCallback(EvalCallback):
                 render=self.render,
                 deterministic=self.deterministic,
                 return_episode_rewards=True,
-                early_stop=self.early_stop,
+                max_episode_len=self.max_episode_len,
+                early_stop_on_no_reward=self.early_stop_on_no_reward,
                 warn=self.warn,
                 callback=self._log_success_callback,
             )
@@ -161,6 +163,7 @@ class TensorboardCallback(BaseCallback):
 
 class SaveBestModelCallback(BaseCallback):
     """Saves both the model and the model's VecNormalize env's statistics."""
+
     def __init__(self, save_path: str):
         super(SaveBestModelCallback, self).__init__()
         self.save_path = save_path
@@ -189,7 +192,8 @@ def evaluate_policy(
         callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
         reward_threshold: Optional[float] = None,
         return_episode_rewards: bool = False,
-        early_stop: int = None,
+        max_episode_len: int = None,
+        early_stop_on_no_reward: int = None,
         warn: bool = True,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
     """Similar to evaluate_policy from stable_baselines3.common.evaluation
@@ -202,7 +206,8 @@ def evaluate_policy(
     :param callback:
     :param reward_threshold:
     :param return_episode_rewards:
-    :param early_stop: Premature stop of episode if last early_stop transitions
+    :param max_episode_len:
+    :param early_stop_on_no_reward: Premature stop of episode if last early_stop transitions
         had no positive reward.
     :param warn:
     :return: """
@@ -263,7 +268,8 @@ def evaluate_policy(
                 if callback is not None:
                     callback(locals(), globals())
 
-                if early_stop is not None and last_positive_rewards[i] >= early_stop:
+                if (early_stop_on_no_reward is not None and last_positive_rewards[i] >= early_stop_on_no_reward
+                        or max_episode_len is not None and current_lengths[i] >= max_episode_len):
                     dones[i] = True
                     stop_early = True
                     new_observations[i] = env.env_method("reset", indices=[i])[0][0]
@@ -315,10 +321,7 @@ def init_callbacks(exp_name: str,
                    eval_env,
                    n_eval_episodes: int,
                    ckpt_path: Path,
-                   eval_frequency: int = 100_000,
-                   eval_render: bool = False,
-                   eval_deterministic: bool = True,
-                   eval_early_stop: int = None) -> CallbackList:
+                   eval_kwargs: dict) -> CallbackList:
     checkpoint_frequency = 1_000_000
     rtpt_frequency = 100_000
 
@@ -328,10 +331,8 @@ def init_callbacks(exp_name: str,
         n_eval_episodes=n_eval_episodes,
         callback_on_new_best=SaveBestModelCallback(str(ckpt_path)),
         log_path=str(ckpt_path),
-        eval_freq=max(eval_frequency // n_envs, 1),
-        deterministic=eval_deterministic,
-        render=eval_render,
-        early_stop=eval_early_stop)
+        eval_freq=max(eval_kwargs.pop("frequency") // n_envs, 1),
+        **eval_kwargs)
 
     checkpoint_callback = CheckpointCallback(
         save_freq=max(checkpoint_frequency // n_envs, 1),
