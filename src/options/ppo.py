@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Union, Tuple, List
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from stable_baselines3.common.utils import obs_as_tensor, explained_variance, up
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.ppo.ppo import PPO
 from torch.nn import functional as F
+from tqdm import tqdm
 
 from options.agent import OptionsAgent
 from options.rollout_buffer import OptionsRolloutBuffer
@@ -37,6 +39,7 @@ class OptionsPPO(PPO):
 
     rollout_buffer: OptionsRolloutBuffer
     policy: OptionsAgent
+    progress: tqdm
 
     def __init__(self,
                  policy_ent_coef: float = 0,
@@ -190,8 +193,9 @@ class OptionsPPO(PPO):
             self._last_option_terminations = terminations
 
         progress_percent = (1 - self._current_progress_remaining) * 100
+
         print(f"\rTotal steps: {num2text(self.num_timesteps)} ({progress_percent:.1f} %) - "
-              f"Total updates: {num2text(self._n_updates)}", end="")
+              f"Total updates: {num2text(self._n_updates)}")
 
         rollout_buffer.compute_returns_and_advantage(dones=dones)
 
@@ -225,7 +229,9 @@ class OptionsPPO(PPO):
         """
         Update policy using the currently gathered rollout buffer.
         """
-        print(" Train...", end="")
+        self.progress = tqdm(total=int(self.policy.n_policies * self.n_epochs),
+                             file=sys.stdout, desc="Training",
+                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
 
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
@@ -248,7 +254,7 @@ class OptionsPPO(PPO):
             self.logger.record("hyperparameter_schedule/clip_range_vf", clip_range_vf)
         self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
-        print(" Done.", end="")
+        self.progress.close()
 
     def _train_actor_critic(self, level: int = -1, option_id: int = None) -> None:
         """Trains the actor and critic of the meta policy (level = -1) or, if specified, of
@@ -345,6 +351,9 @@ class OptionsPPO(PPO):
                 # Clip grad norm
                 th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
                 policy.optimizer.step()
+
+            self.progress.update(1)
+            print(f" Loss: {loss:.3f}", end="")
 
             if not continue_training:
                 break
