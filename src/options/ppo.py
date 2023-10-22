@@ -585,6 +585,7 @@ def load_agent(name: str = None,
                             env=env,
                             verbose=verbose,
                             render_mode=render_mode,
-                            device=device)
+                            device=device,
+                            custom_objects={"progress": None})
 
     return model
