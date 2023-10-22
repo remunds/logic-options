@@ -8,7 +8,8 @@ from stable_baselines3.common.distributions import Distribution, CategoricalDist
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
 
-from logic.base import LARK_PATH, LANG_PATH, VALUATION_MODULES
+from logic.base import LARK_PATH, LANG_PATH
+from logic.valuation.common import get_valuation_module
 
 
 class NudgePolicy(ActorCriticPolicy):
@@ -34,10 +35,8 @@ class NudgePolicy(ActorCriticPolicy):
 
         assert self.n_predicates == action_space.n
 
-        if env_name not in VALUATION_MODULES.keys():
-            raise NotImplementedError(f"No valuation module implemented for env '{env_name}'.")
-
-        valuation_module = VALUATION_MODULES[env_name](lang=lang, device=device)
+        valuation_module_cls = get_valuation_module(env_name)
+        valuation_module = valuation_module_cls(lang=lang, device=device)
         facts_converter = FactsConverter(lang=lang, valuation_module=valuation_module, device=device)
         infer_module = build_infer_module(
             clauses,

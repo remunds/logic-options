@@ -20,19 +20,23 @@ class LogicEnvWrapper(Wrapper):
         env: Union[Env, OCAtari],
     ) -> None:
         super().__init__(env)
+
         self.env_name = get_env_identifier(env.game_name)
-        self.logic_state_extractor = LogicStateExtractor.create(self.env_name)
+
+        # Raw observation and logic states
+        self.logic_state_extractor = LogicStateExtractor.create(self.env_name, env.observation_space.shape)
         obs_shape = self.logic_state_extractor.state_shape
         self.observation_space = spaces.Box(-255, 255,
                                             shape=obs_shape,
                                             dtype=self.env.observation_space.dtype)
 
+        # Actions and their corresponding predicates
         self.action_names = env.get_action_meanings()
         self._init_predicates_and_actions()
         self.predicate_space = spaces.Discrete(self.n_predicates)
         self.action_space = self.predicate_space
 
-        self._init_predicates_and_actions()
+        # Misc
         self.is_reset = False
         self.ret = 0
 
