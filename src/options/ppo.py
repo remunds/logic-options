@@ -57,8 +57,14 @@ class OptionsPPO(PPO):
 
         self.hierarchy_size = self.policy.hierarchy_size
 
-        self._last_option_terminations = th.ones(self.env.num_envs, self.policy.hierarchy_size).type(th.BoolTensor)
-        self._last_active_options = th.zeros(self.env.num_envs, self.policy.hierarchy_size).type(th.LongTensor)
+        self._last_option_terminations = th.ones(self.env.num_envs,
+                                                 self.policy.hierarchy_size,
+                                                 device=self.device,
+                                                 dtype=th.bool)
+        self._last_active_options = th.zeros(self.env.num_envs,
+                                             self.policy.hierarchy_size,
+                                             device=self.device,
+                                             dtype=th.long)
 
         self.rollout_buffer = OptionsRolloutBuffer(
             self.n_steps,
@@ -185,7 +191,7 @@ class OptionsPPO(PPO):
                 values,
                 next_values,
                 log_probs,
-                options,
+                options.cpu(),
                 terminations,
                 tn_log_probs,
             )
@@ -363,13 +369,13 @@ class OptionsPPO(PPO):
                 policy.optimizer.step()
 
             self.progress.update(1)
-            print(f" Loss: {loss:.3f}", end="")
 
             if not continue_training:
                 break
 
         # Logs
         if loss is not None:
+            print(f" Loss: {loss:.3f}", end="")
             policy_name = "meta_policy" if level == -1 else get_option_name(level, option_id)
             base_str = f"{policy_name}/actor_critic/"
             self.logger.record(base_str + "loss", loss.item())

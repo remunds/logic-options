@@ -1,0 +1,6 @@
+opt0(X):-.
+opt1(X):-.
+opt2(X):-.
+opt0_to_target(X):-on_target_floor(X).
+opt1_to_target_floor(X):-below_target(X).
+opt1_to_target_floor(X):-above_target(X).

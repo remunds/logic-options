@@ -244,8 +244,8 @@ def evaluate_policy(
     states = None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
 
-    option_terminations = th.ones(env.num_envs, model.hierarchy_size).type(th.BoolTensor)
-    options = th.zeros(env.num_envs, model.hierarchy_size).type(th.LongTensor)
+    option_terminations = th.ones(env.num_envs, model.hierarchy_size, device=model.device, dtype=th.bool)
+    options = th.zeros(env.num_envs, model.hierarchy_size, device=model.device, dtype=th.long)
 
     while (episode_counts < episode_count_targets).any():
         (options, actions), _, _ = model.forward_all(observations, options, option_terminations, deterministic)

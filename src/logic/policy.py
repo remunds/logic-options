@@ -26,17 +26,26 @@ class NudgePolicy(ActorCriticPolicy):
                  action_space: spaces.Space,
                  lr_schedule: Schedule,
                  net_arch,
-                 device="cpu",
+                 uses_options: bool = False,
+                 device="cuda",
                  **kwargs):
-        assert isinstance(action_space, spaces.Discrete)
+
+        lang_subdir = "options" if uses_options else "flat"
+        lang, clauses, bk, atoms = get_lang(LARK_PATH, LANG_PATH, env_name, lang_subdir)
+
+        predicates = self._get_predicates(clauses)
+        n_predicates = len(predicates)
+
+        if action_space is None:
+            action_space = spaces.Discrete(n_predicates)
+        else:
+            assert isinstance(action_space, spaces.Discrete)
+            assert n_predicates == action_space.n
 
         super().__init__(observation_space, action_space, lr_schedule, net_arch, **kwargs)
 
-        lang, clauses, bk, atoms = get_lang(LARK_PATH, LANG_PATH, "", env_name)
-
-        self._init_predicates(clauses)
-
-        assert self.n_predicates == action_space.n
+        self.predicates = predicates
+        self.n_predicates = n_predicates
 
         valuation_module_cls = get_valuation_module(env_name)
         valuation_module = valuation_module_cls(lang=lang, device=device)
@@ -61,15 +70,14 @@ class NudgePolicy(ActorCriticPolicy):
 
         self.categorical = CategoricalDistribution(action_dim=action_space.n)
 
-    def _init_predicates(self, clauses):
+    def _get_predicates(self, clauses):
         """Reads out all predicates and determines which predicate belongs to which action."""
         predicates = []
         for clause in clauses:
             if clause.head.pred.name not in predicates:
                 predicate_name = clause.head.pred.name
                 predicates.append(predicate_name)
-        self.predicates = predicates
-        self.n_predicates = len(self.predicates)
+        return predicates
 
     def get_distribution(self, obs: th.Tensor) -> Distribution:
         pred_probs = self.actor(obs)

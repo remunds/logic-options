@@ -1,7 +1,6 @@
 from typing import Union, List
 
 import numpy as np
-import torch as th
 from gymnasium import Wrapper, Env, spaces
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import GameObject
@@ -14,11 +13,16 @@ from logic.base import LARK_PATH, LANG_PATH
 
 class LogicEnvWrapper(Wrapper):
     """Applies the environment-specific logic state extractor to all obs,
-    returning logic representations of the states. Also applies reward shaping."""
+    returning logic representations of the states. Also applies reward shaping.
+    :param env: The environment
+    :param accepts_predicates: If True, actions submitted to step() are treated
+        as predicates, i.e., they are converted into actions according to the
+        predicate names of the logic language."""
 
     def __init__(
-        self,
-        env: Union[Env, OCAtari],
+            self,
+            env: Union[Env, OCAtari],
+            accepts_predicates: bool = True,
     ) -> None:
         super().__init__(env)
 
@@ -32,10 +36,11 @@ class LogicEnvWrapper(Wrapper):
                                             dtype=self.env.observation_space.dtype)
 
         # Actions and their corresponding predicates
+        self.accepts_predicates = accepts_predicates
         self.action_names = env.get_action_meanings()
-        self._init_predicates_and_actions()
-        self.predicate_space = spaces.Discrete(self.n_predicates)
-        self.action_space = self.predicate_space
+        if self.accepts_predicates:
+            self._init_predicates_and_actions()
+        self.action_space = spaces.Discrete(self.n_predicates) if self.accepts_predicates else env.action_space
 
         # Misc
         self.is_reset = False
@@ -44,8 +49,9 @@ class LogicEnvWrapper(Wrapper):
     def _init_predicates_and_actions(self):
         """Reads out all predicates from the clauses and determines which predicate
         belongs to which environment action."""
+        assert self.accepts_predicates
 
-        _, clauses, _, _ = get_lang(LARK_PATH, LANG_PATH, "", self.env_name)
+        _, clauses, _, _ = get_lang(LARK_PATH, LANG_PATH, self.env_name, "flat")
 
         predicates = []
         pred2action = []
@@ -74,8 +80,9 @@ class LogicEnvWrapper(Wrapper):
         logic_obs = self.logic_state_extractor(raw_obs)
         return logic_obs, info
 
-    def step(self, predicate: int):
-        action = self.pred2action[predicate]
+    def step(self, action: int):
+        if self.accepts_predicates:
+            action = self.pred2action[action]
         raw_obs, reward, terminated, truncated, info = self.env.step(action)
         if isinstance(self.env, OCAtari):
             raw_obs = self.env.objects

@@ -47,7 +47,7 @@ def make_scobi_env(name: str,
     return _init
 
 
-def make_logic_env(name: str, seed: int = None, **kwargs):
+def make_logic_env(name: str, accept_predicates: bool = True, seed: int = None, **kwargs):
     def _init():
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
@@ -56,7 +56,8 @@ def make_logic_env(name: str, seed: int = None, **kwargs):
         else:
             raise NotImplementedError()
         raw_env.reset(seed=seed)
-        return Monitor(LogicEnvWrapper(raw_env))
+        return Monitor(LogicEnvWrapper(raw_env, accept_predicates))
+
     return _init
 
 
@@ -94,6 +95,7 @@ def init_vec_env(name: str,
                  framestack: int = 1,
                  normalize_observation: bool = False,
                  normalize_reward: bool = False,
+                 accept_predicates: bool = True,
                  vec_norm_path: str = None,
                  train: bool = False,
                  freeze_invisible_obj: bool = False,
@@ -113,7 +115,7 @@ def init_vec_env(name: str,
         assert n_envs == 1
         assert framestack == 1
         assert not normalize_observation
-        vec_env = DummyVecEnv([make_logic_env(name, **settings)])
+        vec_env = DummyVecEnv([make_logic_env(name, accept_predicates, **settings)])
 
     elif name == "MeetingRoom":
         if n_envs > 1:

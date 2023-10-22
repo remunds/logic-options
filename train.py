@@ -54,11 +54,16 @@ def run(name: str = None,
     log_path.mkdir(parents=True, exist_ok=True)
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
+    hierarchy_shape = model["hierarchy_shape"]
+    uses_options = len(hierarchy_shape) > 0
+    print(f"Hierarchy shape {hierarchy_shape}")
+
     train_env, eval_env = init_train_eval_envs(n_train_envs=n_envs,
                                                n_eval_envs=n_eval_envs,
                                                seed=seed,
                                                logic=model["logic_meta_policy"],
                                                render_eval=evaluation["render"],
+                                               accept_predicates=not uses_options,
                                                **environment)
 
     cb_list = init_callbacks(exp_name=name,
@@ -70,9 +75,6 @@ def run(name: str = None,
                              ckpt_path=ckpt_path,
                              eval_kwargs=evaluation)
 
-    hierarchy_shape = model["hierarchy_shape"]
-    print(f"Hierarchy shape {hierarchy_shape}")
-
     policy_kwargs = {"hierarchy_shape": hierarchy_shape,
                      "normalize_images": not object_centric}
 
@@ -80,6 +82,7 @@ def run(name: str = None,
     if logic:
         policy_kwargs.update({"env_name": game_identifier,
                               "logic_meta_policy": True,
+                              "accepts_predicates": uses_options,
                               "device": device})
 
     net_arch = model.get("net_arch")
