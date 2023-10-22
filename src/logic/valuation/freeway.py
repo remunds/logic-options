@@ -1,7 +1,7 @@
 import torch as th
 from torch import nn
 
-from logic.valuation.valuation_modules import ValuationModule
+from logic.valuation.base import ValuationModule
 
 
 class FreewayValuationModule(ValuationModule):

@@ -1,5 +1,6 @@
 from typing import Union, List
 
+import numpy as np
 import torch as th
 from gymnasium import Wrapper, Env, spaces
 from ocatari.core import OCAtari
@@ -62,7 +63,7 @@ class LogicEnvWrapper(Wrapper):
                                          f"'{self.action_names}'.")
         self.predicates = predicates
         self.n_predicates = len(self.predicates)
-        self.pred2action = th.tensor(pred2action)
+        self.pred2action = np.array(pred2action)
 
     def reset(self, **kwargs):
         raw_obs, info = self.env.reset(**kwargs)

@@ -1,5 +1,5 @@
 from logic.valuation.freeway import FreewayValuationModule
-from logic.valuation.meetingroom import MeetingRoomValuationModule
+from logic.valuation.meeting_room import MeetingRoomValuationModule
 
 VALUATION_MODULES = {
     "freeway": FreewayValuationModule,

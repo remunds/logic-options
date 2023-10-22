@@ -7,14 +7,31 @@ from nsfr.fol.language import Language
 from nsfr.fol.logic import Atom, Term
 
 
+class ValuationFunction(nn.Module, ABC):
+    """Base class for valuation functions used inside valuation modules."""
+
+    def __init__(self, pred_name: str):
+        super().__init__()
+        self.pred_name = pred_name
+
+    def forward(self, **kwargs) -> th.Tensor:
+        raise NotImplementedError()
+
+    def bool2probs(self, bool_tensor: th.Tensor) -> th.Tensor:
+        """Converts a Boolean tensor into a probability tensor by assigning
+        probability 0.99 for True
+        probability 0.01 for False."""
+        return th.where(bool_tensor, 0.99, 0.01)
+
+
 class ValuationModule(nn.Module, ABC):
     """Turns logic state representations into valuated atom probabilities according to
     the environment-specific valuation functions."""
 
     lang: Language
     device: th.device
-    layers: Sequence[nn.Module]  # list of valuation functions
-    vfs: Dict[str, nn.Module]  # predicate names to corresponding valuation fn
+    layers: Sequence[ValuationFunction]  # list of valuation functions
+    val_fns: Dict[str, ValuationFunction]  # predicate names to corresponding valuation fn
     attrs: Dict[Any, th.Tensor]  # attribute terms to corresponding one-hot encoding
     dataset: str
 
@@ -23,7 +40,7 @@ class ValuationModule(nn.Module, ABC):
         self.lang = lang
         self.device = device
         self.pretrained = pretrained
-        self.layers, self.vfs = self.init_valuation_functions()
+        self.layers, self.val_fns = self.init_valuation_functions()
 
     def init_valuation_functions(self) -> (Sequence[nn.Module], Dict[str, nn.Module]):
         raise NotImplementedError()
@@ -38,10 +55,10 @@ class ValuationModule(nn.Module, ABC):
             Returns:
                 A batch of the probabilities of the target atom.
         """
+        val_fn = self.val_fns[atom.pred.name]
         # term: logical term
-        # arg: vector representation of the term
+        # args: the vectorized input evaluated by the value function
         args = [self.ground_to_tensor(term, zs) for term in atom.terms]
-        val_fn = self.vfs[atom.pred.name]
         return val_fn(*args)
 
     def ground_to_tensor(self, term: Term, zs: th.Tensor):

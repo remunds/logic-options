@@ -15,7 +15,7 @@ from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStac
 from envs.meeting_room import MeetingRoom
 from logic.env_wrapper import LogicEnvWrapper
 
-from common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
+from src.common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
 from envs.util import get_atari_identifier
 
 

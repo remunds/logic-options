@@ -1,0 +1,16 @@
+north:1:image
+east:1:image
+south:1:image
+west:1:image
+next:1:image
+prev:1:image
+north_to_target:1:image
+east_to_target:1:image
+south_to_target:1:image
+west_to_target:1:image
+north_bypass_wall:1:image
+east_bypass_wall:1:image
+south_bypass_wall:1:image
+west_bypass_wall:1:image
+next_upper_floor_to_target:1:image
+prev_lower_floor_to_target:1:image

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 
 FOCUS_FILES_DIR = "in/focusfiles"

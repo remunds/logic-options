@@ -1,4 +1,4 @@
-from typing import SupportsFloat, Any, Dict, Tuple
+from typing import SupportsFloat, Any, Dict, Tuple, Sequence
 from enum import Enum
 from queue import Queue
 
@@ -52,6 +52,7 @@ class MeetingRoom(Env):
         episodes AND the walls are the same on all floors of a building
     """
 
+    game_name = "meetingroom"
     action_space = spaces.Discrete(len(Action))
     metadata = {
         'render.modes': ['human', 'rgb_array'],
@@ -238,6 +239,8 @@ class MeetingRoom(Env):
         return np.array([b, f, x, y])
 
     def _get_observation(self):
+        """CAUTION: If you change this function, also update
+        logic.valuation.meeting_room.py accordingly."""
         obs = [
             self.target - self.current_pos,
             self._get_current_elevator() - self.current_pos[2:4],
@@ -597,6 +600,10 @@ class MeetingRoom(Env):
             (pygame.K_PLUS,): 4,  # next
             (pygame.K_MINUS,): 5,  # prev
         }
+
+    def get_action_meanings(self) -> Sequence[str]:
+        action_names = [a.name for a in Action]
+        return action_names
 
 
 def get_rotation_matrix(rad: float):

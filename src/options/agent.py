@@ -33,6 +33,7 @@ class OptionsAgent(BasePolicy):
                  logic_meta_policy: bool = False,
                  net_arch: List[int] = None,
                  env_name: str = None,
+                 device: str = "cuda",
                  **kwargs):
         super().__init__(observation_space=observation_space, action_space=action_space)
 
@@ -58,6 +59,7 @@ class OptionsAgent(BasePolicy):
                 action_space=options_hierarchy.action_option_spaces[0],
                 lr_schedule=lr_schedule,
                 net_arch=net_arch,
+                device=device,
                 **kwargs
             )
         else:
@@ -249,6 +251,7 @@ class OptionsAgent(BasePolicy):
             hierarchy_shape=self.hierarchy_shape,
             net_arch=self.net_arch,
             env_name=self.env_name,
+            device=self.device,
         ))
         return data
 
