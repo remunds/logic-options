@@ -79,7 +79,8 @@ def run(name: str = None,
     logic = model["logic_meta_policy"]
     if logic:
         policy_kwargs.update({"env_name": game_identifier,
-                              "logic_meta_policy": True})
+                              "logic_meta_policy": True,
+                              "device": device})
 
     net_arch = model.get("net_arch")
     if net_arch is not None:
