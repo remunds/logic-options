@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, Type
 import torch as th
 from gymnasium import spaces
 from nsfr.nsfr import NSFReasoner
@@ -16,6 +16,9 @@ class NudgePolicy(ActorCriticPolicy):
     """Wrapper class for NUDGE. Enables to use NUDGE while preserving the standard SB3 AC interface.
     Takes logic state tensors as input. Hence, the logic state representation needs to be done before
     and outside of this class."""
+    # TODO: replace parent class ActorCriticPolicy with BasePolicy and implement own value net
+
+    optimizer_class: Type[th.optim.Adam]
 
     def __init__(self,
                  env_name: str,
@@ -54,10 +57,9 @@ class NudgePolicy(ActorCriticPolicy):
                                  clauses=clauses,
                                  train=True)
 
-        self.categorical = CategoricalDistribution(action_dim=action_space.n)
+        self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
 
-        # Uniform distribution for epsilon-greedy policy
-        # self.uniform = Categorical(th.ones(size=(self.n_actions,), device=device) / self.n_actions)
+        self.categorical = CategoricalDistribution(action_dim=action_space.n)
 
     def _init_predicates(self, clauses):
         """Reads out all predicates and determines which predicate belongs to which action."""
@@ -96,5 +98,3 @@ class NudgePolicy(ActorCriticPolicy):
         log_prob = dist.log_prob(actions)
         entropy = dist.entropy()
         return values, log_prob, entropy
-
-# TODO: check if NUDGE policy parameters are learned (they should change after a training step)
