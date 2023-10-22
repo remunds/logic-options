@@ -106,6 +106,11 @@ class OptionsPPO(PPO):
         callback.on_rollout_start()
         dones = None
 
+        self.progress = tqdm(total=n_rollout_steps,
+                             file=sys.stdout, desc="Collecting rollout",
+                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+                             leave=False)
+
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
                 # Sample a new noise matrix
@@ -192,6 +197,10 @@ class OptionsPPO(PPO):
             terminations[dones] = True
             self._last_option_terminations = terminations
 
+            self.progress.update(1)
+
+        self.progress.close()
+
         progress_percent = (1 - self._current_progress_remaining) * 100
 
         print(f"\rTotal steps: {num2text(self.num_timesteps)} ({progress_percent:.1f} %) - "
@@ -231,7 +240,8 @@ class OptionsPPO(PPO):
         """
         self.progress = tqdm(total=int(self.policy.n_policies * self.n_epochs),
                              file=sys.stdout, desc="Training",
-                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
+                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+                             leave=False)
 
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
