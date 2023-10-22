@@ -7,7 +7,7 @@ import numpy as np
 from gymnasium import Env, spaces
 from gymnasium.core import ActType, ObsType
 
-from utils.render import draw_arrow
+from utils.render import draw_arrow, draw_label
 
 PLAYER_VIEW_SIZE = 7  # odd number
 
@@ -67,15 +67,20 @@ class MeetingRoom(Env):
                  n_buildings: int = 4,
                  n_floors: int = 4,
                  floor_shape: [int, int] = None,
+                 goal: str = "target",
                  max_steps: int = 100,
                  render_mode: str = None,
                  walls_fixed: bool = False,
                  seed: int = None):
+        if goal not in ["target", "elevator", "entrance"]:
+            raise ValueError(f"Unrecognized goal '{goal}'.")
+
         if floor_shape is None:
             floor_shape = np.array([11, 11], dtype=int)
         else:
             floor_shape = np.asarray(floor_shape)
 
+        self.goal = goal
         self.render_mode = render_mode
         self.n_buildings = n_buildings
         self.n_floors = n_floors
@@ -278,24 +283,39 @@ class MeetingRoom(Env):
     def step(self, action: ActType) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         self._act(Action(action))
         new_improvement = self._update_best_distance()
-        target_reached = np.all(self.current_pos == self.target)
+        goal_reached = self._check_goal_reached()
         obs = self._get_observation()
-        reward = self._get_reward(target_reached, new_improvement)
+        reward = self._get_reward(goal_reached=goal_reached, new_improvement=new_improvement)
         self.n_steps += 1
         truncated = self.n_steps >= self.max_steps
-        self.terminated |= target_reached | truncated
+        self.terminated |= goal_reached | truncated
         info = self._get_info()
         return obs, reward, self.terminated, truncated, info
+
+    def _check_goal_reached(self) -> bool:
+        if self.goal == "target":
+            return np.all(self.current_pos == self.target)
+        elif self.goal == "elevator":
+            return np.all(self.current_pos[2:] == self._get_current_elevator())
+        else:  # entrance
+            return np.all(self.current_pos[2:] == self._get_current_entrance())
 
     def _compute_distances(self):
         """Fills the distance map with the respective distance values
         to the target."""
         self.distance_map[:] = -1
 
-        self.distance_map[tuple(self.target)] = 0
+        if self.goal == "target":
+            goal = self.target
+        elif self.goal == "elevator":
+            goal = np.array([*self.current_pos[:2], *self._get_current_elevator()])
+        else:  # entrance
+            goal = np.array([self.current_pos[0], 0, *self._get_current_entrance()])
+        self.distance_map[tuple(goal)] = 0
 
+        # Dijkstra shortest path computation
         queue = Queue()
-        queue.put(self.target)
+        queue.put(goal)
         while not queue.empty():
             position = queue.get()
             d = self.distance_map[tuple(position)]
@@ -305,7 +325,7 @@ class MeetingRoom(Env):
                     self.distance_map[tuple(neighbor)] = d + 1
                     queue.put(neighbor)
 
-    def _get_reward(self, target_reached: bool, new_improvement: bool):
+    def _get_reward(self, goal_reached: bool, new_improvement: bool):
         """Compares previous position with current position and gives a reward
         according to the change of the distance to the target. Penalizes non-movement."""
         # Distance reward
@@ -319,27 +339,24 @@ class MeetingRoom(Env):
         improvement_reward = 1 if new_improvement else 0
 
         # Floor switch reward
-        if self.target[0] == self.current_pos[0]:  # player in target building
-            floor_diff = abs(self.target[1] - self.previous_pos[1]) - abs(self.target[1] - self.current_pos[1])
+        if self.goal == "target":
+            if self.target[0] == self.current_pos[0]:  # player in target building
+                floor_diff = abs(self.target[1] - self.previous_pos[1]) - abs(self.target[1] - self.current_pos[1])
+            else:
+                floor_diff = self.previous_pos[1] - self.current_pos[1]
+            floor_switch_bonus = floor_diff * 0.2
         else:
-            floor_diff = self.previous_pos[1] - self.current_pos[1]
-        floor_switch_bonus = floor_diff * 0.2
+            floor_switch_bonus = 0
 
         # Building switch reward
-        building_diff = abs(self.target[0] - self.previous_pos[0]) - abs(self.target[0] - self.current_pos[0])
-        building_switch_bonus = building_diff * 0.5
+        if self.goal == "target":
+            building_diff = abs(self.target[0] - self.previous_pos[0]) - abs(self.target[0] - self.current_pos[0])
+            building_switch_bonus = building_diff * 0.5
+        else:
+            building_switch_bonus = 0
 
         # Target reward
-        target_reward = 1 if target_reached else 0
-
-        # Penalize non-movement: Has undesired side effects
-        if self.previous_pos is not None and np.all(self.previous_pos == self.current_pos):
-            rest_penalty = -1
-        else:
-            rest_penalty = 0
-
-        # Penalize each time step: Turns out to be not useful
-        time_penalty = -0.1 if not target_reached else 0
+        target_reward = 1 if goal_reached else 0
 
         return target_reward + floor_switch_bonus + building_switch_bonus + distance_reward
 
