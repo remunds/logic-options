@@ -15,6 +15,9 @@ if __name__ == "__main__":
     model = load_agent(name, env_name, render_mode="rgb_array", render_oc_overlay=True, reward_mode="human")
     env = model.get_env()
 
+    if model.policy.logic_meta_policy:
+        model.policy.meta_policy.actor.print_program()
+
     # Prepare loop
     obs = env.reset()
     option_terminations = th.ones(1, model.hierarchy_size).type(th.BoolTensor)

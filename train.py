@@ -92,7 +92,7 @@ def run(name: str = None,
     clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
     learning_rate = maybe_make_schedule(training.pop("learning_rate"))
 
-    model = OptionsPPO(
+    options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,
         learning_rate=learning_rate,
@@ -105,7 +105,10 @@ def run(name: str = None,
     )
 
     new_logger = configure(str(log_path), ["tensorboard"])
-    model.set_logger(new_logger)
+    options_ppo.set_logger(new_logger)
+
+    # Transfer learning with existing components (if specified)
+    options_ppo.policy.load_components(model.get("components"), train_env, device)
 
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")
@@ -118,8 +121,8 @@ def run(name: str = None,
     print(f"Running experiment '{name}'")
     if description is not None:
         print(description)
-    print(f"Started {type(model).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")
-    model.learn(total_timesteps=total_timestamps, callback=cb_list)
+    print(f"Started {type(options_ppo).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")
+    options_ppo.learn(total_timesteps=total_timestamps, callback=cb_list)
 
 
 if __name__ == "__main__":

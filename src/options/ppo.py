@@ -277,8 +277,11 @@ class OptionsPPO(PPO):
         the option."""
         if level == -1:  # meta-policy
             policy = self.policy.meta_policy
+            evaluate_fn = policy.evaluate_actions
         else:
-            policy = self.policy.options_hierarchy[level][option_id].policy
+            option = self.policy.options_hierarchy[level][option_id]
+            policy = option.get_policy()
+            evaluate_fn = option.evaluate_actions
 
         self._update_learning_rate(policy.optimizer)
 
@@ -303,7 +306,7 @@ class OptionsPPO(PPO):
                 if self.use_sde:
                     policy.reset_noise(self.batch_size)
 
-                values, log_prob, entropy = policy.evaluate_actions(rollout_data.observations, options_actions)
+                values, log_prob, entropy = evaluate_fn(rollout_data.observations, options_actions)
                 values = values.flatten()
                 # Normalize advantage
                 advantages = rollout_data.advantages
@@ -394,7 +397,9 @@ class OptionsPPO(PPO):
 
     def _train_terminator(self, level: int, option_id: int) -> None:
         """Trains the terminator of each specified option."""
-        terminator: Terminator = self.policy.options_hierarchy[level][option_id].terminator
+        option = self.policy.options_hierarchy[level][option_id]
+        terminator: Terminator = option.get_terminator()
+        evaluate_fn = option.evaluate_terminations
 
         clip_range, clip_range_vf = self._get_current_clip_ranges()
 
@@ -411,7 +416,7 @@ class OptionsPPO(PPO):
             for rollout_data in self.rollout_buffer.get_terminator_train_data(level, option_id, self.batch_size):
                 next_obs = rollout_data.next_observations
                 terminations = rollout_data.option_terminations
-                tn_log_probs, entropy = terminator.evaluate(next_obs, terminations)
+                tn_log_probs, entropy = evaluate_fn(next_obs, terminations)
 
                 # Ratio between old and new termination log prob
                 tn_ratio = th.exp(tn_log_probs - rollout_data.old_tn_log_probs)

@@ -10,6 +10,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy, BaseModel
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
 from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.common.torch_layers import FlattenExtractor
+from stable_baselines3.common.vec_env import VecNormalize
 from torch import nn
 
 from utils.common import get_net_from_layer_dims
@@ -19,51 +20,108 @@ class Option(nn.Module):
     """Hosts an actor-critic module (policy and value function) and a terminator module."""
 
     def __init__(self,
-                 observation_space: Space,
-                 action_space: Space,
                  lr_schedule: Schedule,
+                 observation_space: Space = None,
+                 action_space: Space = None,
+                 policy: ActorCriticPolicy = None,
+                 vec_norm: VecNormalize = None,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
                  **kwargs):
+        assert (policy is not None
+                or observation_space is not None
+                and action_space is not None)
+
         super().__init__()
 
-        self.policy = ActorCriticPolicy(
-            observation_space,
-            action_space,
-            lr_schedule,
-            features_extractor_class=FlattenExtractor,
-            features_extractor_kwargs=None,
-            share_features_extractor=True,
-            **kwargs
-        )
+        if policy is not None:
+            self._policy = policy
+        else:
+            self._policy = ActorCriticPolicy(
+                observation_space,
+                action_space,
+                lr_schedule,
+                features_extractor_class=FlattenExtractor,
+                features_extractor_kwargs=None,
+                share_features_extractor=True,
+                **kwargs
+            )
 
-        tn_net_arch = net_arch["tn"] if isinstance(net_arch, dict) else self.policy.net_arch["pi"]
-        self.terminator = Terminator(
-            observation_space=observation_space,
-            action_space=action_space,
+        self.vec_norm = vec_norm
+        self.normalize_input = self.vec_norm is not None
+        self.observation_space = self._policy.observation_space
+        self.action_space = self._policy.action_space
+
+        if isinstance(net_arch, dict):
+            tn_net_arch = net_arch["tn"]
+        elif isinstance(self._policy.net_arch, dict):
+            tn_net_arch = self._policy.net_arch["pi"]
+        else:
+            tn_net_arch = self._policy.net_arch
+
+        self._terminator = Terminator(
+            observation_space=self.observation_space,
+            action_space=self.action_space,
             lr_schedule=lr_schedule,
-            features_extractor=self.policy.features_extractor,
+            features_extractor=self._policy.features_extractor,
             net_arch=tn_net_arch,
-            activation_fn=self.policy.activation_fn,
-            optimizer_class=self.policy.optimizer_class,
-            optimizer_kwargs=self.policy.optimizer_kwargs,
-            normalize_images=self.policy.normalize_images,
+            activation_fn=self._policy.activation_fn,
+            optimizer_class=self._policy.optimizer_class,
+            optimizer_kwargs=self._policy.optimizer_kwargs,
+            normalize_images=self._policy.normalize_images,
         )
 
-        self.observation_space = observation_space
-        self.action_space = action_space
+    def get_policy(self):
+        return self._policy
+
+    def get_terminator(self):
+        return self._terminator
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
-        return self.policy.forward(obs, deterministic)
+        return self.forward_actor(obs, deterministic)
+
+    def _normalize(self, obs: th.Tensor):
+        if self.normalize_input:
+            return th.tensor(self.vec_norm.normalize_obs(np.array(obs.cpu())), device=obs.device)
+        return obs
+
+    def forward_actor(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+        obs = self._normalize(obs)
+        return self._policy.forward(obs, deterministic)
+
+    def predict_values(self, obs: th.Tensor) -> th.Tensor:
+        obs = self._normalize(obs)
+        return self._policy.predict_values(obs)
+
+    def forward_terminator(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor]:
+        obs = self._normalize(obs)
+        return self._terminator.forward(obs, deterministic)
+
+    def get_terminator_dist(self, obs: th.Tensor) -> CategoricalDistribution:
+        obs = self._normalize(obs)
+        return self._terminator.get_distribution(obs)
+
+    def evaluate_terminations(self, obs: th.Tensor, terminations: th.Tensor) -> (th.Tensor, th.Tensor):
+        obs = self._normalize(obs)
+        return self._terminator.evaluate(obs, terminations)
+
+    def evaluate_actions(self, obs: th.Tensor, actions: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+        obs = self._normalize(obs)
+        return self._policy.evaluate_actions(obs, actions)
 
     def set_training_mode(self, mode: bool):
-        self.policy.set_training_mode(mode)
-        self.terminator.set_training_mode(mode)
+        self._policy.set_training_mode(mode)
+        self._terminator.set_training_mode(mode)
 
     def reset_noise(self, n_envs: int = 1):
-        self.policy.reset_noise(n_envs)
+        self._policy.reset_noise(n_envs)
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
+    def to(self, device):
+        self._policy = self._policy.to(device)
+        self._terminator = self._terminator.to(device)
+        return self
 
 
 class Terminator(BaseModel):
@@ -164,7 +222,7 @@ class OptionCollection:
         all_log_probs = []
         for i, option in enumerate(self.options):
             obs_tensor = th.unsqueeze(obs[i], dim=0)
-            terminations, log_probs = option.terminator.forward(obs_tensor, deterministic)
+            terminations, log_probs = option.forward_terminator(obs_tensor, deterministic)
             all_log_probs.append(log_probs)
             all_terminations.append(terminations)
         return th.hstack(all_terminations).type(th.BoolTensor), th.hstack(all_log_probs)
@@ -174,14 +232,14 @@ class OptionCollection:
         all_log_likelihoods = []
         for i, option in enumerate(self.options):
             obs_tensor = th.unsqueeze(obs[i], dim=0)
-            termination_dist = option.terminator.get_distribution(obs_tensor)
+            termination_dist = option.get_terminator_dist(obs_tensor)
             log_prob = termination_dist.log_prob(terminations)
             all_log_likelihoods.append(log_prob)
         return th.hstack(all_log_likelihoods)
 
     def get_termination_dist(self, obs: th.Tensor) -> CategoricalDistribution:
         assert len(self.options) == 1
-        return self.options[0].terminator.get_distribution(obs)
+        return self.options[0].get_terminator_dist(obs)
 
     def __getitem__(self, item: Union[int, th.Tensor, np.ndarray]) -> Union[OptionCollection, Option]:
         if isinstance(item, th.Tensor):

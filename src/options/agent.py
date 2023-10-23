@@ -1,3 +1,4 @@
+import os.path
 from typing import Tuple, Any, List, Dict
 
 import numpy as np
@@ -5,8 +6,10 @@ import torch as th
 from gymnasium import spaces
 from stable_baselines3.common.distributions import CategoricalDistribution
 from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
+from stable_baselines3.common.vec_env import VecNormalize
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
-from options.option import OptionCollection
+from options.option import OptionCollection, Option
 from options.hierarchy import OptionsHierarchy
 from logic.policy import NudgePolicy
 
@@ -21,6 +24,8 @@ class OptionsAgent(BasePolicy):
         Example: [2, 4, 8]. If empty, no options used => standard actor-critic PPO.
     :param logic_meta_policy: Whether the meta policy should be modeled with NUDGE or
         with an NN
+    :param components: List of information which option to initialize with which
+        already-trained component for transfer learning.
     :param accepts_predicates: If True, treats top-level option IDs as predicates, hence,
         converts them to actual option IDs before usage.
     """
@@ -50,6 +55,7 @@ class OptionsAgent(BasePolicy):
         self.net_arch = net_arch
         self.env_name = env_name
         self.accepts_predicates = accepts_predicates
+        self.components = None
 
         options_hierarchy = OptionsHierarchy(hierarchy_shape,
                                              observation_space,
@@ -100,6 +106,35 @@ class OptionsAgent(BasePolicy):
                                      f"not contain the identifier of any option. It must contain a "
                                      f"substring of the form 'opt{o}' for, e.g., option {o}.")
         self.pred2option = th.tensor(pred2option, device=device)
+
+    def load_components(self, components: List[Dict[str, Any]] = None, env: VecEnv = None, device="auto"):
+        if components is None:
+            return
+
+        self.components = components
+        from options.ppo import OptionsPPO
+
+        for component_info in components:
+            level = component_info["level"]
+            option_id = component_info["option"]
+            model_path = component_info["model_path"]
+
+            # Load vec normalize if exists
+            vec_norm_path = model_path + ".pkl"
+            if env is not None and os.path.exists(vec_norm_path):
+                env = VecNormalize.load(model_path + ".pkl", venv=env)
+                vec_norm = env
+            else:
+                vec_norm = None
+
+            # Load actor-critic policy
+            ppo = OptionsPPO.load(model_path + ".zip", env, custom_objects={"progress": None})
+            policy: ActorCriticPolicy = ppo.policy.meta_policy
+
+            # Initialize option
+            option = Option(policy=policy, vec_norm=vec_norm, lr_schedule=self.lr_schedule)
+            option = option.to(device)
+            self.options_hierarchy.options[level][option_id] = option
 
     @property
     def hierarchy_size(self):
@@ -246,7 +281,7 @@ class OptionsAgent(BasePolicy):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level_id, option_id in enumerate(trace):
                 option = self.options_hierarchy[level_id][option_id]
-                values[env_id, level_id + 1] = option.policy.predict_values(env_obs)
+                values[env_id, level_id + 1] = option._policy.predict_values(env_obs)
         return values
 
     def forward_all_terminators(
@@ -268,7 +303,7 @@ class OptionsAgent(BasePolicy):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
             for level, option_id in enumerate(trace):
                 option = self.options_hierarchy[level][option_id]
-                termination, log_prob = option.terminator.forward(env_obs, deterministic)
+                termination, log_prob = option._terminator.forward(env_obs, deterministic)
                 terminations[env_id, level] = termination
                 log_probs[env_id, level] = log_prob
 
@@ -298,6 +333,7 @@ class OptionsAgent(BasePolicy):
             env_name=self.env_name,
             accepts_predicates=self.accepts_predicates,
             device=self.device,
+            components=self.components,
         ))
         return data
 
@@ -305,6 +341,5 @@ class OptionsAgent(BasePolicy):
         self.meta_policy = self.meta_policy.to(device)
         for level in self.options_hierarchy:
             for option in level:
-                option.policy = option.policy.to(device)
-                option.terminator = option.terminator.to(device)
+                option.to(device)
         return self
