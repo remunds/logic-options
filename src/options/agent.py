@@ -118,6 +118,7 @@ class OptionsAgent(BasePolicy):
             level = component_info["level"]
             option_id = component_info["option"]
             model_path = component_info["model_path"]
+            trainable = component_info["trainable"]
 
             # Load vec normalize if exists
             vec_norm_path = model_path + ".pkl"
@@ -132,9 +133,16 @@ class OptionsAgent(BasePolicy):
             policy: ActorCriticPolicy = ppo.policy.meta_policy
 
             # Initialize option
-            option = Option(policy=policy, vec_norm=vec_norm, lr_schedule=self.lr_schedule)
+            option = Option(policy=policy,
+                            trainable=trainable,
+                            vec_norm=vec_norm,
+                            lr_schedule=self.lr_schedule)
             option = option.to(device)
             self.options_hierarchy.options[level][option_id] = option
+
+            trainable_str = "trainable" if trainable else "untrainable"
+            print(f"Loaded pre-trained model from '{model_path}' as {trainable_str} option "
+                  f"on level {level}, position {option_id}.")
 
     @property
     def hierarchy_size(self):

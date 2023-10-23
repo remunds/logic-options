@@ -17,13 +17,27 @@ from utils.common import get_net_from_layer_dims
 
 
 class Option(nn.Module):
-    """Hosts an actor-critic module (policy and value function) and a terminator module."""
+    """Hosts an actor-critic module (policy and value function) and a terminator module.
+
+        :param lr_schedule:
+        :param observation_space:
+        :param action_space:
+        :param policy: Optional: The policy of a pre-trained model to use instead of a
+            freshly generated neural policy.
+        :param trainable: If False, network weights don't get updated. Useful when
+            this option object is a pre-trained model (submitted via policy).
+        :param vec_norm: VecNormalize env used to normalize the input if a pre-trained
+            policy is used (submitted via policy) that requires normalization.
+        :param net_arch:
+        :param kwargs: Any more parameters for the ActorCritic class.
+    """
 
     def __init__(self,
                  lr_schedule: Schedule,
                  observation_space: Space = None,
                  action_space: Space = None,
                  policy: ActorCriticPolicy = None,
+                 trainable: bool = True,
                  vec_norm: VecNormalize = None,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
                  **kwargs):
@@ -50,6 +64,7 @@ class Option(nn.Module):
         self.normalize_input = self.vec_norm is not None
         self.observation_space = self._policy.observation_space
         self.action_space = self._policy.action_space
+        self.trainable = trainable
 
         if isinstance(net_arch, dict):
             tn_net_arch = net_arch["tn"]

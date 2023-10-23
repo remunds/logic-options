@@ -280,6 +280,8 @@ class OptionsPPO(PPO):
             evaluate_fn = policy.evaluate_actions
         else:
             option = self.policy.options_hierarchy[level][option_id]
+            if not option.trainable:
+                return
             policy = option.get_policy()
             evaluate_fn = option.evaluate_actions
 
@@ -398,6 +400,8 @@ class OptionsPPO(PPO):
     def _train_terminator(self, level: int, option_id: int) -> None:
         """Trains the terminator of each specified option."""
         option = self.policy.options_hierarchy[level][option_id]
+        if not option.trainable:
+            return
         terminator: Terminator = option.get_terminator()
         evaluate_fn = option.evaluate_terminations
 
