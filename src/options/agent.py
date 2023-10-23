@@ -91,6 +91,9 @@ class OptionsAgent(BasePolicy):
             self._init_predicate_conversion(device)
 
     def _init_predicate_conversion(self, device):
+        """Computes the pred2option np.array which converts predicate IDs into top-level
+        option position IDs."""
+
         assert isinstance(self.meta_policy, NudgePolicy)
         n_top_level_options = self.hierarchy_shape[0]
         pred2option = []
@@ -159,18 +162,16 @@ class OptionsAgent(BasePolicy):
     def n_policies(self):
         return np.sum(self.hierarchy_shape) + 1
 
-    def get_option_by_id(self, option_id: th.Tensor) -> OptionCollection:
+    def get_option_by_idx(self, index: th.Tensor) -> OptionCollection:
         """
-        Turns a batch of option IDs into the corresponding list of options
-
-        :param option_id: 2D matrix
-        :return:
+        Turns a batch of option indexes into the corresponding list of options
+        :param index: 2D matrix
         """
         options = []
-        for level, idx in option_id:
+        for level, position in index:
             if self.accepts_predicates and level == 0:
-                idx = self.pred2option[idx]
-            options.append(self.options_hierarchy[level][idx])
+                position = self.pred2option[position]
+            options.append(self.options_hierarchy[level][position])
         return OptionCollection(options)
 
     def set_training_mode(self, mode: bool) -> None:
@@ -191,18 +192,18 @@ class OptionsAgent(BasePolicy):
     def forward_option(
             self,
             obs: th.Tensor,
-            option_id: th.Tensor,
+            option_idx: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
         Forward pass in actor and critic for specified option.
 
         :param obs: Observation
-        :param option_id: The target option's index [level, ID]
+        :param option_idx: The target option's index [level, position]
         :param deterministic: Whether to sample or use deterministic actions
         :return: action, value, and log probability of the action
         """
-        option = self.get_option_by_id(option_id)
+        option = self.get_option_by_idx(option_idx)
         return option.forward(obs, deterministic)
 
     def forward_all(
@@ -217,7 +218,7 @@ class OptionsAgent(BasePolicy):
         option.
 
         :param obs: Observation
-        :param option_traces:
+        :param option_traces: For each hierarchy level the position of the currently active option.
         :param option_terminations: Same shape as option_traces where each entry is True iff the
             corresponding option in option_traces has terminated.
         :param deterministic:
@@ -247,39 +248,39 @@ class OptionsAgent(BasePolicy):
         is_terminated = option_terminations[:, 0]
         options[is_terminated, 0] = new_options[is_terminated]
 
-        for env_id, trace in enumerate(option_traces):
-            env_obs = th.unsqueeze(obs[env_id], dim=0)
+        for env, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env], dim=0)
 
             # Determine new options (if needed)
-            for level_id, option_id in enumerate(trace):
-                if level_id == 0:
+            for level in range(len(trace)):
+                if level == 0:
                     continue
 
-                higher_level_option_id = options[env_id][level_id - 1]
-                active_option = self.options_hierarchy[level_id - 1][higher_level_option_id]
+                higher_level_option_pos = options[env][level - 1]
+                active_option = self.options_hierarchy[level - 1][higher_level_option_pos]
 
-                option, values[env_id][level_id], log_probs[env_id][level_id] = \
+                option, values[env][level], log_probs[env][level] = \
                     active_option(env_obs, deterministic)
 
                 # Replace terminated options
-                if option_terminations[env_id][level_id]:
-                    options[env_id][level_id] = option
+                if option_terminations[env][level]:
+                    options[env][level] = option
 
             # Determine new action (always executed)
-            lowest_level_option_id = options[env_id][-1]
-            lowest_level_option = self.options_hierarchy[-1][lowest_level_option_id]
-            actions[env_id], values[env_id, -1], log_probs[env_id, -1] = lowest_level_option(env_obs, deterministic)
+            lowest_level_option_pos = options[env][-1]
+            lowest_level_option = self.options_hierarchy[-1][lowest_level_option_pos]
+            actions[env], values[env, -1], log_probs[env, -1] = lowest_level_option(env_obs, deterministic)
 
         return (options, actions), values, log_probs
 
     def forward_option_terminator(
             self,
             obs: th.Tensor,
-            option_id: th.Tensor,
+            option_idx: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
         """Forward in the terminator of specified options."""
-        options = self.get_option_by_id(option_id)
+        options = self.get_option_by_idx(option_idx)
         return options.forward_terminator(obs, deterministic)
 
     def predict_all_values(self, obs: th.Tensor, option_traces: th.Tensor) -> th.Tensor:
@@ -292,11 +293,11 @@ class OptionsAgent(BasePolicy):
 
         values = th.zeros(option_traces.shape[0], option_traces.shape[1] + 1)
         values[:, 0] = self.meta_policy.predict_values(obs).squeeze()
-        for env_id, trace in enumerate(option_traces):
-            env_obs = th.unsqueeze(obs[env_id], dim=0)
-            for level_id, option_id in enumerate(trace):
-                option = self.options_hierarchy[level_id][option_id]
-                values[env_id, level_id + 1] = option._policy.predict_values(env_obs)
+        for env, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env], dim=0)
+            for level, position in enumerate(trace):
+                option = self.options_hierarchy[level][position]
+                values[env, level + 1] = option.predict_values(env_obs)
         return values
 
     def forward_all_terminators(
@@ -316,25 +317,25 @@ class OptionsAgent(BasePolicy):
 
         for env_id, trace in enumerate(option_traces):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
-            for level, option_id in enumerate(trace):
-                option = self.options_hierarchy[level][option_id]
-                termination, log_prob = option._terminator.forward(env_obs, deterministic)
+            for level, position in enumerate(trace):
+                option = self.options_hierarchy[level][position]
+                termination, log_prob = option.forward_terminator(env_obs, deterministic)
                 terminations[env_id, level] = termination
                 log_probs[env_id, level] = log_prob
 
         return terminations, log_probs
 
-    def get_option_termination_dist(self, obs: th.Tensor, option_id: th.Tensor) -> CategoricalDistribution:
-        option = self.get_option_by_id(option_id)
+    def get_option_termination_dist(self, obs: th.Tensor, option_idx: th.Tensor) -> CategoricalDistribution:
+        option = self.get_option_by_idx(option_idx)
         return option.get_termination_dist(obs)
 
     def evaluate_option_terminations(
             self,
             obs: th.Tensor,
-            option_id: th.Tensor,
+            option_idx: th.Tensor,
             terminations: th.Tensor
     ) -> th.Tensor:
-        option = self.get_option_by_id(option_id)
+        option = self.get_option_by_idx(option_idx)
         return option.evaluate_terminations(obs=obs, terminations=terminations)
 
     def _get_constructor_parameters(self) -> Dict[str, Any]:

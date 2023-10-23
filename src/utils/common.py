@@ -146,8 +146,8 @@ def get_net_from_layer_dims(layers_dims: list[int],
     return net, last_layer_dim
 
 
-def get_option_name(level: int, index: int) -> str:
-    return f"option_{level}_{index}"
+def get_option_name(level: int, position: int) -> str:
+    return f"option_{level}_{position}"
 
 
 def get_most_recent_checkpoint_steps(checkpoint_dir: str | Path) -> int | None:

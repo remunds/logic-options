@@ -12,7 +12,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.utils import obs_as_tensor, explained_variance, update_learning_rate
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.ppo.ppo import PPO
-from torch.nn import functional as F
+from torch.nn.functional import mse_loss
 from tqdm import tqdm
 
 from options.agent import OptionsAgent
@@ -40,6 +40,8 @@ class OptionsPPO(PPO):
     rollout_buffer: OptionsRolloutBuffer
     policy: OptionsAgent
     progress: tqdm
+    _last_active_options: np.array
+    _last_option_terminations: np.array
 
     def __init__(self,
                  policy_ent_coef: float = 0,
@@ -220,8 +222,8 @@ class OptionsPPO(PPO):
             level_terminations = self.rollout_buffer.option_terminations[:, :, level].astype(bool)
             dones = self.rollout_buffer.dones.astype(bool)
 
-            for option_id in range(n_options):
-                option_active = level_options == option_id
+            for position in range(n_options):
+                option_active = level_options == position
                 option_count = np.sum(option_active)
                 option_activity_share = option_count / self.rollout_buffer.total_transitions
 
@@ -232,7 +234,7 @@ class OptionsPPO(PPO):
                 else:
                     option_length = np.nan
 
-                option_name = get_option_name(level, option_id)
+                option_name = get_option_name(level, position)
                 self.logger.record(option_name + "/activity_share", option_activity_share)
                 self.logger.record(option_name + "/length", option_length)
 
@@ -257,9 +259,9 @@ class OptionsPPO(PPO):
 
         # Train actor, critic, and terminator of each option
         for level, n_options in enumerate(self.policy.hierarchy_shape):
-            for option_id in range(n_options):
-                self._train_actor_critic(level, option_id)
-                self._train_terminator(level, option_id)
+            for position in range(n_options):
+                self._train_actor_critic(level, position)
+                self._train_terminator(level, position)
 
         self._n_updates += self.n_epochs
 
@@ -272,14 +274,14 @@ class OptionsPPO(PPO):
 
         self.progress.close()
 
-    def _train_actor_critic(self, level: int = -1, option_id: int = None) -> None:
+    def _train_actor_critic(self, level: int = -1, position: int = None) -> None:
         """Trains the actor and critic of the meta policy (level = -1) or, if specified, of
         the option."""
         if level == -1:  # meta-policy
             policy = self.policy.meta_policy
             evaluate_fn = policy.evaluate_actions
         else:
-            option = self.policy.options_hierarchy[level][option_id]
+            option = self.policy.options_hierarchy[level][position]
             if not option.policy_trainable:
                 return
             policy = option.get_policy()
@@ -299,7 +301,7 @@ class OptionsPPO(PPO):
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
-            for rollout_data in self.rollout_buffer.get_actor_critic_train_data(level, option_id, self.batch_size):
+            for rollout_data in self.rollout_buffer.get_actor_critic_train_data(level, position, self.batch_size):
                 options_actions = rollout_data.options_actions
                 if isinstance(policy.action_space, spaces.Discrete):
                     options_actions = options_actions.long().flatten()
@@ -337,7 +339,7 @@ class OptionsPPO(PPO):
                         values - old_values, -clip_range_vf, clip_range_vf
                     )
                 # Value loss using the TD(gae_lambda) target
-                value_loss = F.mse_loss(rollout_data.returns, values_pred)
+                value_loss = mse_loss(rollout_data.returns, values_pred)
                 value_losses.append(value_loss.item())
 
                 # Entropy loss favor exploration
@@ -381,7 +383,7 @@ class OptionsPPO(PPO):
         # Logs
         if loss is not None:
             print(f" Loss: {loss:.3f}", end="")
-            policy_name = "meta_policy" if level == -1 else get_option_name(level, option_id)
+            policy_name = "meta_policy" if level == -1 else get_option_name(level, position)
             base_str = f"{policy_name}/actor_critic/"
             self.logger.record(base_str + "loss", loss.item())
             self.logger.record(base_str + "policy_loss", np.mean(pg_losses))
@@ -389,17 +391,17 @@ class OptionsPPO(PPO):
             self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
             self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
             self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
-            values = self.rollout_buffer.get_values(level, option_id)
-            returns = self.rollout_buffer.get_returns(level, option_id)
+            values = self.rollout_buffer.get_values(level, position)
+            returns = self.rollout_buffer.get_returns(level, position)
             explained_var = explained_variance(values.flatten(), returns.flatten())
             # assert not np.isnan(explained_var)
             self.logger.record(base_str + "explained_variance", explained_var)
             if hasattr(policy, "log_std"):
                 self.logger.record(base_str + "std", th.exp(policy.log_std).mean().item())
 
-    def _train_terminator(self, level: int, option_id: int) -> None:
+    def _train_terminator(self, level: int, position: int) -> None:
         """Trains the terminator of each specified option."""
-        option = self.policy.options_hierarchy[level][option_id]
+        option = self.policy.options_hierarchy[level][position]
         if not option.terminator_trainable:
             return
         terminator: Terminator = option.get_terminator()
@@ -417,7 +419,7 @@ class OptionsPPO(PPO):
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
-            for rollout_data in self.rollout_buffer.get_terminator_train_data(level, option_id, self.batch_size):
+            for rollout_data in self.rollout_buffer.get_terminator_train_data(level, position, self.batch_size):
                 next_obs = rollout_data.next_observations
                 terminations = rollout_data.option_terminations
                 tn_log_probs, entropy = evaluate_fn(next_obs, terminations)
@@ -470,7 +472,7 @@ class OptionsPPO(PPO):
 
         # Logs
         if loss is not None:
-            policy_name = get_option_name(level, option_id)
+            policy_name = get_option_name(level, position)
             base_str = f"{policy_name}/terminator/"
             self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
             self.logger.record(base_str + "termination_loss", np.mean(losses))

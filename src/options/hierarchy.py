@@ -45,11 +45,12 @@ class OptionsHierarchy(nn.Module):
         self._build_attributes()
 
     def _build_attributes(self):
-        """Adds for each option a corresponding attribute to this OptionsHierarchy object.
-        These attributes are needed for saving and loading the model."""
+        """Adds for each option a corresponding attribute to this OptionsHierarchy object
+        containing the respective option object. They are needed for saving and loading
+        the model."""
         for level_id, level in enumerate(self.options):
-            for option_id, option in enumerate(level):
-                name = get_option_name(level_id, option_id)
+            for option_pos, option in enumerate(level):
+                name = get_option_name(level_id, option_pos)
                 setattr(self, name, option)
 
     def __getitem__(self, item) -> List[Option]:

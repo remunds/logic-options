@@ -147,7 +147,7 @@ class OptionsRolloutBuffer(BaseBuffer):
     def get_actor_critic_train_data(
             self,
             level: int = -1,
-            option_id: int = None,
+            position: int = None,
             batch_size: Optional[int] = None
     ) -> Generator[ActorCriticSamples, None, None]:
         assert self.full, "Buffer is not full"
@@ -155,7 +155,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         if not self.generator_ready:
             self._prepare_generator()
 
-        decisions = self.get_decisions(level, option_id)
+        decisions = self.get_decisions(level, position)
 
         indices = np.where(decisions)[0]
 
@@ -164,7 +164,7 @@ class OptionsRolloutBuffer(BaseBuffer):
     def get_terminator_train_data(
             self,
             level: int,
-            option_id: int,
+            position: int,
             batch_size: Optional[int] = None
     ) -> Generator[TerminatorSamples, None, None]:
         assert self.full, "Buffer is not full"
@@ -172,7 +172,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         if not self.generator_ready:
             self._prepare_generator()
 
-        option_active = self.get_option_active(level, option_id)
+        option_active = self.get_option_active(level, position)
         indices = np.where(option_active)[0]
 
         return self._get(indices, level, self._get_terminator_samples, batch_size)
@@ -271,12 +271,12 @@ class OptionsRolloutBuffer(BaseBuffer):
     def get_option_active(
             self,
             level: Union[int, th.Tensor],
-            option_id: Union[int, th.Tensor]
+            position: Union[int, th.Tensor]
     ) -> th.Tensor:
         """Returns the indices for all transitions where the specified option was active,
         i.e., is contained in an option trace."""
         assert self.generator_ready
-        return self.option_traces[:, level] == option_id
+        return self.option_traces[:, level] == position
 
     def get_option_starts(self, level: Union[int, th.Tensor] = -1):
         assert isinstance(level, int)
@@ -289,7 +289,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         option_starts[1:] = self.option_terminations[:-1, ..., level]
         return option_starts
 
-    def get_decisions(self, level: Union[int, th.Tensor], option_id: Union[int, th.Tensor]) -> np.array:
+    def get_decisions(self, level: Union[int, th.Tensor], position: Union[int, th.Tensor]) -> np.array:
         """The returned Boolean vector indicates at which time step the specified
         policy/option made a decision. True iff decision made."""
         assert isinstance(level, int)
@@ -297,7 +297,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         if level == -1:  # meta policy
             active = np.ones(self.advantages.shape[0], dtype=bool)  # meta policy is always active
         else:
-            active = self.get_option_active(level, option_id)
+            active = self.get_option_active(level, position)
 
         if level + 1 < self.option_hierarchy_size:
             lower_level_starts = self.get_option_starts(level + 1)
@@ -315,14 +315,14 @@ class OptionsRolloutBuffer(BaseBuffer):
         next_local_value = self.next_values[..., 1:]  # in context of this option
         return termination_prob * next_outer_value + (1 - termination_prob) * next_local_value
 
-    def get_values(self, level: Union[int, th.Tensor] = -1, option_id: Union[int, th.Tensor] = None):
+    def get_values(self, level: Union[int, th.Tensor] = -1, position: Union[int, th.Tensor] = None):
         assert isinstance(level, int)
-        decisions = self.get_decisions(level, option_id)
+        decisions = self.get_decisions(level, position)
         return self.values[decisions, level+1]
 
-    def get_returns(self, level: Union[int, th.Tensor] = -1, option_id: Union[int, th.Tensor] = None):
+    def get_returns(self, level: Union[int, th.Tensor] = -1, position: Union[int, th.Tensor] = None):
         assert isinstance(level, int)
-        decisions = self.get_decisions(level, option_id)
+        decisions = self.get_decisions(level, position)
         return self.returns[decisions, level+1]
 
     def compute_returns_and_advantage(self, dones: np.ndarray) -> None:

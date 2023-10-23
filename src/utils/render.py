@@ -10,7 +10,7 @@ ROT_MATRIX = np.array([[0, -1], [1, 0]])
 
 def render_options_overlay(image, option_trace: List[int] = None, fps=None) -> None:
     """Displays an RGB pixel image using pygame.
-        Optional: Show the currently used option_id and/or the detected objects
+        Optional: Show the currently used option_idx and/or the detected objects
         and their velocities."""
 
     if fps is None:
@@ -36,8 +36,8 @@ def render_options_overlay(image, option_trace: List[int] = None, fps=None) -> N
     # If given, render option ID in top right corner
     if option_trace is not None and len(option_trace) > 0:
         option_text = f"Option {option_trace[0]}"
-        for option_id in option_trace[1:]:
-            option_text += "-%d" % option_id
+        for position in option_trace[1:]:
+            option_text += "-%d" % position
         draw_label(surface, option_text, (10, surface.get_size()[1] - 50),
                    font=pygame.font.SysFont('Source Code Pro', 30),
                    text_color=(0, 0, 0), bg_color=(255, 255, 255))
