@@ -55,7 +55,7 @@ class OptionsAgent(BasePolicy):
         self.net_arch = net_arch
         self.env_name = env_name
         self.accepts_predicates = accepts_predicates
-        self.components = None
+        self.pretrained_options = None
 
         options_hierarchy = OptionsHierarchy(hierarchy_shape,
                                              observation_space,
@@ -107,18 +107,22 @@ class OptionsAgent(BasePolicy):
                                      f"substring of the form 'opt{o}' for, e.g., option {o}.")
         self.pred2option = th.tensor(pred2option, device=device)
 
-    def load_components(self, components: List[Dict[str, Any]] = None, env: VecEnv = None, device="auto"):
-        if components is None:
+    def load_pretrained_options(self,
+                                configuration: List[Dict[str, Any]] = None,
+                                env: VecEnv = None,
+                                device="auto"):
+        if configuration is None:
             return
 
-        self.components = components
+        self.pretrained_options = configuration
         from options.ppo import OptionsPPO
 
-        for component_info in components:
-            level = component_info["level"]
-            option_id = component_info["option"]
-            model_path = component_info["model_path"]
-            trainable = component_info["trainable"]
+        for component in configuration:
+            level = component["level"]
+            position = component["position"]
+            model_path = component["model_path"]
+            policy_trainable = component["policy_trainable"]
+            terminator_trainable = component["terminator_trainable"]
 
             # Load vec normalize if exists
             vec_norm_path = model_path + ".pkl"
@@ -134,15 +138,18 @@ class OptionsAgent(BasePolicy):
 
             # Initialize option
             option = Option(policy=policy,
-                            trainable=trainable,
+                            policy_trainable=policy_trainable,
+                            terminator_trainable=terminator_trainable,
                             vec_norm=vec_norm,
                             lr_schedule=self.lr_schedule)
             option = option.to(device)
-            self.options_hierarchy.options[level][option_id] = option
+            self.options_hierarchy.options[level][position] = option
 
-            trainable_str = "trainable" if trainable else "untrainable"
-            print(f"Loaded pre-trained model from '{model_path}' as {trainable_str} option "
-                  f"on level {level}, position {option_id}.")
+            pi_trainable = "trainable" if policy_trainable else "untrainable"
+            tn_trainable = "trainable" if terminator_trainable else "untrainable"
+            print(f"Loaded pre-trained model from '{model_path}' as option "
+                  f"on level {level} at position {position} with "
+                  f"{pi_trainable} actor-critic and {tn_trainable} terminator.")
 
     @property
     def hierarchy_size(self):
@@ -341,7 +348,7 @@ class OptionsAgent(BasePolicy):
             env_name=self.env_name,
             accepts_predicates=self.accepts_predicates,
             device=self.device,
-            components=self.components,
+            components=self.pretrained_options,
         ))
         return data
 

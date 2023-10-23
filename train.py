@@ -108,7 +108,7 @@ def run(name: str = None,
     options_ppo.set_logger(new_logger)
 
     # Transfer learning with existing components (if specified)
-    options_ppo.policy.load_components(model.get("components"), train_env, device)
+    options_ppo.policy.load_pretrained_options(model.get("pre-trained_options"), train_env, device)
 
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")

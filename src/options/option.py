@@ -24,8 +24,10 @@ class Option(nn.Module):
         :param action_space:
         :param policy: Optional: The policy of a pre-trained model to use instead of a
             freshly generated neural policy.
-        :param trainable: If False, network weights don't get updated. Useful when
+        :param policy_trainable: If False, actor-critic weights don't get updated. Useful when
             this option object is a pre-trained model (submitted via policy).
+        :param terminator_trainable: If False, terminator weights don't get updated. Useful when
+            using a pre-defined terminator.
         :param vec_norm: VecNormalize env used to normalize the input if a pre-trained
             policy is used (submitted via policy) that requires normalization.
         :param net_arch:
@@ -37,7 +39,8 @@ class Option(nn.Module):
                  observation_space: Space = None,
                  action_space: Space = None,
                  policy: ActorCriticPolicy = None,
-                 trainable: bool = True,
+                 policy_trainable: bool = True,
+                 terminator_trainable: bool = True,
                  vec_norm: VecNormalize = None,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
                  **kwargs):
@@ -64,7 +67,8 @@ class Option(nn.Module):
         self.normalize_input = self.vec_norm is not None
         self.observation_space = self._policy.observation_space
         self.action_space = self._policy.action_space
-        self.trainable = trainable
+        self.policy_trainable = policy_trainable
+        self.terminator_trainable = terminator_trainable
 
         if isinstance(net_arch, dict):
             tn_net_arch = net_arch["tn"]
