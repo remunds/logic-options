@@ -35,35 +35,6 @@ def is_sorted(a: np.array) -> bool:
     return np.all(a[:-1] <= a[1:])
 
 
-def num2text(num):
-    if num == 0:
-        return "0"
-    elif np.abs(num) < 1:
-        return "%.2f" % num
-    elif np.abs(num) < 10 and num % 1 != 0:
-        return "%.1f" % num
-    elif np.abs(num) < 1000:
-        return "%.0f" % num
-    elif np.abs(num) < 10000:
-        thousands = num / 1000
-        return "%.1fK" % thousands
-    elif np.abs(num) < 1e6:
-        thousands = num / 1000
-        return "%.0fK" % thousands
-    elif np.abs(num) < 1e7:
-        millions = num / 1e6
-        return "%.1fM" % millions
-    else:
-        millions = num / 1e6
-        return "%.0fM" % millions
-
-
-def sec2hhmmss(s):
-    m = s // 60
-    h = m // 60
-    return "%d:%02d:%02d h" % (h, m % 60, s % 60)
-
-
 def ask_to_override_model(path: Path):
     question = f"There is already a model saved at '{path.as_posix()}'. Override? (y/n)"
     if user_agrees_to(question):

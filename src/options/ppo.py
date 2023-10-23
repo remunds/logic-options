@@ -18,7 +18,8 @@ from tqdm import tqdm
 from options.agent import OptionsAgent
 from options.rollout_buffer import OptionsRolloutBuffer
 from options.option import Terminator
-from utils.common import get_option_name, num2text, get_most_recent_checkpoint_steps
+from utils.common import get_option_name, get_most_recent_checkpoint_steps
+from utils.console import num2text
 from envs.common import init_vec_env
 from envs.util import get_env_identifier
 
@@ -39,7 +40,8 @@ class OptionsPPO(PPO):
 
     rollout_buffer: OptionsRolloutBuffer
     policy: OptionsAgent
-    progress: tqdm
+    progress_total: tqdm
+    progress_rollout_train: tqdm
     _last_active_options: np.array
     _last_option_terminations: np.array
 
@@ -80,6 +82,12 @@ class OptionsPPO(PPO):
             seed=self.seed,
         )
 
+    def learn(self, total_timesteps: int, **kwargs):
+        self.progress_total = tqdm(total=total_timesteps, file=sys.stdout, desc="Total steps",
+                                   position=0, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+                                   leave=False, unit_scale=True)
+        super().learn(total_timesteps, **kwargs)
+
     def collect_rollouts(
             self,
             env: VecEnv,
@@ -114,10 +122,11 @@ class OptionsPPO(PPO):
         callback.on_rollout_start()
         dones = None
 
-        self.progress = tqdm(total=n_rollout_steps,
-                             file=sys.stdout, desc="Collecting rollout",
-                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
-                             leave=False)
+        self.progress_rollout_train = tqdm(total=n_rollout_steps * self.n_envs,
+                                           file=sys.stdout, desc="Collecting rollout",
+                                           bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+                                           position=1,
+                                           leave=False)
 
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
@@ -140,6 +149,7 @@ class OptionsPPO(PPO):
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
             self.num_timesteps += env.num_envs
+            self.progress_total.update(env.num_envs)
 
             # Give access to local variables
             callback.update_locals(locals())
@@ -205,14 +215,12 @@ class OptionsPPO(PPO):
             terminations[dones] = True
             self._last_option_terminations = terminations
 
-            self.progress.update(1)
-
-        self.progress.close()
+            self.progress_rollout_train.update(self.n_envs)
 
         progress_percent = (1 - self._current_progress_remaining) * 100
 
-        print(f"\rTotal steps: {num2text(self.num_timesteps)} ({progress_percent:.1f} %) - "
-              f"Total updates: {num2text(self._n_updates)}")
+        # print(f"\rTotal steps: {num2text(self.num_timesteps)} ({progress_percent:.1f} %) - "
+        #       f"Total updates: {num2text(self._n_updates)}")
 
         rollout_buffer.compute_returns_and_advantage(dones=dones)
 
@@ -238,6 +246,8 @@ class OptionsPPO(PPO):
                 self.logger.record(option_name + "/activity_share", option_activity_share)
                 self.logger.record(option_name + "/length", option_length)
 
+        self.progress_rollout_train.close()
+
         callback.on_rollout_end()
 
         return True
@@ -246,10 +256,11 @@ class OptionsPPO(PPO):
         """
         Update policy using the currently gathered rollout buffer.
         """
-        self.progress = tqdm(total=int(self.policy.n_policies * self.n_epochs),
-                             file=sys.stdout, desc="Training",
-                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
-                             leave=False)
+        self.progress_rollout_train = tqdm(total=int(self.policy.n_policies * self.n_epochs),
+                                           file=sys.stdout, desc="Training",
+                                           bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+                                           position=1,
+                                           leave=False)
 
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
@@ -272,7 +283,7 @@ class OptionsPPO(PPO):
             self.logger.record("hyperparameter_schedule/clip_range_vf", clip_range_vf)
         self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
-        self.progress.close()
+        self.progress_rollout_train.close()
 
     def _train_actor_critic(self, level: int = -1, position: int = None) -> None:
         """Trains the actor and critic of the meta policy (level = -1) or, if specified, of
@@ -375,14 +386,14 @@ class OptionsPPO(PPO):
                 th.nn.utils.clip_grad_norm_(policy.parameters(), self.max_grad_norm)
                 policy.optimizer.step()
 
-            self.progress.update(1)
+            self.progress_rollout_train.update(1)
 
             if not continue_training:
                 break
 
         # Logs
         if loss is not None:
-            print(f" Loss: {loss:.3f}", end="")
+            # print(f" Loss: {loss:.3f}", end="")
             policy_name = "meta_policy" if level == -1 else get_option_name(level, position)
             base_str = f"{policy_name}/actor_critic/"
             self.logger.record(base_str + "loss", loss.item())
@@ -603,6 +614,7 @@ def load_agent(name: str = None,
                             verbose=verbose,
                             render_mode=render_mode,
                             device=device,
-                            custom_objects={"progress": None})
+                            custom_objects={"progress_total": None,
+                                            "progress_eval_train": None})
 
     return model

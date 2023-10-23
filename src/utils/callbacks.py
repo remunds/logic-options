@@ -15,6 +15,7 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList, EvalC
     EveryNTimesteps
 
 from options.ppo import OptionsPPO
+from utils.console import green
 
 
 class OptionEvalCallback(EvalCallback):
@@ -50,8 +51,8 @@ class OptionEvalCallback(EvalCallback):
             # Reset success rate buffer
             self._is_success_buffer = []
 
-            if self.verbose >= 1:
-                print("\nRunning evaluation... ", end="")
+            # if self.verbose >= 1:
+            #     print("\nRunning evaluation... ", end="")
 
             episode_rewards, episode_lengths = evaluate_policy(
                 self.model,
@@ -85,17 +86,22 @@ class OptionEvalCallback(EvalCallback):
                     **kwargs,
                 )
 
-            mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
-            mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
-            self.last_mean_reward = mean_reward
+            ret, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
+            ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
+            self.last_mean_reward = ret
 
             if self.verbose >= 1:
-                print(f"Done.")
-                print(f"\tReturn: \t{mean_reward:.2f} +/- {std_reward:.2f}")
-                print(f"\tEpisode length: \t{mean_ep_length:.2f} +/- {std_ep_length:.2f}")
+                # Override the two progress bars by moving the cursor to beginning of previous line
+                print(f"\033[F\r")
+                ret_text = f"{ret:.2f}"
+                if ret > self.best_mean_reward:
+                    ret_text = green(ret_text)
+                print(f"Ret: {ret_text} +/- {std_reward:.2f} - "
+                      f"Len: {ep_length:.2f} +/- {std_ep_length:.2f}\033[K")
+
             # Add to current Logger
-            self.logger.record("eval/return", float(mean_reward))
-            self.logger.record("eval/episode_length", mean_ep_length)
+            self.logger.record("eval/return", float(ret))
+            self.logger.record("eval/episode_length", ep_length)
 
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
@@ -107,12 +113,10 @@ class OptionEvalCallback(EvalCallback):
             self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
             self.logger.dump(self.num_timesteps)
 
-            if mean_reward > self.best_mean_reward:
-                if self.verbose >= 1:
-                    print("New best mean reward!")
+            if ret > self.best_mean_reward:
                 if self.best_model_save_path is not None:
                     self.model.save(os.path.join(self.best_model_save_path, "best_model"))
-                self.best_mean_reward = mean_reward
+                self.best_mean_reward = ret
                 # Trigger callback on new best model, if needed
                 if self.callback_on_new_best is not None:
                     continue_training = self.callback_on_new_best.on_step()
