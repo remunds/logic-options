@@ -185,7 +185,7 @@ class OptionsPPO(PPO):
                     terminations[:, level] |= terminations[:, level - 1]
 
                 # TODO: efficiency can be improved as next values are needed only for terminated options
-                next_values = self.policy.predict_all_values(new_obs_tensor, self._last_active_options)
+                next_values = self.policy.predict_all_values(new_obs_tensor, options)
 
             # When an episode terminates, new_obs is 1st frame of new episode, so we need
             # to replace it and use the most recent obs as a surrogate
