@@ -162,6 +162,15 @@ class OptionsAgent(BasePolicy):
     def n_policies(self):
         return np.sum(self.hierarchy_shape) + 1
 
+    def preds2options(self, predicates: th.Tensor) -> th.Tensor:
+        """Converts predicates to top-level option positions. Needed when
+        the meta policy is logical."""
+        if self.accepts_predicates:
+            options = self.pred2option[predicates]
+        else:
+            options = predicates
+        return options
+
     def get_option_by_idx(self, index: th.Tensor) -> OptionCollection:
         """
         Turns a batch of option indexes into the corresponding list of options
@@ -169,8 +178,8 @@ class OptionsAgent(BasePolicy):
         """
         options = []
         for level, position in index:
-            if self.accepts_predicates and level == 0:
-                position = self.pred2option[position]
+            if level == 0:
+                position = self.preds2options(position)
             options.append(self.options_hierarchy[level][position])
         return OptionCollection(options)
 
@@ -225,53 +234,46 @@ class OptionsAgent(BasePolicy):
         :return: option trace with action appended, corresponding values, and log probabilities
         """
         n_envs = len(obs)
-        options = option_traces.clone()
-
-        if self.accepts_predicates:
-            # Convert predicate IDs to top-level option IDs
-            options[:, 0] = self.pred2option[options[:, 0]]
+        option_traces = option_traces.clone()
 
         if self.hierarchy_size == 0:
             actions, values, log_probs = self.meta_policy(obs, deterministic)
-            return (options, actions), values, log_probs.unsqueeze(1)
+            return (option_traces, actions), values, log_probs.unsqueeze(1)
 
         actions = th.zeros(n_envs, *self.meta_policy.action_space.shape)
-        values = th.zeros(n_envs, options.shape[1] + 1)
-        log_probs = th.zeros(n_envs, options.shape[1] + 1)
+        values = th.zeros(n_envs, option_traces.shape[1] + 1)
+        log_probs = th.zeros(n_envs, option_traces.shape[1] + 1)
 
-        # Forward meta policy
+        # Forward meta policy and replace top-level option if needed
         new_options, global_values, log_probs[:, 0] = self.meta_policy(obs, deterministic)
-        if self.accepts_predicates:
-            # Convert predicate IDs to top-level option IDs
-            new_options = self.pred2option[new_options]
-        values[:, 0] = global_values.squeeze()
         is_terminated = option_terminations[:, 0]
-        options[is_terminated, 0] = new_options[is_terminated]
+        option_traces[is_terminated, 0] = new_options[is_terminated]  # is predicate if meta_policy is logic
+        values[:, 0] = global_values.squeeze()
 
-        for env, trace in enumerate(option_traces):
+        for env in range(n_envs):
             env_obs = th.unsqueeze(obs[env], dim=0)
 
-            # Determine new options (if needed)
-            for level in range(len(trace)):
+            # Compute values for each level and, if needed, determine new options
+            for level in range(0, self.hierarchy_size - 1):
+                option_pos = option_traces[env][level]
                 if level == 0:
-                    continue
+                    option_pos = self.preds2options(option_pos)
 
-                higher_level_option_pos = options[env][level - 1]
-                active_option = self.options_hierarchy[level - 1][higher_level_option_pos]
+                option = self.options_hierarchy[level][option_pos]
 
-                option, values[env][level], log_probs[env][level] = \
-                    active_option(env_obs, deterministic)
+                new_lower_level_option_pos, values[env][level + 1], log_probs[env][level + 1] = \
+                    option(env_obs, deterministic)
 
-                # Replace terminated options
-                if option_terminations[env][level]:
-                    options[env][level] = option
+                # Replace terminated lower-level option
+                if option_terminations[env][level + 1]:
+                    option_traces[env][level + 1] = new_lower_level_option_pos
 
             # Determine new action (always executed)
-            lowest_level_option_pos = options[env][-1]
+            lowest_level_option_pos = option_traces[env][-1]
             lowest_level_option = self.options_hierarchy[-1][lowest_level_option_pos]
             actions[env], values[env, -1], log_probs[env, -1] = lowest_level_option(env_obs, deterministic)
 
-        return (options, actions), values, log_probs
+        return (option_traces, actions), values, log_probs
 
     def forward_option_terminator(
             self,
@@ -287,9 +289,8 @@ class OptionsAgent(BasePolicy):
         """Computes state-value for the global policy and each option as
         specified in the option trace."""
 
-        if self.accepts_predicates:
-            # Convert predicate IDs to top-level option IDs
-            option_traces[:, 0] = self.pred2option[option_traces[:, 0]]
+        option_traces = option_traces.clone()
+        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
 
         values = th.zeros(option_traces.shape[0], option_traces.shape[1] + 1)
         values[:, 0] = self.meta_policy.predict_values(obs).squeeze()
@@ -306,9 +307,8 @@ class OptionsAgent(BasePolicy):
             option_traces: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
-        if self.accepts_predicates:
-            # Convert predicate IDs to top-level option IDs
-            option_traces[:, 0] = self.pred2option[option_traces[:, 0]]
+        option_traces = option_traces.clone()
+        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
 
         n_envs = len(obs)
 
