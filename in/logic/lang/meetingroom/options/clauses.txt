@@ -1,6 +1,11 @@
 opt0(X):-.
 opt1(X):-.
 opt2(X):-.
+opt3(X):-.
 opt0_to_target(X):-on_target_floor(X).
-opt1_to_target_floor(X):-below_target(X).
-opt1_to_target_floor(X):-above_target(X).
+opt1_ascent_to_target(X):-below_target(X),in_target_building(X).
+opt1_descent_to_target(X):-above_target(X),in_target_building(X).
+opt1_to_ground_floor(X):-not_in_target_building(X),not_on_ground_floor(X).
+opt2_to_entrance(X):-not_in_target_building(X),on_ground_floor(X).
+opt3_switch_floor(X):-in_elevator(X),not_on_target_floor(X).
+opt3_switch_building(X):-at_entrance(X),not_in_target_building(X).

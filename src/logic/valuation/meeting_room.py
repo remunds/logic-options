@@ -18,7 +18,9 @@ class MeetingRoomValuationModule(ValuationModule):
             LeftOfTargetBuilding(),
             RightOfTargetBuilding(),
             OnTargetFloor(),
+            NotOnTargetFloor(),
             InTargetBuilding(),
+            NotInTargetBuilding(),
             NorthOfElevator(),
             EastOfElevator(),
             SouthOfElevator(),
@@ -28,6 +30,7 @@ class MeetingRoomValuationModule(ValuationModule):
             SouthOfEntrance(),
             WestOfEntrance(),
             OnGroundFloor(),
+            NotOnGroundFloor(),
             InElevator(),
             AtEntrance(),
             WallNorth(),
@@ -142,6 +145,16 @@ class OnTargetFloor(ValuationFunction):
         return self.bool2probs(on_target_floor)
 
 
+class NotOnTargetFloor(ValuationFunction):
+    def __init__(self):
+        super().__init__("not_on_target_floor")
+
+    def forward(self, logic_state: th.Tensor) -> th.Tensor:
+        rel_target_pos_bh = logic_state[..., 0:2]
+        on_target_floor = th.all(rel_target_pos_bh == 0, dim=-1)
+        return self.bool2probs(~on_target_floor)
+
+
 class InTargetBuilding(ValuationFunction):
     def __init__(self):
         super().__init__("in_target_building")
@@ -149,6 +162,15 @@ class InTargetBuilding(ValuationFunction):
     def forward(self, logic_state: th.Tensor) -> th.Tensor:
         rel_target_pos_b = logic_state[..., 0]
         return self.bool2probs(rel_target_pos_b == 0)
+
+
+class NotInTargetBuilding(ValuationFunction):
+    def __init__(self):
+        super().__init__("not_in_target_building")
+
+    def forward(self, logic_state: th.Tensor) -> th.Tensor:
+        rel_target_pos_b = logic_state[..., 0]
+        return self.bool2probs(th.logical_not(rel_target_pos_b == 0))
 
 
 class NorthOfElevator(ValuationFunction):
@@ -230,6 +252,15 @@ class OnGroundFloor(ValuationFunction):
     def forward(self, logic_state: th.Tensor) -> th.Tensor:
         floor_no = logic_state[..., 8]
         return self.bool2probs(floor_no == 0)
+
+
+class NotOnGroundFloor(ValuationFunction):
+    def __init__(self):
+        super().__init__("not_on_ground_floor")
+
+    def forward(self, logic_state: th.Tensor) -> th.Tensor:
+        floor_no = logic_state[..., 8]
+        return self.bool2probs(th.logical_not(floor_no == 0))
 
 
 class InElevator(ValuationFunction):

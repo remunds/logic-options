@@ -15,3 +15,4 @@ ocatari
 # scobi
 pygame
 # nudge
+sty

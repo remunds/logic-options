@@ -1,6 +1,11 @@
 opt0:1:image
 opt1:1:image
 opt2:1:image
+opt3:1:image
 opt0_to_target:1:image
-opt1_to_target_floor:1:image
-opt2_to_elevator:1:image
+opt1_ascent_to_target:1:image
+opt1_descent_to_target:1:image
+opt1_to_ground_floor:1:image
+opt2_to_entrance:1:image
+opt3_switch_floor:1:image
+opt3_switch_building:1:image
