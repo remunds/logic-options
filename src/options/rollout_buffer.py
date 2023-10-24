@@ -88,7 +88,7 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.log_probs = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
-        # Keeps value of next state as determined by the option saved in option_traces (not the new option)
+        # Keeps value of next state as determined by the option saved in option_traces (not the option in t+1)
         self.next_values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
 
         self.generator_ready = False
@@ -326,6 +326,8 @@ class OptionsRolloutBuffer(BaseBuffer):
         return self.returns[decisions, level+1]
 
     def compute_returns_and_advantage(self, dones: np.ndarray) -> None:
+        """Computes the returns by applying the Generalized Advantage Estimation for
+        Options (GAEO) to the rewards. Builds up on the GAE of the SB3 package."""
         shape = self.advantages.shape
 
         # Identify policy decision points
@@ -346,9 +348,11 @@ class OptionsRolloutBuffer(BaseBuffer):
         episode_continues = ~dones.astype(bool)
 
         for step in reversed(range(self.buffer_size)):
-            # Update next value for policies before their next decision
-            next_value_tmp = self.next_values[step]
+            # Get value upon arrival for options
+            next_value_tmp = self.next_values[step].copy()
             next_value_tmp[..., 1:] = values_upon_arrival[step]
+
+            # Keep next values along option arc for higher-level SMDP transition
             next_value[next_decision] = next_value_tmp[next_decision]
 
             # Only policies that actively made a decision receive an advantage estimate (others remain NaN)
