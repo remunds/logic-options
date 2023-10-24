@@ -19,7 +19,6 @@ from options.agent import OptionsAgent
 from options.rollout_buffer import OptionsRolloutBuffer
 from options.option import Terminator
 from utils.common import get_option_name, get_most_recent_checkpoint_steps
-from utils.console import num2text
 from envs.common import init_vec_env
 from envs.util import get_env_identifier
 
@@ -615,6 +614,6 @@ def load_agent(name: str = None,
                             render_mode=render_mode,
                             device=device,
                             custom_objects={"progress_total": None,
-                                            "progress_eval_train": None})
+                                            "progress_rollout_train": None})
 
     return model
