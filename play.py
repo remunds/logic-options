@@ -6,13 +6,15 @@ from utils.render import render_options_overlay
 
 
 if __name__ == "__main__":
-    name = "4-floor/options/tn-reg-0"
+    name = "logic/transfer"
     env_name = "MeetingRoom"
 
     deterministic = False
     print(f"Playing with {'' if deterministic else 'non-'}deterministic policy.")
 
-    model = load_agent(name, env_name, render_mode="rgb_array", render_oc_overlay=True, reward_mode="human")
+    model = load_agent(name, env_name, render_mode="rgb_array",
+                       render_oc_overlay=True,
+                       reward_mode="human")
     env = model.get_env()
 
     if model.policy.logic_meta_policy:
@@ -20,8 +22,8 @@ if __name__ == "__main__":
 
     # Prepare loop
     obs = env.reset()
-    option_terminations = th.ones(1, model.hierarchy_size).type(th.BoolTensor)
-    options = th.zeros(1, model.hierarchy_size).type(th.LongTensor)
+    option_terminations = th.ones(1, model.hierarchy_size, dtype=th.bool, device=model.device)
+    options = th.zeros(1, model.hierarchy_size, dtype=th.long, device=model.device)
     length = 0
 
     while True:

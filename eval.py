@@ -3,9 +3,9 @@ from utils.callbacks import evaluate_policy
 
 
 if __name__ == "__main__":
-    name = "debug"
+    name = "scobot-paper/unpruned-2"
     env_name = "ALE/Seaquest-v5"
-    n_envs = 4
+    n_envs = 10
     n_eval_episodes = 100
 
     model = load_agent(name, env_name, n_envs=n_envs)
