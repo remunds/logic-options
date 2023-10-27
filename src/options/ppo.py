@@ -210,21 +210,25 @@ class OptionsPPO(PPO):
                         terminal_value = self.policy.meta_policy.predict_values(terminal_obs)[0]
                     rewards[idx] += self.gamma * terminal_value
 
+            # When an episode terminates, new_obs is 1st frame of new episode, so we need
+            # to replace it and use the most recent obs as a surrogate for termination and
+            # value prediction
+            next_obs = np.array(new_obs).copy()
+            next_obs[dones] = self._last_obs[dones]
+
             with th.no_grad():
-                new_obs_tensor = obs_as_tensor(new_obs, self.device)
-                terminations, tn_log_probs = self.policy.forward_all_terminators(new_obs_tensor, options)
+                next_obs_tensor = obs_as_tensor(next_obs, self.device)
+                terminations, tn_log_probs = self.policy.forward_all_terminators(next_obs_tensor, options)
+
+                # Replace continuation probability with termination probability
+                tn_log_probs[~terminations] = th.log(1 - th.exp(tn_log_probs[~terminations]))
 
                 # If a higher-level option exits, all lower-level options exit, too
                 for level in range(1, self.policy.hierarchy_size):
                     terminations[:, level] |= terminations[:, level - 1]
 
                 # TODO: efficiency can be improved as next values are needed only for terminated options
-                next_values = self.policy.predict_all_values(new_obs_tensor, options)
-
-            # When an episode terminates, new_obs is 1st frame of new episode, so we need
-            # to replace it and use the most recent obs as a surrogate
-            next_obs = np.array(new_obs).copy()
-            next_obs[dones] = self._last_obs[dones]
+                next_values = self.policy.predict_all_values(next_obs_tensor, options)
 
             # Save observed data to rollout buffer
             rollout_buffer.add(
@@ -475,7 +479,9 @@ class OptionsPPO(PPO):
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get_terminator_train_data(level, position, self.batch_size):
                 next_obs = rollout_data.next_observations
-                terminations = rollout_data.option_terminations
+
+                # Evaluate terminations (indeed terminations, no continuations)
+                terminations = th.ones(rollout_data.option_terminations.shape, device=self.device)
                 tn_log_probs, entropy = evaluate_fn(next_obs, terminations)
 
                 # Ratio between old and new termination log prob
