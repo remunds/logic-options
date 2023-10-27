@@ -19,7 +19,7 @@ QUEUE_PATH = "in/queue/"
 
 
 def run(name: str = None,
-        cuda: bool = True,
+        device: str = "cpu",
         cores: int = 1,
         seed: int = 0,
         environment: dict = None,
@@ -44,7 +44,7 @@ def run(name: str = None,
     if name != "debug" and os.path.exists(ckpt_path):
         ask_to_override_model(model_path)
 
-    device = get_torch_device(cuda)
+    device = get_torch_device(device)
 
     object_centric = environment.get("object_centric")
     n_envs = cores
@@ -91,39 +91,45 @@ def run(name: str = None,
     if net_arch is not None:
         policy_kwargs["net_arch"] = net_arch
 
-    # Load and init all schedules
+    # Init all meta policy schedules
     meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range"))
     meta_learning_rate = maybe_make_schedule(meta_policy.pop("learning_rate"))
-    options_policy_clip_range = maybe_make_schedule(options.pop("policy_clip_range"))
-    options_learning_rate = maybe_make_schedule(options.pop("learning_rate"))
+
+    if options is not None:
+        options_kwargs = dict(
+            options_policy_clip_range=maybe_make_schedule(options.pop("policy_clip_range")),
+            options_learning_rate=maybe_make_schedule(options.pop("learning_rate")),
+            options_policy_ent_coef=options["policy_ent_coef"],
+            options_value_fn_coef=options["value_fn_coef"],
+            options_value_fn_clip_range=options["value_fn_clip_range"],
+            options_terminator_ent_coef=options["terminator_ent_coef"],
+            options_terminator_clip_range=options["terminator_clip_range"],
+            options_termination_reg=options["termination_regularizer"],
+        )
+    else:
+        options_kwargs = dict()
 
     options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,
         meta_learning_rate=meta_learning_rate,
-        options_learning_rate=options_learning_rate,
         device=device,
         verbose=1,
         seed=seed,
-        **general,
         meta_policy_ent_coef=meta_policy["policy_ent_coef"],
         meta_policy_clip_range=meta_policy_clip_range,
         meta_value_fn_coef=meta_policy["value_fn_coef"],
         meta_value_fn_clip_range=meta_policy["value_fn_clip_range"],
-        options_policy_ent_coef=options["policy_ent_coef"],
-        options_policy_clip_range=options_policy_clip_range,
-        options_value_fn_coef=options["value_fn_coef"],
-        options_value_fn_clip_range=options["value_fn_clip_range"],
-        options_terminator_ent_coef=options["terminator_ent_coef"],
-        options_terminator_clip_range=options["terminator_clip_range"],
-        options_termination_reg=options["termination_regularizer"],
+        **general,
+        **options_kwargs,
     )
 
     new_logger = configure(str(log_path), ["tensorboard"])
     options_ppo.set_logger(new_logger)
 
     # Transfer learning with existing components (if specified)
-    options_ppo.policy.load_pretrained_options(options.get("pre-trained"), train_env, device)
+    if options is not None:
+        options_ppo.policy.load_pretrained_options(options.get("pretrained"), train_env, device)
 
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")

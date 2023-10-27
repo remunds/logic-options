@@ -40,6 +40,7 @@ class Option(nn.Module):
                  action_space: Space = None,
                  policy: ActorCriticPolicy = None,
                  policy_trainable: bool = True,
+                 value_fn_trainable: bool = True,
                  terminator_trainable: bool = True,
                  vec_norm: VecNormalize = None,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
@@ -63,11 +64,16 @@ class Option(nn.Module):
                 **kwargs
             )
 
+        if terminator_trainable and not value_fn_trainable:
+            print("You are about to train option terminators without policy training. This might "
+                  "lead to suboptimal results. It is recommended to train both together.")
+
         self.vec_norm = vec_norm
         self.normalize_input = self.vec_norm is not None
         self.observation_space = self._policy.observation_space
         self.action_space = self._policy.action_space
         self.policy_trainable = policy_trainable
+        self.value_fn_trainable = value_fn_trainable
         self.terminator_trainable = terminator_trainable
 
         if isinstance(net_arch, dict):

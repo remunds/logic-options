@@ -22,12 +22,11 @@ def to_tensor(obs):
     return obs
 
 
-def get_torch_device(use_cuda: bool = True):
-    device = torch.device('cuda' if torch.cuda.is_available() and use_cuda else 'cpu')
-    if device.type == 'cuda':
-        print("Using GPU")
+def get_torch_device(device: str):
+    if "cuda" in device and torch.cuda.is_available():
+        device = torch.device(device)
     else:
-        print("Using CPU")
+        device = torch.device("cpu")
     return device
 
 

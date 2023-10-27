@@ -125,6 +125,7 @@ class OptionsAgent(BasePolicy):
             position = component["position"]
             model_path = component["model_path"]
             policy_trainable = component["policy_trainable"]
+            value_fn_trainable = component["value_fn_trainable"]
             terminator_trainable = component["terminator_trainable"]
 
             # Load vec normalize if exists
@@ -136,12 +137,14 @@ class OptionsAgent(BasePolicy):
                 vec_norm = None
 
             # Load actor-critic policy
-            ppo = OptionsPPO.load(model_path + ".zip", env, custom_objects={"progress": None})
+            ppo = OptionsPPO.load(model_path + ".zip", env, custom_objects={"progress_rollout_train": None,
+                                                                            "progress_total": None})
             policy: ActorCriticPolicy = ppo.policy.meta_policy
 
             # Initialize option
             option = Option(policy=policy,
                             policy_trainable=policy_trainable,
+                            value_fn_trainable=value_fn_trainable,
                             terminator_trainable=terminator_trainable,
                             vec_norm=vec_norm,
                             lr_schedule=self.lr_schedule)

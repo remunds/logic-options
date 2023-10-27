@@ -48,7 +48,7 @@ class OptionsPPO(PPO):
     def __init__(self,
                  meta_learning_rate: Union[float, Schedule] = 3e-4,
                  meta_policy_ent_coef: float = 0,
-                 meta_policy_clip_range: Union[float, Schedule] = None,
+                 meta_policy_clip_range: Union[float, Schedule] = 1,
                  meta_value_fn_coef: float = 1,
                  meta_value_fn_clip_range: Union[float, Schedule] = None,
                  options_learning_rate: Union[float, Schedule] = 3e-4,
@@ -109,10 +109,12 @@ class OptionsPPO(PPO):
     def _setup_clip_ranges(self) -> None:
         """Initializes all clip range schedule functions."""
         self.meta_pi_clip_range = get_schedule_fn(self.meta_pi_clip_range)
-        self.options_pi_clip_range = get_schedule_fn(self.options_pi_clip_range)
-        self.options_tn_clip_range = get_schedule_fn(self.options_tn_clip_range)
         if self.meta_vf_clip_range is not None:
             self.meta_vf_clip_range = get_schedule_fn(self.meta_vf_clip_range)
+        if self.options_pi_clip_range is not None:
+            self.options_pi_clip_range = get_schedule_fn(self.options_pi_clip_range)
+        if self.options_tn_clip_range is not None:
+            self.options_tn_clip_range = get_schedule_fn(self.options_tn_clip_range)
         if self.options_vf_clip_range is not None:
             self.options_vf_clip_range = get_schedule_fn(self.options_vf_clip_range)
 
@@ -319,11 +321,12 @@ class OptionsPPO(PPO):
         self.logger.record("hyperparameter_schedule/meta_pi_clip_range", clip_range)
         if self.clip_range_vf is not None:
             self.logger.record("hyperparameter_schedule/meta_vf_clip_range", clip_range_vf)
-        clip_range, clip_range_vf = self._get_current_options_clip_ranges()
-        if self.clip_range is not None:
-            self.logger.record("hyperparameter_schedule/options_pi_clip_range", clip_range)
-        if self.clip_range_vf is not None:
-            self.logger.record("hyperparameter_schedule/options_vf_clip_range", clip_range_vf)
+        if self.hierarchy_size > 0:
+            clip_range, clip_range_vf = self._get_current_options_clip_ranges()
+            if self.clip_range is not None:
+                self.logger.record("hyperparameter_schedule/options_pi_clip_range", clip_range)
+            if self.clip_range_vf is not None:
+                self.logger.record("hyperparameter_schedule/options_vf_clip_range", clip_range_vf)
         self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
         self.progress_rollout_train.close()
@@ -332,6 +335,7 @@ class OptionsPPO(PPO):
         """Trains the actor and critic of the meta policy (level = -1) or, if specified, of
         the option."""
         if level == -1:  # meta-policy
+            option = None
             policy = self.policy.meta_policy
             self._update_learning_rate(policy.optimizer, self.meta_learning_rate)
             evaluate_fn = policy.evaluate_actions
@@ -340,7 +344,7 @@ class OptionsPPO(PPO):
             clip_range_pi, clip_range_vf = self._get_current_meta_clip_ranges()
         else:
             option = self.policy.options_hierarchy[level][position]
-            if not option.policy_trainable:
+            if not option.policy_trainable and not option.value_fn_trainable:
                 return
             policy = option.get_policy()
             self._update_learning_rate(policy.optimizer, self.options_learning_rate)
@@ -408,6 +412,12 @@ class OptionsPPO(PPO):
                     entropy_loss = -th.mean(entropy)
 
                 entropy_losses.append(entropy_loss.item())
+
+                if option is not None:  # option
+                    if not option.policy_trainable:
+                        policy_loss = 0
+                    if not option.value_fn_trainable:
+                        value_loss = 0
 
                 loss = policy_loss + pi_ent_coef * entropy_loss + vf_coef * value_loss
 
@@ -667,10 +677,10 @@ def load_agent(name: str = None,
                        **config["environment"],
                        render_mode=render_mode,
                        render_oc_overlay=render_oc_overlay,
-                       logic=config["model"]["logic_meta_policy"],
+                       logic=config["meta_policy"]["logic"],
                        train=train)
 
-    device = "cuda" if config["cuda"] else "cpu"
+    device = config["device"]
 
     model = OptionsPPO.load(checkpoint_path,
                             env=env,
