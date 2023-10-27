@@ -4,7 +4,7 @@ import numpy as np
 
 ENV_NAME = "MeetingRoom"
 ENV_ARGS = {
-    "n_buildings": 4,
+    "n_buildings": 1,
     "n_floors": 4,
     "max_steps": 100,
 }

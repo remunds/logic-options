@@ -97,6 +97,8 @@ class MeetingRoom(Env):
         self.distance_map = np.zeros((self.n_buildings, self.n_floors, *floor_shape), dtype=int) - 1
 
         self.map_generated = False
+        self.goal_reached = False
+        self.goal_state_showed = False
         self.terminated = False
         self.n_steps = 0
         self.max_steps = max_steps
@@ -226,6 +228,8 @@ class MeetingRoom(Env):
         self._compute_distances()
         self._best_distance_to_target = np.inf
         self.terminated = False
+        self.goal_reached = False
+        self.goal_state_showed = False
         self.n_steps = 0
         if self.render_mode == "human":
             self.render()
@@ -284,21 +288,29 @@ class MeetingRoom(Env):
         self._act(Action(action))
         new_improvement = self._update_best_distance()
         goal_reached = self._check_goal_reached()
+        self.goal_reached |= goal_reached
         obs = self._get_observation()
         reward = self._get_reward(goal_reached=goal_reached, new_improvement=new_improvement)
         self.n_steps += 1
         truncated = self.n_steps >= self.max_steps
-        self.terminated |= goal_reached | truncated
+        self.terminated |= self.goal_reached | truncated
+        if self.render_mode in ["human", "rgb_array"] and self.goal_reached and not self.goal_state_showed:
+            # Allow the human viewer to see that agent reached the goal
+            self.terminated = False
+            self.goal_state_showed = True
         info = self._get_info()
         return obs, reward, self.terminated, truncated, info
 
     def _check_goal_reached(self) -> bool:
-        if self.goal == "target":
-            return np.all(self.current_pos == self.target)
-        elif self.goal == "elevator":
-            return np.all(self.current_pos[2:] == self._get_current_elevator())
-        else:  # entrance
-            return np.all(self.current_pos[2:] == self._get_current_entrance())
+        if not self.goal_reached:
+            if self.goal == "target":
+                return np.all(self.current_pos == self.target)
+            elif self.goal == "elevator":
+                return np.all(self.current_pos[2:] == self._get_current_elevator())
+            else:  # entrance
+                return np.all(self.current_pos[2:] == self._get_current_entrance())
+        else:
+            return False
 
     def _compute_distances(self):
         """Fills the distance map with the respective distance values
@@ -495,7 +507,7 @@ class MeetingRoom(Env):
                     self._render_entrance(x, y)
                 if np.all((x, y) == elevator):  # elevator
                     self._render_elevator(x, y)
-                if np.all((b, f, x, y) == self.target) and not self.terminated:  # target
+                if np.all((b, f, x, y) == self.target) and not self.goal_reached:  # target
                     self._render_target(x, y)
                 if np.all((x, y) == self.current_pos[2:4]):  # player
                     self._render_player(x, y)
@@ -512,8 +524,9 @@ class MeetingRoom(Env):
 
     def _render_player(self, x_coord, y_coord):
         x, y = self._get_field_center(x_coord, y_coord)
+        color = TARGET_COLOR if self.goal_reached else PLAYER_COLOR
         pygame.draw.circle(self.window, "#FFFFFF", [x, y], 0.36 * FIELD_SIZE)
-        pygame.draw.circle(self.window, PLAYER_COLOR, [x, y], 0.33 * FIELD_SIZE)
+        pygame.draw.circle(self.window, color, [x, y], 0.33 * FIELD_SIZE)
 
     def _render_target(self, x_coord, y_coord):
         center = np.asarray(self._get_field_center(x_coord, y_coord))

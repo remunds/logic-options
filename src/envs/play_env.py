@@ -19,14 +19,14 @@ if __name__ == "__main__":
                          render_mode="human",
                          walls_fixed=False,
                          accept_predicates=False,
-                         goal="entrance")()
+                         goal="target")()
     env.metadata['video.frames_per_second'] = 60
     env.reset()
     keys2actions = env.get_keys_to_action()
     action_meanings = env.get_action_meanings()
 
     shadowed_agent = OptionsAgent(observation_space=env.observation_space,
-                                  action_space=spaces.Discrete(14),
+                                  action_space=None,
                                   lr_schedule=lambda x: 0,
                                   hierarchy_shape=[],
                                   logic_meta_policy=True,
