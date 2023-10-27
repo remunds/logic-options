@@ -269,7 +269,7 @@ class OptionsAgent(BasePolicy):
                     option_traces[env][level + 1] = new_lower_level_option_pos
 
             # Determine new action (always executed)
-            lowest_level_option_pos = option_traces[env][-1]
+            lowest_level_option_pos = self.preds2options(option_traces[env][-1])
             lowest_level_option = self.options_hierarchy[-1][lowest_level_option_pos]
             actions[env], values[env, -1], log_probs[env, -1] = lowest_level_option(env_obs, deterministic)
 
@@ -289,6 +289,9 @@ class OptionsAgent(BasePolicy):
         """Computes state-value for the global policy and each option as
         specified in the option trace."""
 
+        if self.hierarchy_size == 0:
+            return self.meta_policy.predict_values(obs).squeeze().unsqueeze(-1)
+
         option_traces = option_traces.clone()
         option_traces[:, 0] = self.preds2options(option_traces[:, 0])
 
@@ -307,13 +310,16 @@ class OptionsAgent(BasePolicy):
             option_traces: th.Tensor,
             deterministic: bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
-        option_traces = option_traces.clone()
-        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
-
         n_envs = len(obs)
 
         terminations = th.zeros((n_envs, self.hierarchy_size), dtype=th.bool)
         log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.float)
+
+        if self.hierarchy_size == 0:
+            return terminations, log_probs
+
+        option_traces = option_traces.clone()
+        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
 
         for env_id, trace in enumerate(option_traces):
             env_obs = th.unsqueeze(obs[env_id], dim=0)
