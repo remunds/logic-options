@@ -1,26 +1,27 @@
 from __future__ import annotations
 
 import sys
-from typing import Union, Tuple, List
 from pathlib import Path
+from typing import Union, Tuple, List
 
 import numpy as np
 import torch as th
 import yaml
 from gymnasium import spaces
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.utils import obs_as_tensor, explained_variance, update_learning_rate
+from stable_baselines3.common.type_aliases import Schedule
+from stable_baselines3.common.utils import obs_as_tensor, explained_variance, update_learning_rate, get_schedule_fn
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.ppo.ppo import PPO
 from torch.nn.functional import mse_loss
 from tqdm import tqdm
 
-from options.agent import OptionsAgent
-from options.rollout_buffer import OptionsRolloutBuffer
-from options.option import Terminator
-from utils.common import get_option_name, get_most_recent_checkpoint_steps
 from envs.common import init_vec_env
 from envs.util import get_env_identifier
+from options.agent import OptionsAgent
+from options.option import Terminator
+from options.rollout_buffer import OptionsRolloutBuffer
+from utils.common import get_option_name, get_most_recent_checkpoint_steps
 
 
 class OptionsPPO(PPO):
@@ -30,7 +31,7 @@ class OptionsPPO(PPO):
     :param options_hierarchy: Number of options
     :param net_arch: The network architecture of each individual option policy,
         specified as a sequence of dense layer widths
-    :param termination_regularizer: Variable xi. If increased, option termination
+    :param options_termination_reg: Variable xi. If increased, option termination
             probability gets decreased, i.e., longer options are encouraged. Set
             to 0 do disable this regularization.
     :param **kwargs: PPO keyworded arguments, see SB3 docs:
@@ -45,15 +46,39 @@ class OptionsPPO(PPO):
     _last_option_terminations: np.array
 
     def __init__(self,
-                 policy_ent_coef: float = 0,
-                 terminator_ent_coef: float = 0,
-                 termination_regularizer: float = 0,
+                 meta_learning_rate: Union[float, Schedule] = 3e-4,
+                 meta_policy_ent_coef: float = 0,
+                 meta_policy_clip_range: Union[float, Schedule] = None,
+                 meta_value_fn_coef: float = 1,
+                 meta_value_fn_clip_range: Union[float, Schedule] = None,
+                 options_learning_rate: Union[float, Schedule] = 3e-4,
+                 options_policy_ent_coef: float = 0,
+                 options_policy_clip_range: Union[float, Schedule] = None,
+                 options_value_fn_coef: float = 1,
+                 options_value_fn_clip_range: Union[float, Schedule] = None,
+                 options_terminator_ent_coef: float = 0,
+                 options_terminator_clip_range: Union[float, Schedule] = None,
+                 options_termination_reg: float = 0,
                  **kwargs):
         kwargs["policy"] = OptionsAgent
-        super().__init__(ent_coef=policy_ent_coef, **kwargs)
-        self.pi_ent_coef = self.ent_coef
-        self.tn_ent_coef = terminator_ent_coef
-        self.termination_regularizer = termination_regularizer
+        super().__init__(**kwargs)
+
+        self.meta_learning_rate = meta_learning_rate
+        self.meta_pi_ent_coef = meta_policy_ent_coef
+        self.meta_pi_clip_range = meta_policy_clip_range
+        self.meta_vf_coef = meta_value_fn_coef
+        self.meta_vf_clip_range = meta_value_fn_clip_range
+
+        self.options_learning_rate = options_learning_rate
+        self.options_pi_ent_coef = options_policy_ent_coef
+        self.options_pi_clip_range = options_policy_clip_range
+        self.options_vf_coef = options_value_fn_coef
+        self.options_vf_clip_range = options_value_fn_clip_range
+        self.options_tn_ent_coef = options_terminator_ent_coef
+        self.options_tn_clip_range = options_terminator_clip_range
+        self.options_tn_reg = options_termination_reg
+
+        self._setup_clip_ranges()
 
     def _setup_model(self) -> None:
         super()._setup_model()
@@ -80,6 +105,16 @@ class OptionsPPO(PPO):
             n_envs=self.n_envs,
             seed=self.seed,
         )
+
+    def _setup_clip_ranges(self) -> None:
+        """Initializes all clip range schedule functions."""
+        self.meta_pi_clip_range = get_schedule_fn(self.meta_pi_clip_range)
+        self.options_pi_clip_range = get_schedule_fn(self.options_pi_clip_range)
+        self.options_tn_clip_range = get_schedule_fn(self.options_tn_clip_range)
+        if self.meta_vf_clip_range is not None:
+            self.meta_vf_clip_range = get_schedule_fn(self.meta_vf_clip_range)
+        if self.options_vf_clip_range is not None:
+            self.options_vf_clip_range = get_schedule_fn(self.options_vf_clip_range)
 
     def learn(self, total_timesteps: int, **kwargs):
         self.progress_total = tqdm(total=total_timesteps, file=sys.stdout, desc="Total steps",
@@ -276,10 +311,15 @@ class OptionsPPO(PPO):
         self._n_updates += self.n_epochs
 
         # Parameter tracking
-        clip_range, clip_range_vf = self._get_current_clip_ranges()
-        self.logger.record("hyperparameter_schedule/clip_range", clip_range)
+        clip_range, clip_range_vf = self._get_current_meta_clip_ranges()
+        self.logger.record("hyperparameter_schedule/meta_pi_clip_range", clip_range)
         if self.clip_range_vf is not None:
-            self.logger.record("hyperparameter_schedule/clip_range_vf", clip_range_vf)
+            self.logger.record("hyperparameter_schedule/meta_vf_clip_range", clip_range_vf)
+        clip_range, clip_range_vf = self._get_current_options_clip_ranges()
+        if self.clip_range is not None:
+            self.logger.record("hyperparameter_schedule/options_pi_clip_range", clip_range)
+        if self.clip_range_vf is not None:
+            self.logger.record("hyperparameter_schedule/options_vf_clip_range", clip_range_vf)
         self.logger.record("n_updates", self._n_updates, exclude="tensorboard")
 
         self.progress_rollout_train.close()
@@ -289,17 +329,21 @@ class OptionsPPO(PPO):
         the option."""
         if level == -1:  # meta-policy
             policy = self.policy.meta_policy
+            self._update_learning_rate(policy.optimizer, self.meta_learning_rate)
             evaluate_fn = policy.evaluate_actions
+            pi_ent_coef = self.meta_pi_ent_coef
+            vf_coef = self.meta_vf_coef
+            clip_range_pi, clip_range_vf = self._get_current_meta_clip_ranges()
         else:
             option = self.policy.options_hierarchy[level][position]
             if not option.policy_trainable:
                 return
             policy = option.get_policy()
+            self._update_learning_rate(policy.optimizer, self.options_learning_rate)
             evaluate_fn = option.evaluate_actions
-
-        self._update_learning_rate(policy.optimizer)
-
-        clip_range, clip_range_vf = self._get_current_clip_ranges()
+            pi_ent_coef = self.options_pi_ent_coef
+            vf_coef = self.options_vf_coef
+            clip_range_pi, clip_range_vf = self._get_current_options_clip_ranges()
 
         entropy_losses = []
         pg_losses, value_losses = [], []
@@ -332,7 +376,7 @@ class OptionsPPO(PPO):
                 old_log_prob = rollout_data.old_log_probs
                 ratio = th.exp(log_prob - old_log_prob)
 
-                policy_loss, clip_fraction = ppo_loss(ratio, advantages, clip_range)
+                policy_loss, clip_fraction = ppo_loss(ratio, advantages, clip_range_pi)
 
                 # Logging
                 pg_losses.append(policy_loss.item())
@@ -361,7 +405,7 @@ class OptionsPPO(PPO):
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = policy_loss + self.pi_ent_coef * entropy_loss + self.vf_coef * value_loss
+                loss = policy_loss + pi_ent_coef * entropy_loss + vf_coef * value_loss
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
@@ -417,7 +461,7 @@ class OptionsPPO(PPO):
         terminator: Terminator = option.get_terminator()
         evaluate_fn = option.evaluate_terminations
 
-        clip_range, clip_range_vf = self._get_current_clip_ranges()
+        clip_range = self._get_current_terminator_clip_range()
 
         entropy_losses = []
         losses = []
@@ -442,7 +486,7 @@ class OptionsPPO(PPO):
                 if self.normalize_advantage and len(next_advantages) > 1:
                     next_advantages = normalize_advantage(next_advantages)
 
-                adjusted_advantage = th.Tensor(next_advantages) + self.termination_regularizer
+                adjusted_advantage = th.Tensor(next_advantages) + self.options_tn_reg
 
                 termination_loss, tn_clip_fraction = ppo_loss(tn_ratio, -adjusted_advantage, clip_range)
 
@@ -453,7 +497,7 @@ class OptionsPPO(PPO):
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = termination_loss + self.tn_ent_coef * entropy_loss
+                loss = termination_loss + self.options_tn_ent_coef * entropy_loss
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
@@ -490,15 +534,28 @@ class OptionsPPO(PPO):
             self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
             self.logger.record(base_str + "loss", loss.item())
 
-    def _get_current_clip_ranges(self) -> (float, float):
+    def _get_current_meta_clip_ranges(self) -> (float, float):
         # Compute current clip range
-        clip_range = self.clip_range(self._current_progress_remaining)
+        clip_range = self.meta_pi_clip_range(self._current_progress_remaining)
         # Optional: clip range for the value function
-        if self.clip_range_vf is not None:
-            clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
+        if self.meta_vf_clip_range is not None:
+            clip_range_vf = self.meta_vf_clip_range(self._current_progress_remaining)
         else:
             clip_range_vf = None
         return clip_range, clip_range_vf
+
+    def _get_current_options_clip_ranges(self) -> (float, float):
+        # Compute current clip range
+        clip_range = self.options_pi_clip_range(self._current_progress_remaining)
+        # Optional: clip range for the value function
+        if self.options_vf_clip_range is not None:
+            clip_range_vf = self.options_vf_clip_range(self._current_progress_remaining)
+        else:
+            clip_range_vf = None
+        return clip_range, clip_range_vf
+
+    def _get_current_terminator_clip_range(self) -> float:
+        return self.options_tn_clip_range(self._current_progress_remaining)
 
     def forward_all(self, obs: Union[np.ndarray, th.Tensor], *args, **kwargs):
         with th.no_grad():
@@ -513,7 +570,8 @@ class OptionsPPO(PPO):
             obs = obs_as_tensor(obs, self.device)
             return self.policy.forward_all_terminators(obs, *args, **kwargs)
 
-    def _update_learning_rate(self, optimizers: Union[list[th.optim.Optimizer], th.optim.Optimizer]) -> None:
+    def _update_learning_rate(self, optimizers: Union[list[th.optim.Optimizer], th.optim.Optimizer],
+                              lr_schedule: Schedule) -> None:
         """
         Update the optimizers learning rate using the current learning rate schedule
         and the current progress remaining (from 1 to 0).
@@ -523,12 +581,12 @@ class OptionsPPO(PPO):
         """
         # Log the current learning rate
         self.logger.record("hyperparameter_schedule/learning_rate",
-                           self.lr_schedule(self._current_progress_remaining))
+                           lr_schedule(self._current_progress_remaining))
 
         if not isinstance(optimizers, list):
             optimizers = [optimizers]
         for optimizer in optimizers:
-            update_learning_rate(optimizer, self.lr_schedule(self._current_progress_remaining))
+            update_learning_rate(optimizer, lr_schedule(self._current_progress_remaining))
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = ["policy.meta_policy", "policy.options_hierarchy"]

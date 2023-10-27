@@ -12,6 +12,7 @@ from envs.common import init_train_eval_envs, get_focus_file_path
 from envs.util import get_env_identifier
 from options.ppo import OptionsPPO
 from utils.callbacks import init_callbacks
+from utils.console import bold
 
 OUT_BASE_PATH = "out/"
 QUEUE_PATH = "in/queue/"
@@ -22,8 +23,9 @@ def run(name: str = None,
         cores: int = 1,
         seed: int = 0,
         environment: dict = None,
-        model: dict = None,
-        training: dict = None,
+        general: dict = None,
+        meta_policy: dict = None,
+        options: dict = None,
         evaluation: dict = None,
         config_path: str = "",
         description: str = None):
@@ -50,18 +52,19 @@ def run(name: str = None,
     n_eval_episodes = evaluation.pop("n_episodes")
     if n_eval_episodes is None:
         n_eval_episodes = 4 * n_eval_envs
-    total_timestamps = int(float(training["total_timesteps"]))
+    total_timestamps = int(float(general.pop("total_timesteps")))
     log_path.mkdir(parents=True, exist_ok=True)
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
-    hierarchy_shape = model["hierarchy_shape"]
+    logic = meta_policy["logic"]
+    hierarchy_shape = general.pop("hierarchy_shape")
     uses_options = len(hierarchy_shape) > 0
     print(f"Hierarchy shape {hierarchy_shape}")
 
     train_env, eval_env = init_train_eval_envs(n_train_envs=n_envs,
                                                n_eval_envs=n_eval_envs,
                                                seed=seed,
-                                               logic=model["logic_meta_policy"],
+                                               logic=logic,
                                                render_eval=evaluation["render"],
                                                accept_predicates=not uses_options,
                                                **environment)
@@ -78,37 +81,49 @@ def run(name: str = None,
     policy_kwargs = {"hierarchy_shape": hierarchy_shape,
                      "normalize_images": not object_centric}
 
-    logic = model["logic_meta_policy"]
     if logic:
         policy_kwargs.update({"env_name": game_identifier,
                               "logic_meta_policy": True,
                               "accepts_predicates": uses_options,
                               "device": device})
 
-    net_arch = model.get("net_arch")
+    net_arch = general.pop("net_arch")
     if net_arch is not None:
         policy_kwargs["net_arch"] = net_arch
 
-    clip_range = maybe_make_schedule(model["ppo"].pop("clip_range"))
-    learning_rate = maybe_make_schedule(training.pop("learning_rate"))
+    # Load and init all schedules
+    meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range"))
+    meta_learning_rate = maybe_make_schedule(meta_policy.pop("learning_rate"))
+    options_policy_clip_range = maybe_make_schedule(options.pop("policy_clip_range"))
+    options_learning_rate = maybe_make_schedule(options.pop("learning_rate"))
 
     options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,
-        learning_rate=learning_rate,
-        termination_regularizer=model["termination_regularizer"],
-        clip_range=clip_range,
-        **model["ppo"],
+        meta_learning_rate=meta_learning_rate,
+        options_learning_rate=options_learning_rate,
         device=device,
         verbose=1,
         seed=seed,
+        **general,
+        meta_policy_ent_coef=meta_policy["policy_ent_coef"],
+        meta_policy_clip_range=meta_policy_clip_range,
+        meta_value_fn_coef=meta_policy["value_fn_coef"],
+        meta_value_fn_clip_range=meta_policy["value_fn_clip_range"],
+        options_policy_ent_coef=options["policy_ent_coef"],
+        options_policy_clip_range=options_policy_clip_range,
+        options_value_fn_coef=options["value_fn_coef"],
+        options_value_fn_clip_range=options["value_fn_clip_range"],
+        options_terminator_ent_coef=options["terminator_ent_coef"],
+        options_terminator_clip_range=options["terminator_clip_range"],
+        options_termination_reg=options["termination_regularizer"],
     )
 
     new_logger = configure(str(log_path), ["tensorboard"])
     options_ppo.set_logger(new_logger)
 
     # Transfer learning with existing components (if specified)
-    options_ppo.policy.load_pretrained_options(model.get("pre-trained_options"), train_env, device)
+    options_ppo.policy.load_pretrained_options(options.get("pre-trained"), train_env, device)
 
     # Save config file and prune file to model dir for documentation
     shutil.copy(src=config_path, dst=model_path / "config.yaml")
@@ -118,7 +133,7 @@ def run(name: str = None,
         prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
         shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
-    print(f"Running experiment '{name}'")
+    print(f"Experiment '{bold(name)}' started.")
     if description is not None:
         print(description)
     print(f"Started {type(options_ppo).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")
