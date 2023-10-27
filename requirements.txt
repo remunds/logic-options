@@ -11,8 +11,9 @@ tqdm
 pandas
 pyyaml
 scikit-image
-ocatari
-# scobi
 pygame
-# nudge
 sty
+# Install manually:
+# ocatari
+# scobi
+# nudge
