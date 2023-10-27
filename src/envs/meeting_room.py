@@ -6,7 +6,10 @@ import pygame
 import numpy as np
 from gymnasium import Env, spaces
 from gymnasium.core import ActType, ObsType
+from stable_baselines3.common.vec_env import VecNormalize
+import torch as th
 
+from options.option import Option
 from utils.render import draw_arrow, draw_label
 
 PLAYER_VIEW_SIZE = 7  # odd number
@@ -106,6 +109,10 @@ class MeetingRoom(Env):
         self._current_distance_to_target = -1
         self._previous_distance_to_target = -1
         self._previous_best_distance_to_target = -1
+
+        # Option stats rendering
+        self.option = None
+        self.vec_norm = None
 
         # Setup rendering
         self.window_shape = self.floor_shape * (FIELD_SIZE + BORDER_WIDTH) + 2 * BORDER_WIDTH + 2 * MARGIN
@@ -517,10 +524,15 @@ class MeetingRoom(Env):
                 #            text=str(self.distance_map[b, f, x, y]),
                 #            font=pygame.font.SysFont('Source Code Pro', 12))
 
-    def _render_field(self, x_coord, y_coord, color=(255, 255, 255)):
+        if self.option is not None:
+            self._render_termination_heatmap()
+
+    def _render_field(self, x_coord, y_coord, color=(255, 255, 255), alpha: float = 0, surface = None):
+        if surface is None:
+            surface = self.window
         x = MARGIN + BORDER_WIDTH + x_coord * (FIELD_SIZE + BORDER_WIDTH)
         y = MARGIN + BORDER_WIDTH + y_coord * (FIELD_SIZE + BORDER_WIDTH)
-        pygame.draw.rect(self.window, color, [x, y, FIELD_SIZE, FIELD_SIZE])
+        pygame.draw.rect(surface, color, [x, y, FIELD_SIZE, FIELD_SIZE])
 
     def _render_player(self, x_coord, y_coord):
         x, y = self._get_field_center(x_coord, y_coord)
@@ -634,6 +646,29 @@ class MeetingRoom(Env):
     def get_action_meanings(self) -> Sequence[str]:
         action_names = [a.name for a in Action]
         return action_names
+
+    def _render_termination_heatmap(self):
+        color = (0, 90, 169)
+
+        # Init overlay surface
+        overlay_surface = pygame.Surface(self.window.get_size(), pygame.SRCALPHA)
+
+        termination_tensor = th.tensor([1], dtype=th.bool)
+
+        orig_pos = self.current_pos.copy()
+        for x in range(self.floor_shape[0]):
+            for y in range(self.floor_shape[1]):
+                if not self.map[orig_pos[0], orig_pos[1], x, y]:  # if no wall
+                    self.current_pos[2:4] = [x, y]
+                    obs = self._get_observation()
+                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
+                    termination_logp, _ = self.option.evaluate_terminations(obs_norm, termination_tensor)
+                    alpha = 200 - int(200 * np.exp(termination_logp[0].detach().numpy()))
+                    self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
+        self.current_pos = orig_pos
+
+        # Apply overlay to screen
+        self.window.blit(overlay_surface, (0, 0))
 
 
 def get_rotation_matrix(rad: float):
