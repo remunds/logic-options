@@ -34,9 +34,13 @@ class MeetingRoomValuationModule(ValuationModule):
             InElevator(),
             AtEntrance(),
             WallNorth(),
+            NorthFree(),
             WallEast(),
+            EastFree(),
             WallSouth(),
+            SouthFree(),
             WallWest(),
+            WestFree(),
         ]
 
         pred_name_to_val_fn = {}
@@ -293,6 +297,16 @@ class WallNorth(ValuationFunction):
         return th.Tensor(local_view[:, x, y] == 1)
 
 
+class NorthFree(ValuationFunction):
+    def __init__(self):
+        super().__init__("north_free")
+
+    def forward(self, local_view: th.Tensor) -> th.Tensor:
+        x = PLAYER_VIEW_SIZE // 2
+        y = PLAYER_VIEW_SIZE // 2 - 1
+        return th.Tensor(local_view[:, x, y] == 0)
+
+
 class WallEast(ValuationFunction):
     def __init__(self):
         super().__init__("wall_east")
@@ -301,6 +315,16 @@ class WallEast(ValuationFunction):
         x = PLAYER_VIEW_SIZE // 2 + 1
         y = PLAYER_VIEW_SIZE // 2
         return th.Tensor(local_view[:, x, y] == 1)
+
+
+class EastFree(ValuationFunction):
+    def __init__(self):
+        super().__init__("east_free")
+
+    def forward(self, local_view: th.Tensor) -> th.Tensor:
+        x = PLAYER_VIEW_SIZE // 2 + 1
+        y = PLAYER_VIEW_SIZE // 2
+        return th.Tensor(local_view[:, x, y] == 0)
 
 
 class WallSouth(ValuationFunction):
@@ -313,6 +337,16 @@ class WallSouth(ValuationFunction):
         return th.Tensor(local_view[:, x, y] == 1)
 
 
+class SouthFree(ValuationFunction):
+    def __init__(self):
+        super().__init__("south_free")
+
+    def forward(self, local_view: th.Tensor) -> th.Tensor:
+        x = PLAYER_VIEW_SIZE // 2
+        y = PLAYER_VIEW_SIZE // 2 + 1
+        return th.Tensor(local_view[:, x, y] == 0)
+
+
 class WallWest(ValuationFunction):
     def __init__(self):
         super().__init__("wall_west")
@@ -321,3 +355,13 @@ class WallWest(ValuationFunction):
         x = PLAYER_VIEW_SIZE // 2 - 1
         y = PLAYER_VIEW_SIZE // 2
         return th.Tensor(local_view[:, x, y] == 1)
+
+
+class WestFree(ValuationFunction):
+    def __init__(self):
+        super().__init__("west_free")
+
+    def forward(self, local_view: th.Tensor) -> th.Tensor:
+        x = PLAYER_VIEW_SIZE // 2 - 1
+        y = PLAYER_VIEW_SIZE // 2
+        return th.Tensor(local_view[:, x, y] == 0)

@@ -23,6 +23,10 @@ not_on_ground_floor:1:image
 in_elevator:1:image
 at_entrance:1:image
 wall_north:1:local_view
+north_free:1:local_view
 wall_east:1:local_view
+east_free:1:local_view
 wall_south:1:local_view
+south_free:1:local_view
 wall_west:1:local_view
+west_free:1:local_view
