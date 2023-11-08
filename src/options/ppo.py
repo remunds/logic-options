@@ -644,7 +644,8 @@ def load_agent(name: str = None,
                render_mode: str = None,
                render_oc_overlay: bool = False,
                train: bool = False,
-               verbose: int = 1):
+               verbose: int = 1,
+               device: str = None):
     assert name is not None and env_name is not None or model_dir is not None
 
     if model_dir is None:
@@ -671,6 +672,9 @@ def load_agent(name: str = None,
     if reward_mode is not None:
         config["environment"]["reward_mode"] = reward_mode
 
+    hierarchy_shape = config["general"]["hierarchy_shape"]
+    uses_options = len(hierarchy_shape) > 0
+
     env = init_vec_env(n_envs=n_envs,
                        seed=123,
                        vec_norm_path=vec_norm_path,
@@ -678,9 +682,11 @@ def load_agent(name: str = None,
                        render_mode=render_mode,
                        render_oc_overlay=render_oc_overlay,
                        logic=config["meta_policy"]["logic"],
+                       accept_predicates=not uses_options,
                        train=train)
 
-    device = config["device"]
+    if device is None:
+        device = config["device"]
 
     model = OptionsPPO.load(checkpoint_path,
                             env=env,
@@ -688,6 +694,8 @@ def load_agent(name: str = None,
                             render_mode=render_mode,
                             device=device,
                             custom_objects={"progress_total": None,
-                                            "progress_rollout_train": None})
+                                            "progress_rollout_train": None,
+                                            "_last_option_terminations": None,
+                                            "_last_active_options": None})
 
     return model
