@@ -73,8 +73,7 @@ class MeetingRoom(Env):
                  goal: str = "target",
                  max_steps: int = 100,
                  render_mode: str = None,
-                 walls_fixed: bool = False,
-                 seed: int = None):
+                 walls_fixed: bool = False):
         if goal not in ["target", "elevator", "entrance"]:
             raise ValueError(f"Unrecognized goal '{goal}'.")
 
@@ -111,8 +110,12 @@ class MeetingRoom(Env):
         self._previous_best_distance_to_target = -1
 
         # Option stats rendering
+        self.render_option_history = False
         self.option = None
         self.vec_norm = None
+        self.action = None
+        self.policy = None
+        self.option_history_map = np.zeros((self.n_buildings, self.n_floors, *floor_shape), dtype=int) - 1
 
         # Setup rendering
         self.window_shape = self.floor_shape * (FIELD_SIZE + BORDER_WIDTH) + 2 * BORDER_WIDTH + 2 * MARGIN
@@ -238,6 +241,7 @@ class MeetingRoom(Env):
         self.goal_reached = False
         self.goal_state_showed = False
         self.n_steps = 0
+        self.option_history_map[:] = -1
         if self.render_mode == "human":
             self.render()
         return self._get_observation(), self._get_info()
@@ -458,8 +462,6 @@ class MeetingRoom(Env):
                 entrance = self._get_current_entrance()
                 self.current_pos[2:4] = entrance
 
-        # self.update_current_distance_to_target()
-
     def _is_valid_next_step(self, x, y):
         b, f, _, _ = self.current_pos
         return 0 <= x < self.floor_shape[0] and \
@@ -518,14 +520,13 @@ class MeetingRoom(Env):
                     self._render_target(x, y)
                 if np.all((x, y) == self.current_pos[2:4]):  # player
                     self._render_player(x, y)
-                # draw_label(self.window,
-                #            position=[MARGIN + BORDER_WIDTH + x * (FIELD_SIZE + BORDER_WIDTH),
-                #                      MARGIN + BORDER_WIDTH + y * (FIELD_SIZE + BORDER_WIDTH)],
-                #            text=str(self.distance_map[b, f, x, y]),
-                #            font=pygame.font.SysFont('Source Code Pro', 12))
+                if self.render_option_history:
+                    self._render_option_history_field(x, y)
 
         if self.option is not None:
             self._render_termination_heatmap()
+        elif self.action is not None:
+            self._render_action_heatmap()
 
     def _render_field(self, x_coord, y_coord, color=(255, 255, 255), alpha: float = 0, surface = None):
         if surface is None:
@@ -572,6 +573,16 @@ class MeetingRoom(Env):
                    tip_width=int(0.4 * FIELD_SIZE),
                    color="white",
                    width=int(0.15 * FIELD_SIZE))
+
+    def _render_option_history_field(self, x_coord, y_coord):
+        b, f, x, y = self.current_pos
+        history_option = self.option_history_map[b, f, x_coord, y_coord]
+        if history_option != -1:
+            draw_label(self.window,
+                       position=[MARGIN + BORDER_WIDTH + x_coord * (FIELD_SIZE + BORDER_WIDTH),
+                                 MARGIN + BORDER_WIDTH + y_coord * (FIELD_SIZE + BORDER_WIDTH)],
+                       text=str(history_option),
+                       font=pygame.font.SysFont('Source Code Pro', 20))
 
     def _render_buildings(self):
         margin_top = 2 * MARGIN + self.floor_shape[1] * (FIELD_SIZE + BORDER_WIDTH) + BORDER_WIDTH
@@ -653,7 +664,7 @@ class MeetingRoom(Env):
         # Init overlay surface
         overlay_surface = pygame.Surface(self.window.get_size(), pygame.SRCALPHA)
 
-        termination_tensor = th.tensor([1], dtype=th.bool)
+        termination_tensor = th.tensor([1], dtype=th.float32, device="cuda")
 
         orig_pos = self.current_pos.copy()
         for x in range(self.floor_shape[0]):
@@ -661,14 +672,54 @@ class MeetingRoom(Env):
                 if not self.map[orig_pos[0], orig_pos[1], x, y]:  # if no wall
                     self.current_pos[2:4] = [x, y]
                     obs = self._get_observation()
-                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
+                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
                     termination_logp, _ = self.option.evaluate_terminations(obs_norm, termination_tensor)
-                    alpha = 200 - int(200 * np.exp(termination_logp[0].detach().numpy()))
+                    alpha = int(200 * np.exp(termination_logp[0].cpu().detach().numpy()))
                     self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
         self.current_pos = orig_pos
 
         # Apply overlay to screen
         self.window.blit(overlay_surface, (0, 0))
+
+    def _render_action_heatmap(self):
+        color = (230, 0, 26)
+
+        # Init overlay surface
+        overlay_surface = pygame.Surface(self.window.get_size(), pygame.SRCALPHA)
+
+        action_tensor = th.tensor([self.action], device="cuda")
+
+        orig_pos = self.current_pos.copy()
+        for x in range(self.floor_shape[0]):
+            for y in range(self.floor_shape[1]):
+                if not self.map[orig_pos[0], orig_pos[1], x, y]:  # if no wall
+                    self.current_pos[2:4] = [x, y]
+                    obs = self._get_observation()
+                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
+                    _, action_logp, _ = self.policy.evaluate_actions(obs_norm, action_tensor)
+                    alpha = int(200 * np.exp(action_logp[0].cpu().detach().numpy()))
+                    self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
+        self.current_pos = orig_pos
+
+        # Apply overlay to screen
+        self.window.blit(overlay_surface, (0, 0))
+
+    def register_current_option(self, option_id):
+        self.option_history_map[tuple(self.current_pos)] = option_id
+
+    def set_render_option_history(self, value: bool):
+        self.render_option_history = value
+
+    def render_termination_heatmap_of_option(self, option, vec_norm=None):
+        self.option = option
+        if option is not None and option.vec_norm is not None:
+            vec_norm = option.vec_norm
+        self.vec_norm = vec_norm
+
+    def render_action_heatmap_for_policy(self, action, policy=None, vec_norm=None):
+        self.policy = policy
+        self.action = action
+        self.vec_norm = vec_norm
 
 
 def get_rotation_matrix(rad: float):
