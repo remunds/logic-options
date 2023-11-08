@@ -12,9 +12,9 @@ north_to_elevator:1:image
 east_to_elevator:1:image
 south_to_elevator:1:image
 west_to_elevator:1:image
+next_upper_floor_to_target:1:image
+prev_lower_floor_to_target:1:image
 north_bypass_wall:1:image
 east_bypass_wall:1:image
 south_bypass_wall:1:image
 west_bypass_wall:1:image
-next_upper_floor_to_target:1:image
-prev_lower_floor_to_target:1:image
