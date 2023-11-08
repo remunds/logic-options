@@ -241,7 +241,7 @@ class OptionsAgent(BasePolicy):
         :return: option trace with action appended, corresponding values, and log probabilities
         """
         n_envs = len(obs)
-        option_traces = option_traces.clone()
+        option_traces = option_traces.clone().type(th.long)
 
         if self.hierarchy_size == 0:
             actions, values, log_probs = self.meta_policy(obs, deterministic)
@@ -299,7 +299,7 @@ class OptionsAgent(BasePolicy):
         if self.hierarchy_size == 0:
             return self.meta_policy.predict_values(obs).squeeze().unsqueeze(-1)
 
-        option_traces = option_traces.clone()
+        option_traces = option_traces.clone().type(th.long)
         option_traces[:, 0] = self.preds2options(option_traces[:, 0])
 
         values = th.zeros(option_traces.shape[0], option_traces.shape[1] + 1)
@@ -325,7 +325,7 @@ class OptionsAgent(BasePolicy):
         if self.hierarchy_size == 0:
             return terminations, log_probs
 
-        option_traces = option_traces.clone()
+        option_traces = option_traces.clone().type(th.long)
         option_traces[:, 0] = self.preds2options(option_traces[:, 0])
 
         for env_id, trace in enumerate(option_traces):
