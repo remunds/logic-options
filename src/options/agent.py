@@ -342,6 +342,32 @@ class OptionsAgent(BasePolicy):
         option = self.get_option_by_idx(option_idx)
         return option.get_termination_dist(obs)
 
+    def evaluate_terminations(
+            self,
+            obs: th.Tensor,
+            option_traces: th.Tensor,
+            terminations: th.Tensor
+    ) -> th.Tensor:
+        n_envs = len(obs)
+
+        log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.float)
+
+        if self.hierarchy_size == 0:
+            return log_probs
+
+        option_traces = option_traces.clone().type(th.long)
+        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
+
+        for env_id, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env_id], dim=0)
+            term = th.unsqueeze(terminations[env_id], dim=0)
+            for level, position in enumerate(trace):
+                option = self.options_hierarchy[level][position]
+                log_prob, _ = option.evaluate_terminations(env_obs, term)
+                log_probs[env_id, level] = log_prob
+
+        return log_probs
+
     def evaluate_option_terminations(
             self,
             obs: th.Tensor,
