@@ -419,6 +419,7 @@ class OptionsPPO(PPO):
                 if option is not None:  # option
                     if not option.policy_trainable:
                         policy_loss = 0
+                        entropy_loss = 0
                     if not option.value_fn_trainable:
                         value_loss = 0
 
