@@ -220,14 +220,17 @@ class OptionsPPO(PPO):
 
             with th.no_grad():
                 next_obs_tensor = obs_as_tensor(next_obs, self.device)
-                terminations, tn_log_probs = self.policy.forward_all_terminators(next_obs_tensor, options)
-
-                # Replace continuation probability with termination probability
-                tn_log_probs[~terminations] = th.log(1 - th.exp(tn_log_probs[~terminations]))
+                terminations, _ = self.policy.forward_all_terminators(next_obs_tensor, options)
 
                 # If a higher-level option exits, all lower-level options exit, too
                 for level in range(1, self.policy.hierarchy_size):
                     terminations[:, level] |= terminations[:, level - 1]
+
+                # Compute log probability for terminations (note: not continuations)
+                true_tensor = th.ones(terminations.shape, device=self.device)
+                tn_log_probs = self.policy.evaluate_terminations(next_obs_tensor, options, true_tensor)
+
+                assert not th.any(th.isinf(tn_log_probs))
 
                 # TODO: efficiency can be improved as next values are needed only for terminated options
                 next_values = self.policy.predict_all_values(next_obs_tensor, options)
