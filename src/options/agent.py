@@ -141,10 +141,14 @@ class OptionsAgent(BasePolicy):
                                                                             "progress_total": None})
             policy: ActorCriticPolicy = ppo.policy.meta_policy
 
-            # Initialize option
+            old_option = self.options_hierarchy.options[level][position]
+
+            # Initialize option, re-use old terminator as it might be a trained one
+            # TODO: also enable to re-use the old value function
             option = Option(policy=policy,
                             policy_trainable=policy_trainable,
                             value_fn_trainable=value_fn_trainable,
+                            terminator=old_option.get_terminator(),
                             terminator_trainable=terminator_trainable,
                             vec_norm=vec_norm,
                             lr_schedule=self.lr_schedule)

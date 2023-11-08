@@ -43,6 +43,7 @@ class Option(nn.Module):
                  value_fn_trainable: bool = True,
                  terminator_trainable: bool = True,
                  vec_norm: VecNormalize = None,
+                 terminator: Terminator = None,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
                  **kwargs):
         assert (policy is not None
@@ -83,17 +84,20 @@ class Option(nn.Module):
         else:
             tn_net_arch = self._policy.net_arch
 
-        self._terminator = Terminator(
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            lr_schedule=lr_schedule,
-            features_extractor=self._policy.features_extractor,
-            net_arch=tn_net_arch,
-            activation_fn=self._policy.activation_fn,
-            optimizer_class=self._policy.optimizer_class,
-            optimizer_kwargs=self._policy.optimizer_kwargs,
-            normalize_images=self._policy.normalize_images,
-        )
+        if terminator is not None:
+            self._terminator = terminator
+        else:
+            self._terminator = Terminator(
+                observation_space=self.observation_space,
+                action_space=self.action_space,
+                lr_schedule=lr_schedule,
+                features_extractor=self._policy.features_extractor,
+                net_arch=tn_net_arch,
+                activation_fn=self._policy.activation_fn,
+                optimizer_class=self._policy.optimizer_class,
+                optimizer_kwargs=self._policy.optimizer_kwargs,
+                normalize_images=self._policy.normalize_images,
+            )
 
     def get_policy(self):
         return self._policy
