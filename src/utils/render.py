@@ -13,9 +13,6 @@ def render_options_overlay(image, option_trace: List[int] = None, fps=None) -> N
         Optional: Show the currently used option_idx and/or the detected objects
         and their velocities."""
 
-    if fps is None:
-        fps = 15
-
     global surface, clock
 
     # Prepare screen if not initialized
@@ -27,7 +24,8 @@ def render_options_overlay(image, option_trace: List[int] = None, fps=None) -> N
         surface = pygame.display.set_mode((image.shape[1], image.shape[0]), flags=pygame.SCALED)
         clock = pygame.time.Clock()
 
-    clock.tick(fps)  # reduce FPS for Atari games
+    if fps is not None:
+        clock.tick(fps)  # reduce FPS for Atari games
 
     # Render RGB image
     image = np.transpose(image, (1, 0, 2))
