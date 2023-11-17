@@ -131,7 +131,7 @@ class OptionsAgent(BasePolicy):
             # Load vec normalize if exists
             vec_norm_path = model_path + ".pkl"
             if env is not None and os.path.exists(vec_norm_path):
-                env = VecNormalize.load(model_path + ".pkl", venv=env)
+                env = VecNormalize.load(vec_norm_path, venv=env)
                 vec_norm = env
             else:
                 vec_norm = None

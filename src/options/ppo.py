@@ -16,6 +16,7 @@ from stable_baselines3.ppo.ppo import PPO
 from torch.nn.functional import mse_loss
 from tqdm import tqdm
 
+from common import MODELS_BASE_PATH
 from envs.common import init_vec_env
 from envs.util import get_env_identifier
 from options.agent import OptionsAgent
@@ -636,9 +637,6 @@ def normalize_advantage(advantages: th.tensor):
     return (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
 
-MODELS_BASE_PATH = "out/"
-
-
 def load_agent(name: str = None,
                env_name: str = None,
                model_dir: str | Path = None,
@@ -649,7 +647,9 @@ def load_agent(name: str = None,
                render_oc_overlay: bool = False,
                train: bool = False,
                verbose: int = 1,
-               device: str = None):
+               device: str = None,
+               object_centric: bool = None,
+               **kwargs):
     assert name is not None and env_name is not None or model_dir is not None
 
     if model_dir is None:
@@ -676,6 +676,9 @@ def load_agent(name: str = None,
     if reward_mode is not None:
         config["environment"]["reward_mode"] = reward_mode
 
+    if object_centric is not None:
+        config["environment"]["object_centric"] = object_centric
+
     hierarchy_shape = config["general"]["hierarchy_shape"]
     uses_options = len(hierarchy_shape) > 0
 
@@ -687,7 +690,8 @@ def load_agent(name: str = None,
                        render_oc_overlay=render_oc_overlay,
                        logic=config["meta_policy"]["logic"],
                        accept_predicates=not uses_options,
-                       train=train)
+                       train=train,
+                       **kwargs)
 
     if device is None:
         device = config["device"]

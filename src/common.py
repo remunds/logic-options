@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 
 FOCUS_FILES_DIR = "in/focusfiles"
@@ -10,3 +12,4 @@ REWARD_MODE = {
     None: None,
 }
 MULTIPROCESSING_START_METHOD = "spawn" if os.name == 'nt' else "fork"  # 'nt' == Windows
+MODELS_BASE_PATH = "out/"

@@ -11,12 +11,29 @@ from stable_baselines3.common.env_util import make_atari_env, make_vec_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStack, VecNormalize, DummyVecEnv
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 
 from envs.meeting_room import MeetingRoom
 from logic.env_wrapper import LogicEnvWrapper
 
 from src.common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
 from envs.util import get_atari_identifier
+
+
+def make_ocatari_env(name: str,
+                     rank: int = 0,
+                     seed: int = 0,
+                     frameskip: int = 4,
+                     **kwargs) -> Callable:
+    def _init() -> gym.Env:
+        env = OCAtari(name, hud=True, **kwargs)
+        env = AtariWrapper(env, frame_skip=frameskip, terminal_on_life_loss=False, clip_reward=False)
+        env = Monitor(env)
+        env.reset(seed=seed + rank)
+        return env
+
+    set_random_seed(seed)
+    return _init
 
 
 def make_scobi_env(name: str,
@@ -101,6 +118,7 @@ def init_vec_env(name: str,
                  freeze_invisible_obj: bool = False,
                  render_mode: str = None,
                  render_oc_overlay: bool = False,
+                 no_scobi: bool = False,
                  settings: dict = None) -> VecEnv | None:
     """Helper function to initialize a vector environment with specified parameters."""
 
@@ -133,39 +151,48 @@ def init_vec_env(name: str,
         vec_env = VecFrameStack(vec_env, n_stack=framestack)
 
     elif object_centric:
-        if prune_concept == "unpruned":
-            focus_dir = FOCUS_FILES_DIR_UNPRUNED
-            pruned_ff_name = None
-        elif prune_concept == "default":
-            focus_dir = FOCUS_FILES_DIR
-            pruned_ff_name = get_pruned_focus_file_from_env_name(name)
+        if no_scobi:
+            envs = [make_ocatari_env(name=name,
+                                     rank=i,
+                                     seed=seed,
+                                     frameskip=frameskip,
+                                     render_oc_overlay=render_oc_overlay,
+                                     **settings) for i in range(n_envs)]
+
         else:
-            raise ValueError(f"Unknown prune concept '{prune_concept}'.")
+            if prune_concept == "unpruned":
+                focus_dir = FOCUS_FILES_DIR_UNPRUNED
+                pruned_ff_name = None
+            elif prune_concept == "default":
+                focus_dir = FOCUS_FILES_DIR
+                pruned_ff_name = get_pruned_focus_file_from_env_name(name)
+            else:
+                raise ValueError(f"Unknown prune concept '{prune_concept}'.")
 
-        reward_mode = REWARD_MODE[reward_mode]
+            reward_mode = REWARD_MODE[reward_mode]
 
-        # Verify compatibility with Gymnasium and refresh focus YAML file
-        monitor = make_scobi_env(name=name,
-                                 focus_dir=focus_dir,
-                                 pruned_ff_name=pruned_ff_name,
-                                 exclude_properties=exclude_properties,
-                                 reward_mode=reward_mode,
-                                 freeze_invisible_obj=freeze_invisible_obj)()
-        check_env(monitor.env)
-        del monitor
+            # Verify compatibility with Gymnasium and refresh focus YAML file
+            monitor = make_scobi_env(name=name,
+                                     focus_dir=focus_dir,
+                                     pruned_ff_name=pruned_ff_name,
+                                     exclude_properties=exclude_properties,
+                                     reward_mode=reward_mode,
+                                     freeze_invisible_obj=freeze_invisible_obj)()
+            check_env(monitor.env)
+            del monitor
 
-        envs = [make_scobi_env(name=name,
-                               focus_dir=focus_dir,
-                               pruned_ff_name=pruned_ff_name,
-                               exclude_properties=exclude_properties,
-                               rank=i,
-                               seed=seed,
-                               silent=True,
-                               refresh=False,
-                               reward_mode=reward_mode,
-                               render_mode=render_mode,
-                               freeze_invisible_obj=freeze_invisible_obj,
-                               render_oc_overlay=render_oc_overlay) for i in range(n_envs)]
+            envs = [make_scobi_env(name=name,
+                                   focus_dir=focus_dir,
+                                   pruned_ff_name=pruned_ff_name,
+                                   exclude_properties=exclude_properties,
+                                   rank=i,
+                                   seed=seed,
+                                   silent=True,
+                                   refresh=False,
+                                   reward_mode=reward_mode,
+                                   render_mode=render_mode,
+                                   freeze_invisible_obj=freeze_invisible_obj,
+                                   render_oc_overlay=render_oc_overlay) for i in range(n_envs)]
 
         if n_envs > 1:
             vec_env = SubprocVecEnv(envs, start_method=MULTIPROCESSING_START_METHOD)

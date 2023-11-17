@@ -3,6 +3,7 @@ import torch as th
 import pygame
 from datetime import datetime
 import gymnasium as gym
+from scobi.core import Environment as ScobiEnv
 
 from options.ppo import load_agent
 from utils.render import render_options_overlay
@@ -47,6 +48,8 @@ class Renderer:
         self.fps = fps
 
         self.env = vec_env.envs[0].env
+        if isinstance(self.env, ScobiEnv):
+            self.env = self.env.oc_env.env.unwrapped
 
         self.vec_env = vec_env
         self.vec_env.reset()
@@ -56,8 +59,11 @@ class Renderer:
         # env.render_termination_heatmap(True)
         # env.render_action_heatmap(True)
 
-        self.keys2actions = self.env.get_keys_to_action()
         self.action_meanings = self.env.get_action_meanings()
+        if hasattr(self.env, "get_keys_to_action"):
+            self.keys2actions = self.env.get_keys_to_action()
+        else:
+            self.keys2actions = None
         self.current_keys_down = set()
 
         self.vec_norm = unwrap_vec_normalize(vec_env)
@@ -108,7 +114,8 @@ class Renderer:
                 action = actions.squeeze()
                 if self.logic and not self.uses_options:
                     action = self.predicates[action]
-                print("Proposed next action:", self.action_meanings[action])
+                if self.action_meanings is not None:
+                    print("Proposed next action:", self.action_meanings[action])
 
             self.reset = False
 
@@ -117,7 +124,7 @@ class Renderer:
 
             if self.shadow_mode:
                 if self.wait_for_input:
-                    while human_action is None and self.running and not self.reset:
+                    while human_action == 0 and self.running and not self.reset:
                         self._handle_user_input()
                         human_action = self._get_action()
 
