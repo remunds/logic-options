@@ -177,7 +177,8 @@ def init_vec_env(name: str,
                                      pruned_ff_name=pruned_ff_name,
                                      exclude_properties=exclude_properties,
                                      reward_mode=reward_mode,
-                                     freeze_invisible_obj=freeze_invisible_obj)()
+                                     freeze_invisible_obj=freeze_invisible_obj,
+                                     **settings)()
             check_env(monitor.env)
             del monitor
 
@@ -190,9 +191,9 @@ def init_vec_env(name: str,
                                    silent=True,
                                    refresh=False,
                                    reward_mode=reward_mode,
-                                   render_mode=render_mode,
                                    freeze_invisible_obj=freeze_invisible_obj,
-                                   render_oc_overlay=render_oc_overlay) for i in range(n_envs)]
+                                   render_oc_overlay=render_oc_overlay,
+                                   **settings) for i in range(n_envs)]
 
         if n_envs > 1:
             vec_env = SubprocVecEnv(envs, start_method=MULTIPROCESSING_START_METHOD)

@@ -7,6 +7,7 @@ from scobi.core import Environment as ScobiEnv
 
 from options.ppo import load_agent
 from utils.render import render_options_overlay
+from eval_dist_to_joey import get_distance_to_joey
 
 from stable_baselines3.common.vec_env import unwrap_vec_normalize
 
@@ -23,7 +24,8 @@ class Renderer:
                  fps: int = None,
                  shadow_mode=False,
                  deterministic=True,
-                 wait_for_input=False):
+                 wait_for_input=False,
+                 render_oc_overlay=True):
 
         self.fps = fps
         self.shadow_mode = shadow_mode
@@ -34,7 +36,7 @@ class Renderer:
 
         self.model = load_agent(agent_name, env_name,
                                 render_mode="rgb_array",
-                                render_oc_overlay=True,
+                                render_oc_overlay=render_oc_overlay,
                                 reward_mode="human",
                                 device="cuda")
         self.uses_options = self.model.hierarchy_size > 0
@@ -85,8 +87,7 @@ class Renderer:
     def _init_pygame(self):
         pygame.init()
         pygame.display.set_caption("Environment")
-        frame = self.env.render()
-        frame = frame.swapaxes(0, 1)
+        frame = self.vec_env.render()
         self.window = pygame.display.set_mode(frame.shape[:2], pygame.SCALED)
         self.clock = pygame.time.Clock()
 
@@ -137,6 +138,10 @@ class Renderer:
             # Apply action
             if not self.paused:
                 new_obs, reward, dones, _ = self.vec_env.step(actions)
+
+                # game_objects = self.vec_env.envs[0].env.oc_env.objects
+                # d = get_distance_to_joey(game_objects)
+                # print("Distance to Joey:", d)
 
                 if self.shadow_mode and float(reward) != 0:
                     print(f"Reward {reward[0]:.2f}")
@@ -233,6 +238,5 @@ class Renderer:
         self.clock.tick(self.fps)
 
     def _render_env(self):
-        frame = self.env.render()
-        frame = frame.swapaxes(0, 1)
+        frame = self.vec_env.render()
         pygame.pixelcopy.array_to_surface(self.window, frame)
