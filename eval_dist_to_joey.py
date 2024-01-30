@@ -13,7 +13,7 @@ from options.ppo import load_agent
 def get_distance_to_joey(game_objects):
     player, child = _get_game_objects_by_category(game_objects, ["Player", "Child"])
 
-    platform = np.ceil((player.xy[1] - player.h - 16) / 48)  # 0: topmost, 3: lowest platform
+    platform = np.ceil((player.xy[1] - 16) / 48)  # 0: topmost, 3: lowest platform
 
     if platform == 0:
         distance = 0
@@ -28,19 +28,21 @@ def get_distance_to_joey(game_objects):
 
 
 if __name__ == "__main__":
-    names = ["dist-to-joey/neural-0",
-             "dist-to-joey/neural-1",
-             "dist-to-joey/neural-2"]
+    names = ["dist-to-joey/deep-0",
+             "dist-to-joey/deep-1",
+             "dist-to-joey/deep-2"]
     env_name = "ALE/Kangaroo-v5"
     n_envs = 1
-    n_eval_episodes = 1
+    n_eval_episodes = 3
     deterministic = True
     seed = 25
 
     episode_best_distances = []
+    episode_rewards = []
+    episode_lengths = []
 
     for name in names:
-        model = load_agent(name, env_name, n_envs=1)
+        model = load_agent(name, env_name, n_envs=1, render_mode="human", render_oc_overlay=True)
         env_orig = model.get_env()
         raw_env = env_orig.envs[0].env
         is_object_centric = isinstance(raw_env, ScobiEnv)
@@ -51,7 +53,8 @@ if __name__ == "__main__":
             vec_norm = None
             raw_ocatari_env = raw_env.oc_env
         else:
-            env = init_vec_env(env_name, n_envs=n_envs, seed=seed, object_centric=True, no_scobi=True)
+            env = init_vec_env(env_name, n_envs=n_envs, seed=seed, object_centric=True, no_scobi=True,
+                               render_oc_overlay=True, render_mode="human", settings=dict(mode="revised"))
             vec_norm = unwrap_vec_normalize(env_orig)
             raw_ocatari_env = env.envs[0].env
 
@@ -61,10 +64,6 @@ if __name__ == "__main__":
         #     env = VecNormalize.load(vec_norm_path, venv=env)
 
         print(f"Evaluating '{name}' on {env_name} for {n_eval_episodes} episodes... ", end="")
-
-        # Get mean and standard deviation of distance to Joey
-        episode_rewards = []
-        episode_lengths = []
 
         episode_counts = np.zeros(n_envs, dtype="int")
         # Divides episodes among different sub environments in the vector as evenly as possible
@@ -90,6 +89,7 @@ if __name__ == "__main__":
                 new_observations = vec_norm.normalize_obs(new_observations)
             current_rewards += rewards
             current_lengths += 1
+            # env.render()
 
             for i in range(n_envs):
                 game_objects = raw_ocatari_env.objects
@@ -104,10 +104,15 @@ if __name__ == "__main__":
                     episode_starts[i] = done
 
                     if dones[i]:
+                        # Log final episode stats
                         episode_rewards.append(current_rewards[i])
                         episode_lengths.append(current_lengths[i])
                         episode_best_distances.append(current_best_distances[i])
                         episode_counts[i] += 1
+
+                        print(f"{current_best_distances[i]} ", end="")
+
+                        # Reset episode stats
                         current_rewards[i] = 0
                         current_lengths[i] = 0
                         current_best_distances[i] = 1000
@@ -117,10 +122,11 @@ if __name__ == "__main__":
 
             observations = new_observations
 
-        best_completed_distances = (470 - np.array(episode_best_distances)) / 470
+        print("Done.")
+
+    best_completed_distances = (470 - np.array(episode_best_distances)) / 470
 
     mean = float(np.mean(best_completed_distances))
     std = float(np.std(best_completed_distances))
 
-    print(f"Done.")
-    print(f"\tBest completed distance to Joey: \t{mean:.2f} +/- {std:.2f} (1.00 means 100%, i.e., Joey reached)")
+    print(f"Best completed distance to Joey: {mean:.2f} +/- {std:.2f} (1.00 means 100%, i.e., Joey reached)")
