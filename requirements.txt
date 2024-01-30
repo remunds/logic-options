@@ -1,4 +1,4 @@
-gymnasium[atari, accept-rom-license]
+gymnasium[atari,accept-rom-license]
 stable-baselines3
 rtpt
 termcolor
@@ -16,4 +16,4 @@ sty
 # Install manually:
 # ocatari
 # scobi
-# nudge
+# nudge & nsfr
