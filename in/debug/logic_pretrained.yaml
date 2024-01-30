@@ -1,0 +1,75 @@
+name: "debug"
+description: "Uses the pre-trained components"
+device: cuda
+cores: 1
+seed: 0
+
+environment:
+  name: "MeetingRoom"
+  settings:
+    n_buildings: 1
+    n_floors: 4
+    floor_shape: [11, 11]
+    max_steps: 100
+    walls_fixed: False
+  framestack: 1
+  normalize_observation: False
+  normalize_reward: True
+
+general:
+  hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [16, 16]  # the network architecture of each individual policy and value function
+  total_timesteps: 10e6
+  n_steps: 512
+  n_epochs: 6
+  batch_size: 256  # decrease if out-of-memory error is observed
+  gamma: 0.9
+  gae_lambda: 0
+  normalize_advantage: True
+
+meta_policy:
+  logic: True
+  policy_ent_coef: 0.00005
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.2
+    schedule_type: linear
+  value_fn_coef: 0.0025
+  value_fn_clip_range:
+  learning_rate:  # Adam
+    initial_value: 0.001
+    schedule_type: exponential
+    half_life_period: 0.25
+
+options:
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range:
+  terminator_ent_coef: 0.1
+  terminator_clip_range: 0.1
+  termination_regularizer: -0.5
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.1
+  pretrained:
+    - level: 0
+      position: 0
+      model_path: in/components/target
+      policy_trainable: False
+      value_fn_trainable: True
+      terminator_trainable: True
+    - level: 0
+      position: 1
+      model_path: in/components/elevator
+      policy_trainable: False
+      value_fn_trainable: True
+      terminator_trainable: True
+
+evaluation:
+  frequency: 50000
+  deterministic: False
+  n_episodes: 32
+  render: False

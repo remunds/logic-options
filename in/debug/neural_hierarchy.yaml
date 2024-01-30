@@ -1,0 +1,51 @@
+name: "debug"
+description: ""
+device: cuda
+cores: 2
+seed: 0
+
+environment:
+  name: "MeetingRoom"
+  settings:
+    n_buildings: 1
+    n_floors: 4
+    floor_shape: [11, 11]
+    max_steps: 100
+    walls_fixed: False
+  framestack: 1
+  normalize_observation: True
+  normalize_reward: True
+
+model:
+  hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch:  # the network architecture of each individual option policy
+  termination_regularizer: 0.01
+  logic_meta_policy: False
+  ppo:
+    n_steps: 128
+    n_epochs: 3
+    batch_size: 256
+    gamma: 0.99
+    clip_range:  # clipping epsilon
+      initial_value: 0.1
+      schedule_type: linear
+    vf_coef: 1
+    policy_ent_coef: 0.1
+    terminator_ent_coef: 0
+    clip_range_vf:
+    normalize_advantage: True
+    gae_lambda: 0.95
+
+training:
+  total_timesteps: 4e6
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.25
+
+evaluation:
+  frequency: 10000
+  deterministic: False
+  render: False
+  early_stop_on_no_reward: 500
+  n_episodes: 8
