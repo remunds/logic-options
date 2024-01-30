@@ -3,7 +3,7 @@ import torch as th
 from gymnasium import spaces
 from nsfr.nsfr import NSFReasoner
 from nsfr.facts_converter import FactsConverter
-from nsfr.logic_utils import build_infer_module, get_lang
+from nsfr.utils.logic import build_infer_module, get_lang
 from stable_baselines3.common.distributions import Distribution, CategoricalDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
@@ -31,7 +31,8 @@ class NudgePolicy(ActorCriticPolicy):
                  **kwargs):
 
         lang_subdir = "options" if uses_options else "flat"
-        lang, clauses, bk, atoms = get_lang(LARK_PATH, LANG_PATH, env_name, lang_subdir)
+        dataset = env_name + f"/{lang_subdir}/"
+        lang, clauses, bk, atoms = get_lang(LARK_PATH, LANG_PATH, dataset)
 
         predicates = self._get_predicates(clauses)
         n_predicates = len(predicates)

@@ -4,7 +4,7 @@ import numpy as np
 from gymnasium import Wrapper, Env, spaces
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import GameObject
-from nsfr.logic_utils import get_lang
+from nsfr.utils.logic import get_lang
 
 from envs.util import get_env_identifier
 from logic.state_extraction import LogicStateExtractor
@@ -51,7 +51,8 @@ class LogicEnvWrapper(Wrapper):
         belongs to which environment action."""
         assert self.accepts_predicates
 
-        _, clauses, _, _ = get_lang(LARK_PATH, LANG_PATH, self.env_name, "flat")
+        dataset = self.env_name + "/flat/"
+        _, clauses, _, _ = get_lang(LARK_PATH, LANG_PATH, dataset)
 
         predicates = []
         pred2action = []

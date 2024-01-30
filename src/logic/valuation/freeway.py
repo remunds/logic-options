@@ -1,51 +1,22 @@
 import torch as th
 from torch import nn
 
-from logic.valuation.base import ValuationModule
+from nsfr.valuation import ValuationModule, ValuationFunction
 
 
 class FreewayValuationModule(ValuationModule):
     def init_valuation_functions(self):
-        layers = []
-        vfs = {}  # pred name -> valuation function
-        v_type = TypeValuationFunction()
-        vfs['type'] = v_type
-        layers.append(v_type)
-
-        # TODO
-        v_closeby = ClosebyValuationFunction(self.device)
-        vfs['closeby'] = v_closeby
-        # vfs['closeby'].load_state_dict(torch.load(
-        #     '../nudge/weights/neural_predicates/closeby_pretrain.pt', map_location=device))
-        # vfs['closeby'].eval()
-        layers.append(v_closeby)
-        # print('Pretrained  neural predicate closeby have been loaded!')
-
-        v_on_left = OnLeftValuationFunction()
-        vfs['on_left'] = v_on_left
-        layers.append(v_on_left)
-
-        v_on_right = OnRightValuationFunction()
-        vfs['on_right'] = v_on_right
-        layers.append(v_on_right)
-
-        v_same_row = SameRowValuationFunction()
-        vfs['same_row'] = v_same_row
-        layers.append(v_same_row)
-
-        v_above_row = AboveRowValuationFunction()
-        vfs['above_row'] = v_above_row
-        layers.append(v_above_row)
-
-        v_top5cars = Top5CarsValuationFunction()
-        vfs['top5car'] = v_top5cars
-        layers.append(v_top5cars)
-
-        v_bottom5cars = Bottom5CarsValuationFunction()
-        vfs['bottom5car'] = v_bottom5cars
-        layers.append(v_bottom5cars)
-
-        return nn.ModuleList(layers), vfs
+        layers = [
+            Type(),
+            Closeby(),
+            OnLeft(),
+            OnRight(),
+            SameRow(),
+            AboveRow(),
+            Top5Cars(),
+            Bottom5Cars(),
+        ]
+        return layers
 
     def ground_to_tensor(self, term, zs):
         term_index = self.lang.term_index(term)
@@ -100,47 +71,21 @@ class FreewayValuationModule(ValuationModule):
         return onehot
 
 
-class TypeValuationFunction(nn.Module):
-    """The function v_object-type
-    type(obj1, agent):0.98
-    type(obj2, enemy）：0.87
-    """
-
+class Type(ValuationFunction):
     def __init__(self):
-        super(TypeValuationFunction, self).__init__()
+        super().__init__("type")
 
-    def forward(self, z, a):
-        """
-        Args:
-            z (tensor): 2-d tensor B * d of object-centric representation.
-                [agent, key, door, enemy, x, y]
-            a (tensor): The one-hot tensor that is expanded to the batch size.
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z: th.Tensor, a: th.Tensor) -> th.Tensor:
         z_type = z[:, 0:2]  # [1, 0, 0, 0] * [1.0, 0, 0, 0] .sum = 0.0  type(obj1, key):0.0
         prob = (a * z_type).sum(dim=1)
         return prob
 
 
-class ClosebyValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
+class Closeby(ValuationFunction):
+    def __init__(self):
+        super().__init__("closeby")
 
-    def __init__(self, device):
-        super(ClosebyValuationFunction, self).__init__()
-        self.device = device
-
-    def forward(self, z_1, z_2):
-        """
-        Args:
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor, z_2: th.Tensor) -> th.Tensor:
         c_1 = z_1[:, -2:]
         c_2 = z_2[:, -2:]
 
@@ -152,22 +97,11 @@ class ClosebyValuationFunction(nn.Module):
         return result
 
 
-class OnLeftValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
+class OnLeft(ValuationFunction):
     def __init__(self):
-        super(OnLeftValuationFunction, self).__init__()
+        super().__init__("on_left")
 
-    def forward(self, z_1, z_2):
-        """
-        Args:
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor, z_2: th.Tensor):
         c_1 = z_1[:, -2]
         c_2 = z_2[:, -2]
         diff = c_2 - c_1
@@ -175,22 +109,11 @@ class OnLeftValuationFunction(nn.Module):
         return result
 
 
-class OnRightValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
+class OnRight(ValuationFunction):
     def __init__(self):
-        super(OnRightValuationFunction, self).__init__()
+        super().__init__("on_right")
 
-    def forward(self, z_1, z_2):
-        """
-        Args: x
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor, z_2: th.Tensor):
         c_1 = z_1[:, -2]
         c_2 = z_2[:, -2]
         diff = c_2 - c_1
@@ -198,22 +121,11 @@ class OnRightValuationFunction(nn.Module):
         return result
 
 
-class SameRowValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
+class SameRow(ValuationFunction):
     def __init__(self):
-        super(SameRowValuationFunction, self).__init__()
+        super().__init__("same_row")
 
-    def forward(self, z_1, z_2):
-        """
-        Args: x
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor, z_2: th.Tensor):
         c_1 = z_1[:, -1]
         c_2 = z_2[:, -1]
         diff = abs(c_2 - c_1)
@@ -221,22 +133,11 @@ class SameRowValuationFunction(nn.Module):
         return result
 
 
-class AboveRowValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
+class AboveRow(ValuationFunction):
     def __init__(self):
-        super(AboveRowValuationFunction, self).__init__()
+        super().__init__("above_row")
 
-    def forward(self, z_1, z_2):
-        """
-        Args: x
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor, z_2: th.Tensor):
         c_1 = z_1[:, -1]
         c_2 = z_2[:, -1]
         diff = c_2 - c_1
@@ -245,112 +146,21 @@ class AboveRowValuationFunction(nn.Module):
         return result1 * result2
 
 
-class Top5CarsValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
+class Top5Cars(ValuationFunction):
     def __init__(self):
-        super(Top5CarsValuationFunction, self).__init__()
+        super().__init__("top5car")
 
-    def forward(self, z_1):
-        """
-        Args: x
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor):
         y = z_1[:, -1]
         result = th.where(y > 100, 0.99, 0.01)
         return result
 
 
-class Bottom5CarsValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
+class Bottom5Cars(ValuationFunction):
     def __init__(self):
-        super(Bottom5CarsValuationFunction, self).__init__()
+        super().__init__("bottom5car")
 
-    def forward(self, z_1):
-        """
-        Args: x
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
+    def forward(self, z_1: th.Tensor):
         y = z_1[:, -1]
         result = th.where(y < 100, 0.99, 0.01)
-        return result
-
-
-class HaveKeyValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
-    def __init__(self):
-        super(HaveKeyValuationFunction, self).__init__()
-
-    def forward(self, z):
-        """
-        Args:
-            z (tensor): 2-d tensor B * d of object-centric representation.
-                [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
-        has_key = th.ones(z.size(dim=0))
-        c = th.sum(z[:, :, 1], dim=1)
-        result = has_key[:] - c[:]
-
-        return result
-
-
-class NotHaveKeyValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
-    def __init__(self):
-        super(NotHaveKeyValuationFunction, self).__init__()
-
-    def forward(self, z):
-        """
-        Args:
-            z (tensor): 2-d tensor B * d of object-centric representation.
-                [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
-        c = th.sum(z[:, :, 1], dim=1)
-        result = c[:]
-
-        return result
-
-
-class SafeValuationFunction(nn.Module):
-    """The function v_closeby.
-    """
-
-    def __init__(self):
-        super(SafeValuationFunction, self).__init__()
-
-    def forward(self, z_1, z_2):
-        """
-        Args:
-            z_1 (tensor): 2-d tensor (B * D), the object-centric representation.
-             [agent, key, door, enemy, x, y]
-
-        Returns:
-            A batch of probabilities.
-        """
-        c_1 = z_1[:, -2:]
-        c_2 = z_2[:, -2:]
-
-        dis_x = abs(c_1[:, 0] - c_2[:, 0])
-        result = th.where(dis_x > 2, 0.99, 0.01)
         return result

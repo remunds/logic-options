@@ -30,7 +30,6 @@ class ValuationModule(nn.Module, ABC):
 
     lang: Language
     device: th.device
-    layers: Sequence[ValuationFunction]  # list of valuation functions
     val_fns: Dict[str, ValuationFunction]  # predicate names to corresponding valuation fn
     attrs: Dict[Any, th.Tensor]  # attribute terms to corresponding one-hot encoding
     dataset: str
@@ -40,9 +39,15 @@ class ValuationModule(nn.Module, ABC):
         self.lang = lang
         self.device = device
         self.pretrained = pretrained
-        self.layers, self.val_fns = self.init_valuation_functions()
 
-    def init_valuation_functions(self) -> (Sequence[nn.Module], Dict[str, nn.Module]):
+        # Prepare valuation functions
+        val_fns = self.init_valuation_functions()
+        pred_name_to_val_fn = {}
+        for val_fn in val_fns:
+            pred_name_to_val_fn[val_fn.pred_name] = val_fn
+        self.val_fns: Dict[str, ValuationFunction] = pred_name_to_val_fn
+
+    def init_valuation_functions(self) -> Sequence[ValuationFunction]:
         raise NotImplementedError()
 
     def forward(self, zs: th.Tensor, atom: Atom):

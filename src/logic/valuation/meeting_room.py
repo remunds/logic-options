@@ -1,5 +1,4 @@
 import torch as th
-from torch import nn
 
 from nsfr.fol.logic import Term
 from logic.valuation.base import ValuationModule, ValuationFunction
@@ -42,12 +41,7 @@ class MeetingRoomValuationModule(ValuationModule):
             WallWest(),
             WestFree(),
         ]
-
-        pred_name_to_val_fn = {}
-        for val_fn in layers:
-            pred_name_to_val_fn[val_fn.pred_name] = val_fn
-
-        return nn.ModuleList(layers), pred_name_to_val_fn
+        return layers
 
     def ground_to_tensor(self, term: Term, zs: th.Tensor):
         if term.dtype.name == 'image':
