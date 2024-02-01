@@ -1,15 +1,17 @@
 from typing import Optional, Tuple, Type
 import torch as th
 from gymnasium import spaces
+from nsfr.fol.logic import Const
 from nsfr.nsfr import NSFReasoner
 from nsfr.facts_converter import FactsConverter
+from nsfr.valuation import ValuationModule
 from nsfr.utils.logic import build_infer_module, get_lang
 from stable_baselines3.common.distributions import Distribution, CategoricalDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
 
+from envs.meeting_room import PLAYER_VIEW_SIZE
 from logic.base import LARK_PATH, LANG_PATH
-from logic.valuation.common import get_valuation_module
 
 
 class NudgePolicy(ActorCriticPolicy):
@@ -48,8 +50,9 @@ class NudgePolicy(ActorCriticPolicy):
         self.predicates = predicates
         self.n_predicates = n_predicates
 
-        valuation_module_cls = get_valuation_module(env_name)
-        valuation_module = valuation_module_cls(lang=lang, device=device)
+        val_fn_path = f"src/logic/valuation/{env_name}.py"
+        valuation_module = ValuationModuleExtended(val_fn_path, lang, device=device)
+
         facts_converter = FactsConverter(lang=lang, valuation_module=valuation_module, device=device)
         infer_module = build_infer_module(
             clauses,
@@ -107,3 +110,22 @@ class NudgePolicy(ActorCriticPolicy):
         log_prob = dist.log_prob(actions)
         entropy = dist.entropy()
         return values, log_prob, entropy
+
+
+class ValuationModuleExtended(ValuationModule):
+    """Allows to modify the ground_to_tensor() method for custom environments."""
+
+    def ground_to_tensor(self, const: Const, zs: th.Tensor):
+        """Ground constant (term) into tensor representations.
+
+            Args:
+                const (const): The term to be grounded.
+                zs (tensor): The object-centric state representation.
+        """
+        if const.dtype.name == "local_view":  # MeetingRoom
+            # Extract local view
+            local_view_shape = [-1, PLAYER_VIEW_SIZE, PLAYER_VIEW_SIZE]
+            local_view = zs[..., 9:]
+            return th.reshape(local_view, local_view_shape)
+        else:
+            return super().ground_to_tensor(const, zs)
