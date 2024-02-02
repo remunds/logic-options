@@ -42,7 +42,7 @@ class OptionsAgent(BasePolicy):
                  net_arch: List[int] = None,
                  env_name: str = None,
                  accepts_predicates: bool = False,
-                 device: str = "cuda",
+                 device: str = None,
                  **kwargs):
         super().__init__(observation_space=observation_space, action_space=action_space)
 

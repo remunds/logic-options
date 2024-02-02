@@ -2,9 +2,9 @@ from envs.renderer import Renderer
 
 if __name__ == "__main__":
     renderer = Renderer(env_name="ALE/Seaquest-v5",
-                        agent_name="no-option/reproduce-best",
+                        agent_name="debug",
                         fps=15,
-                        shadow_mode=False,
+                        shadow_mode=True,
                         deterministic=True,
-                        wait_for_input=False)
+                        wait_for_input=True)
     renderer.run()
