@@ -104,3 +104,7 @@ class LogicEnvWrapper(Wrapper):
                     return -player.dy * 0.025
 
         return 0
+
+    def get_predicates_to_action(self, action: int):
+        """Returns all predicates that correspond to the given action."""
+        return np.where(self.pred2action == action)[0]
