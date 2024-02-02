@@ -586,9 +586,10 @@ class OptionsPPO(PPO):
         actions = actions.cpu().numpy().astype(self.action_space.dtype)
         return (options, actions), values, log_probs
 
-    def forward_all_terminators(self, obs, *args, **kwargs):
+    def forward_all_terminators(self, obs: Union[np.ndarray, th.Tensor], *args, **kwargs):
         with th.no_grad():
-            obs = obs_as_tensor(obs, self.device)
+            if isinstance(obs, np.ndarray):
+                obs = obs_as_tensor(obs, self.device)
             return self.policy.forward_all_terminators(obs, *args, **kwargs)
 
     def _update_learning_rate(self, optimizers: Union[list[th.optim.Optimizer], th.optim.Optimizer],

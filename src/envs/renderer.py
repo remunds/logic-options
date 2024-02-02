@@ -37,8 +37,7 @@ class Renderer:
         self.model = load_agent(agent_name, env_name,
                                 render_mode="rgb_array",
                                 render_oc_overlay=render_oc_overlay,
-                                reward_mode="human",
-                                device="cuda")
+                                reward_mode="human")
         self.uses_options = self.model.hierarchy_size > 0
         self.logic = self.model.policy.logic_meta_policy
         vec_env = self.model.get_env()
@@ -61,9 +60,11 @@ class Renderer:
         # env.render_termination_heatmap(True)
         # env.render_action_heatmap(True)
 
-        self.action_meanings = self.env.get_action_meanings()
-        if hasattr(self.env, "get_keys_to_action"):
-            self.keys2actions = self.env.get_keys_to_action()
+        self.action_meanings = self.env.unwrapped.get_action_meanings()
+        if hasattr(self.env.unwrapped, "get_keys_to_action"):
+            self.keys2actions = self.env.unwrapped.get_keys_to_action()
+        elif shadow_mode or wait_for_input:
+            raise RuntimeError(f"Environment {self.env.unwrapped} has no keys-to-actions mapping.")
         else:
             self.keys2actions = None
         self.current_keys_down = set()
@@ -87,7 +88,7 @@ class Renderer:
     def _init_pygame(self):
         pygame.init()
         pygame.display.set_caption("Environment")
-        frame = self.vec_env.render()
+        frame = self.vec_env.render().swapaxes(0, 1)
         self.window = pygame.display.set_mode(frame.shape[:2], pygame.SCALED)
         self.clock = pygame.time.Clock()
 
@@ -114,9 +115,13 @@ class Renderer:
 
                 action = actions.squeeze()
                 if self.logic and not self.uses_options:
-                    action = self.predicates[action]
-                if self.action_meanings is not None:
-                    print("Proposed next action:", self.action_meanings[action])
+                    action_str = self.predicates[action]
+                    self.model.policy.meta_policy.actor.print_valuations()
+                elif self.action_meanings is not None:
+                    action_str = self.action_meanings[action]
+                else:
+                    action_str = str(action)
+                print("Proposed next action:", action_str)
 
             self.reset = False
 
@@ -137,6 +142,12 @@ class Renderer:
 
             # Apply action
             if not self.paused:
+                if self.logic:  # convert action into some matching predicate
+                    preds = self.env.get_predicates_to_action(actions[0])
+                    if len(preds) > 0:
+                        actions[0] = preds[0]
+                    else:
+                        actions[0] = 0  # NOOP
                 new_obs, reward, dones, _ = self.vec_env.step(actions)
 
                 # game_objects = self.vec_env.envs[0].env.oc_env.objects
@@ -147,7 +158,7 @@ class Renderer:
                     print(f"Reward {reward[0]:.2f}")
 
                 if self.reset:
-                    dones[:] = True
+                    dones[0] = True
                     new_obs = self.vec_env.reset()
 
                 option_terminations, _ = self.model.forward_all_terminators(new_obs, options)
@@ -238,5 +249,5 @@ class Renderer:
         self.clock.tick(self.fps)
 
     def _render_env(self):
-        frame = self.vec_env.render()
+        frame = self.vec_env.render().swapaxes(0, 1)
         pygame.pixelcopy.array_to_surface(self.window, frame)
