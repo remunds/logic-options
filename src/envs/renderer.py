@@ -4,8 +4,10 @@ import pygame
 from datetime import datetime
 import gymnasium as gym
 from scobi.core import Environment as ScobiEnv
+from typing import Union
 
 from options.ppo import load_agent
+from logic.env_wrapper import LogicEnvWrapper
 from utils.render import render_options_overlay
 from eval_dist_to_joey import get_distance_to_joey
 
@@ -17,7 +19,7 @@ SCREENSHOTS_BASE_PATH = "out/screenshots/"
 class Renderer:
     window: pygame.Surface
     clock: pygame.time.Clock
-    env: gym.Env
+    env: Union[gym.Env, LogicEnvWrapper]
 
     def __init__(self, env_name: str,
                  agent_name: str = None,
@@ -138,16 +140,17 @@ class Renderer:
                     break  # outer game loop
 
                 if not self.reset:
+                    # convert action into some matching predicate
+                    if self.logic:
+                        predicates = self.env.get_predicates_for_action(human_action)
+                        if len(predicates) > 0:
+                            human_action = predicates[0]
+                        else:
+                            human_action = 0  # NOOP
                     actions[0] = human_action
 
             # Apply action
             if not self.paused:
-                if self.logic:  # convert action into some matching predicate
-                    preds = self.env.get_predicates_to_action(actions[0])
-                    if len(preds) > 0:
-                        actions[0] = preds[0]
-                    else:
-                        actions[0] = 0  # NOOP
                 new_obs, reward, dones, _ = self.vec_env.step(actions)
 
                 # game_objects = self.vec_env.envs[0].env.oc_env.objects

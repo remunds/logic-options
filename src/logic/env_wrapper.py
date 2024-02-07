@@ -105,6 +105,6 @@ class LogicEnvWrapper(Wrapper):
 
         return 0
 
-    def get_predicates_to_action(self, action: int):
+    def get_predicates_for_action(self, action: int):
         """Returns all predicates that correspond to the given action."""
         return np.where(self.pred2action == action)[0]
