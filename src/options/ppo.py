@@ -122,7 +122,7 @@ class OptionsPPO(PPO):
     def learn(self, total_timesteps: int, **kwargs):
         self.progress_total = tqdm(total=total_timesteps, file=sys.stdout, desc="Total steps",
                                    position=0, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
-                                   leave=False, unit_scale=True)
+                                   leave=False, unit_scale=True, ncols=64)
         super().learn(total_timesteps, **kwargs)
 
     def collect_rollouts(
@@ -162,8 +162,7 @@ class OptionsPPO(PPO):
         self.progress_rollout_train = tqdm(total=n_rollout_steps * self.n_envs,
                                            file=sys.stdout, desc="Collecting rollout",
                                            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
-                                           position=1,
-                                           leave=False)
+                                           position=1, leave=False, ncols=64)
 
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
@@ -303,8 +302,7 @@ class OptionsPPO(PPO):
         self.progress_rollout_train = tqdm(total=int(self.policy.n_policies * self.n_epochs),
                                            file=sys.stdout, desc="Training",
                                            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
-                                           position=1,
-                                           leave=False)
+                                           position=1, leave=False, ncols=64)
 
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
