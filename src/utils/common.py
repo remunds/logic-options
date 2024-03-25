@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Sequence, Type
+import ctypes  # for flashing window in taskbar under Windows
 import os
 import re
-from pathlib import Path
-import ctypes  # for flashing window in taskbar under Windows
 import shutil
+import subprocess
+import time
+from pathlib import Path
+from typing import Sequence, Type
 
 import numpy as np
 import torch
@@ -29,11 +31,92 @@ def to_tensor(obs):
 
 
 def get_torch_device(device: str):
-    if "cuda" in device and torch.cuda.is_available():
-        device = torch.device(device)
+    if "cuda" in device:
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is not available.")
+
+        if device == "cuda":  # pick any free GPU
+            gpu = get_free_gpus()[0]
+            return torch.device(f"cuda:{gpu}")
+        else:  # pick specified GPU
+            return torch.device(device)
     else:
-        device = torch.device("cpu")
-    return device
+        return torch.device("cpu")
+
+
+def get_free_gpus(threshold_vram_usage=40, threshold_gpu_usage=40, wait=True, sleep_time=10):
+    """
+    Args:
+        threshold_vram_usage (int, optional): A GPU is considered free if the VRAM usage is below the
+                                              threshold (in percent of the total GPU memory).
+        threshold_gpu_usage (int, optional): The maximum usage (in percent) of the GPU to be considered free.
+        max_gpus (int, optional): Max GPUs is the maximum number of gpus to assign.
+                                  Defaults to 2.
+        wait (bool, optional): Whether to wait until a GPU is free. Default False.
+        sleep_time (int, optional): Sleep time (in seconds) to wait before checking GPUs, if wait=True. Default 10.
+    """
+
+    def _scan_for_free_gpus():
+        # Get GPU usage information
+        gpu_memory = np.array(get_gpu_used_memory())
+        gpu_usage = np.array(get_gpu_usage())
+
+        # Keep GPUs under thresholds only
+        sufficient_memory = gpu_memory < threshold_vram_usage
+        sufficient_idle = gpu_usage < threshold_gpu_usage
+        free = sufficient_memory & sufficient_idle
+        return np.where(free)[0]
+
+    while True:
+        free_gpus = _scan_for_free_gpus()
+        if len(free_gpus) > 0 or not wait:
+            break
+        print(f"No free GPUs found, retrying in {sleep_time}s.")
+        time.sleep(sleep_time)
+
+    if len(free_gpus) == 0:
+        raise RuntimeError("No free GPUs found.")
+
+    return free_gpus
+
+
+def get_gpu_used_memory():
+    # Use the shell to get GPU memory usage info
+    smi_query_result = subprocess.check_output(
+        "nvidia-smi --query-gpu=memory.used --format=csv", shell=True
+    )
+    # Extract the usage information
+    gpu_mem_used = smi_query_result.decode("utf-8").split("\n")[1:-1]
+    mem_usage = [int(info.split(" ")[0]) for info in gpu_mem_used]
+
+    # Use the shell to get GPU memory usage info
+    smi_query_result = subprocess.check_output(
+        "nvidia-smi --query-gpu=memory.total --format=csv", shell=True
+    )
+    # Extract the usage information
+    gpu_mem_total = smi_query_result.decode("utf-8").split("\n")[1:-1]
+    total_mem = [int(info.split(" ")[0]) for info in gpu_mem_total]
+
+    mem_usage = np.round(np.array(mem_usage) / np.array(total_mem) * 100)
+
+    # Calculate percentage of occupied memory
+    print("GPU memory usage (in %):", mem_usage)
+
+    return mem_usage
+
+
+def get_gpu_usage():
+    """Returns a list of integers representing the percentage usage
+    of each GPU on the machine."""
+    # Use the shell to get GPU usage info
+    smi_query_result = subprocess.check_output(
+        "nvidia-smi --query-gpu=utilization.gpu --format=csv", shell=True
+    )
+    # Extract the values we're interested in
+    gpu_info = smi_query_result.decode("utf-8").split("\n")[1:-1]
+    usage = [int(info.split(" ")[0]) for info in gpu_info]
+    print("GPU usage (in %):", usage)
+    return usage
 
 
 def is_sorted(a: np.array) -> bool:
