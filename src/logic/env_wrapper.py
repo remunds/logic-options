@@ -33,7 +33,7 @@ class LogicEnvWrapper(Wrapper):
         obs_shape = self.logic_state_extractor.state_shape
         self.observation_space = spaces.Box(-255, 255,
                                             shape=obs_shape,
-                                            dtype=self.env.observation_space.dtype)
+                                            dtype=self.logic_state_extractor.obs_dtype)
 
         # Actions and their corresponding predicates
         self.accepts_predicates = accepts_predicates

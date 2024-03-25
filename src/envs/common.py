@@ -64,12 +64,17 @@ def make_scobi_env(name: str,
     return _init
 
 
-def make_logic_env(name: str, accept_predicates: bool = True, seed: int = None, **kwargs):
+def make_logic_env(name: str,
+                   render_oc_overlay: bool,
+                   accept_predicates: bool = True,
+                   seed: int = None,
+                   **kwargs):
     def _init():
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
         elif "ALE" in name:
-            raw_env = OCAtari(name, mode="revised", hud=True, **kwargs)
+            raw_env = OCAtari(name, mode="revised", hud=True,
+                              render_oc_overlay=render_oc_overlay, **kwargs)
         else:
             raise NotImplementedError()
         raw_env.reset(seed=seed)
@@ -128,12 +133,15 @@ def init_vec_env(name: str,
     if settings is None:
         settings = dict()
     settings["render_mode"] = render_mode
+    if object_centric:
+        settings["render_oc_overlay"] = render_oc_overlay
 
     if logic:
         assert n_envs == 1
         assert framestack == 1
         assert not normalize_observation
-        vec_env = DummyVecEnv([make_logic_env(name, accept_predicates, **settings)])
+        vec_env = DummyVecEnv([make_logic_env(name, accept_predicates=accept_predicates,
+                                              **settings)])
 
     elif name == "MeetingRoom":
         if n_envs > 1:
@@ -151,12 +159,11 @@ def init_vec_env(name: str,
         vec_env = VecFrameStack(vec_env, n_stack=framestack)
 
     elif object_centric:
-        if no_scobi:
+        if no_scobi or prune_concept is None:
             envs = [make_ocatari_env(name=name,
                                      rank=i,
                                      seed=seed,
                                      frameskip=frameskip,
-                                     render_oc_overlay=render_oc_overlay,
                                      **settings) for i in range(n_envs)]
 
         else:
@@ -192,7 +199,6 @@ def init_vec_env(name: str,
                                    refresh=False,
                                    reward_mode=reward_mode,
                                    freeze_invisible_obj=freeze_invisible_obj,
-                                   render_oc_overlay=render_oc_overlay,
                                    **settings) for i in range(n_envs)]
 
         if n_envs > 1:

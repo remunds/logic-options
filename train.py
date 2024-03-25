@@ -47,6 +47,7 @@ def run(name: str = None,
     device = get_torch_device(device)
 
     object_centric = environment.get("object_centric")
+    use_scobi = object_centric and environment.get("prune_concept") is not None  # FIXME: misses reward_mode
     n_envs = cores
     n_eval_envs = cores
     n_eval_episodes = evaluation.pop("n_episodes")
@@ -71,7 +72,7 @@ def run(name: str = None,
 
     cb_list = init_callbacks(exp_name=name,
                              total_timestamps=total_timestamps,
-                             object_centric=object_centric,
+                             may_use_reward_shaping=use_scobi,
                              n_envs=n_envs,
                              eval_env=eval_env,
                              n_eval_episodes=n_eval_episodes,
@@ -135,7 +136,7 @@ def run(name: str = None,
     shutil.copy(src=config_path, dst=model_path / "config.yaml")
     if name != "debug":
         os.remove(config_path)
-    if object_centric:
+    if use_scobi:
         prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
         shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 

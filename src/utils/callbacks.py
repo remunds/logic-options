@@ -320,7 +320,7 @@ def evaluate_policy(
 
 def init_callbacks(exp_name: str,
                    total_timestamps: int,
-                   object_centric: bool,
+                   may_use_reward_shaping: bool,
                    n_envs: int,
                    eval_env,
                    n_eval_episodes: int,
@@ -354,7 +354,7 @@ def init_callbacks(exp_name: str,
 
     callbacks = [checkpoint_callback, eval_callback, n_callback]
 
-    if object_centric:
+    if may_use_reward_shaping:
         callbacks.append(TensorboardCallback(n_envs=n_envs))
 
     return CallbackList(callbacks)

@@ -46,7 +46,7 @@ def run():
 
     cb_list = init_callbacks(exp_name=MODEL_NAME,
                              total_timestamps=total_timestamps,
-                             object_centric=object_centric,
+                             may_use_reward_shaping=object_centric,
                              n_envs=n_envs,
                              eval_env=eval_env,
                              n_eval_episodes=4 * n_eval_envs,
