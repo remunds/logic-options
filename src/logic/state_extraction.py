@@ -10,6 +10,7 @@ from ocatari.ram.seaquest import MAX_ESSENTIAL_OBJECTS
 class LogicStateExtractor(ABC):
     """Turns the raw state of an env into a logic state representation.
     Works only for supported envs."""
+    obs_dtype = np.int32
 
     def __init__(self, obs_shape: Sequence[int]):
         self.obs_shape = obs_shape  # the original env obs shape before extraction
@@ -42,10 +43,10 @@ class FreewayExtractor(LogicStateExtractor):
         self.n_features = 6
 
     def __call__(self, obs: List[GameObject]) -> th.Tensor:
-        extracted_states = np.zeros((self.n_objects, self.n_features))
+        extracted_states = np.zeros((self.n_objects, self.n_features), dtype=self.obs_dtype)
 
         chicken = obs[0]
-        cars = obs[2:]
+        cars = obs[2:-2]
 
         extracted_states[0][0] = 1
         extracted_states[0][-2:] = chicken.xy
@@ -70,7 +71,7 @@ class AsterixExtractor(LogicStateExtractor):
 
     def __call__(self, obs: List[GameObject]) -> th.Tensor:
         """Taken from NUDGE."""
-        extracted_states = np.zeros((self.n_objects, self.n_features))
+        extracted_states = np.zeros((self.n_objects, self.n_features), dtype=self.obs_dtype)
 
         for i, entity in enumerate(obs):
             if entity.category == "Player":
@@ -109,7 +110,7 @@ class SeaquestExtractor(LogicStateExtractor):
         self.relevant_objects = set(MAX_ESSENTIAL_OBJECTS.keys())
 
     def __call__(self, obs: List[GameObject]) -> th.Tensor:
-        state = th.zeros((self.n_objects, self.n_features), dtype=th.float32)
+        state = th.zeros((self.n_objects, self.n_features), dtype=th.int32)
 
         obj_count = {k: 0 for k in MAX_ESSENTIAL_OBJECTS.keys()}
 
@@ -121,7 +122,7 @@ class SeaquestExtractor(LogicStateExtractor):
                 state[idx] = th.Tensor([1, obj.value, 0, 0])
             else:
                 orientation = obj.orientation.value if obj.orientation is not None else 0
-                state[idx] = th.tensor([1, *obj.xy, orientation])
+                state[idx] = th.tensor([1, *obj.center, orientation])
             obj_count[obj.category] += 1
 
         return state.unsqueeze(0)
