@@ -5,6 +5,7 @@ from datetime import datetime
 import gymnasium as gym
 from scobi.core import Environment as ScobiEnv
 from typing import Union
+from nsfr.nsfr import NSFReasoner
 
 from options.ppo import load_agent
 from logic.env_wrapper import LogicEnvWrapper
@@ -14,6 +15,9 @@ from eval_dist_to_joey import get_distance_to_joey
 from stable_baselines3.common.vec_env import unwrap_vec_normalize
 
 SCREENSHOTS_BASE_PATH = "out/screenshots/"
+PREDICATE_PROBS_COL_WIDTH = 300
+CELL_BACKGROUND_DEFAULT = np.array([40, 40, 40])
+CELL_BACKGROUND_HIGHLIGHT = np.array([40, 150, 255])
 
 
 class Renderer:
@@ -27,12 +31,14 @@ class Renderer:
                  shadow_mode=False,
                  deterministic=True,
                  wait_for_input=False,
-                 render_oc_overlay=True):
+                 render_oc_overlay=True,
+                 render_predicate_probs=False):
 
         self.fps = fps
         self.shadow_mode = shadow_mode
         self.deterministic = deterministic
         self.wait_for_input = wait_for_input
+        self.render_predicate_probs = render_predicate_probs
 
         print(f"Playing '{env_name}' with {'' if deterministic else 'non-'}deterministic policy.")
 
@@ -42,6 +48,9 @@ class Renderer:
                                 reward_mode="human")
         self.uses_options = self.model.hierarchy_size > 0
         self.logic = self.model.policy.logic_meta_policy
+        if render_predicate_probs:
+            assert self.logic
+
         vec_env = self.model.get_env()
 
         if fps is None:
@@ -91,8 +100,13 @@ class Renderer:
         pygame.init()
         pygame.display.set_caption("Environment")
         frame = self.vec_env.render().swapaxes(0, 1)
-        self.window = pygame.display.set_mode(frame.shape[:2], pygame.SCALED)
+        self.env_render_shape = frame.shape[:2]
+        window_shape = list(self.env_render_shape)
+        if self.render_predicate_probs:
+            window_shape[0] += PREDICATE_PROBS_COL_WIDTH
+        self.window = pygame.display.set_mode(window_shape, pygame.SCALED)
         self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont('Calibri', 24)
 
     def run(self):
         # Prepare loop
@@ -103,6 +117,8 @@ class Renderer:
         obs = self.vec_env.reset()
 
         while self.running:
+            # print(obs[0, 0])
+
             (options, actions), _, _ = self.model.forward_all(obs, options, option_terminations, self.deterministic)
 
             if self.uses_options and hasattr(self.env, "register_current_option"):
@@ -118,7 +134,6 @@ class Renderer:
                 action = actions.squeeze()
                 if self.logic and not self.uses_options:
                     action_str = self.predicates[action]
-                    self.model.policy.meta_policy.actor.print_valuations()
                 elif self.action_meanings is not None:
                     action_str = self.action_meanings[action]
                 else:
@@ -241,8 +256,10 @@ class Renderer:
                     self.current_keys_down.remove(event.key)
 
     def _render(self):
-        self.window.fill((0, 0, 0))  # clear the entire window
+        self.window.fill((20, 20, 20))  # clear the entire window
         self._render_env()
+        if self.render_predicate_probs:
+            self._render_predicate_probs()
 
         # TODO:
         # render_options_overlay(image, option_trace=options[0].tolist())
@@ -253,4 +270,26 @@ class Renderer:
 
     def _render_env(self):
         frame = self.vec_env.render().swapaxes(0, 1)
-        pygame.pixelcopy.array_to_surface(self.window, frame)
+        frame_surface = pygame.Surface(self.env_render_shape)
+        pygame.pixelcopy.array_to_surface(frame_surface, frame)
+        self.window.blit(frame_surface, (0, 0))
+
+    def _render_predicate_probs(self):
+        anchor = (self.env_render_shape[0] + 10, 25)
+
+        nsfr: NSFReasoner = self.model.policy.meta_policy.actor
+        pred_vals = {pred: nsfr.get_predicate_valuation(pred, initial_valuation=False) for pred in nsfr.prednames}
+        for i, (pred, val) in enumerate(pred_vals.items()):
+            # Render cell background
+            color = val * CELL_BACKGROUND_HIGHLIGHT + (1 - val) * CELL_BACKGROUND_DEFAULT
+            pygame.draw.rect(self.window, color, [
+                anchor[0] - 2,
+                anchor[1] - 2 + i * 35,
+                PREDICATE_PROBS_COL_WIDTH - 12,
+                28
+            ])
+
+            text = self.font.render(str(f"{val:.3f} - {pred}"), True, "white", None)
+            text_rect = text.get_rect()
+            text_rect.topleft = (self.env_render_shape[0] + 10, 25 + i * 35)
+            self.window.blit(text, text_rect)
