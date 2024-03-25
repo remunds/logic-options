@@ -2,7 +2,7 @@ gymnasium[atari,accept-rom-license]
 stable-baselines3
 rtpt
 termcolor
-torch
+torch==1.13
 numpy
 opencv_python
 joblib

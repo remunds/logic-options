@@ -38,11 +38,15 @@ def run(name: str = None,
         name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
 
     model_path = Path(OUT_BASE_PATH, game_identifier, name)
+    i = 0
+    while os.path.exists(model_path):
+        model_path = Path(OUT_BASE_PATH, game_identifier, name + f"_{i}")
+        i += 1
     log_path = model_path
     ckpt_path = model_path / "checkpoints"
 
-    if name != "debug" and os.path.exists(ckpt_path):
-        ask_to_override_model(model_path)
+    # if name != "debug" and os.path.exists(ckpt_path):
+    #     ask_to_override_model(model_path)
 
     device = get_torch_device(device)
 
