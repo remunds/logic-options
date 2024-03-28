@@ -1,45 +1,70 @@
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
+from random import randint
 
+import torch as th
 import yaml
 from stable_baselines3.common.logger import configure
-import torch as th
 
-from utils.common import hyperparams_to_experiment_name, get_torch_device, ask_to_override_model
-from utils.param_schedule import maybe_make_schedule
 from envs.common import init_train_eval_envs, get_focus_file_path
 from envs.util import get_env_identifier
 from options.ppo import OptionsPPO
 from utils.callbacks import init_callbacks
+from utils.common import hyperparams_to_experiment_name, get_torch_device, update_yaml
 from utils.console import bold
+from utils.param_schedule import maybe_make_schedule
 
 OUT_BASE_PATH = "out/"
 QUEUE_PATH = "in/queue/"
+CHECKPOINT_FREQUENCY = 10_000_000
 
 
-def run(name: str = None,
-        device: str = "cpu",
-        cores: int = 1,
-        seed: int = 0,
-        environment: dict = None,
-        general: dict = None,
-        meta_policy: dict = None,
-        options: dict = None,
-        evaluation: dict = None,
-        config_path: str = "",
-        description: str = None):
+def run(config_path: str):
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+
+    # Mandatory hyperparams
+    environment = config["environment"]
+    general = config["general"]
+    meta_policy = config["meta_policy"]
+    evaluation = config["evaluation"]
+
+    # Optional hyperparams
+    name = config.get("name")
+    description = config.get("description")
+    seed = config.get("seed")
+    options = config.get("options")
+    device = config.get("device")
+    cores = config.get("cores")
+
+    if name is None:
+        name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
+        config["name"] = name
+
+    print(f"Found configuration, initializing experiment '{bold(name)}'")
+    if description is not None and description != '':
+        print(f"Description: {description}")
+
+    if seed is None:
+        seed = randint(0, 10_000_000)
+        config["seed"] = seed
     th.manual_seed(seed)
+
+    if device is None:
+        device = "cpu"
+        config["device"] = "cpu"
+
+    if cores is None:
+        cores = 4
+        config["cores"] = 4
 
     game_identifier = get_env_identifier(environment["name"])
 
-    # Set experiment name
-    if name is None:
-        name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
-
+    # Determine all relevant paths
     model_path = Path(OUT_BASE_PATH, game_identifier, name)
-    i = 0
-    while os.path.exists(model_path):
+    i = 1
+    while os.path.exists(model_path) and name != "debug":
         model_path = Path(OUT_BASE_PATH, game_identifier, name + f"_{i}")
         i += 1
     log_path = model_path
@@ -51,7 +76,8 @@ def run(name: str = None,
     device = get_torch_device(device)
 
     object_centric = environment.get("object_centric")
-    use_scobi = object_centric and environment.get("prune_concept") is not None  # FIXME: misses reward_mode
+    use_scobi = object_centric and (environment.get("prune_concept") == 'pruned'
+                                    or environment.get("reward_mode") in ['human', 'mixed'])
     n_envs = cores
     n_eval_envs = cores
     n_eval_episodes = evaluation.pop("n_episodes")
@@ -81,7 +107,8 @@ def run(name: str = None,
                              eval_env=eval_env,
                              n_eval_episodes=n_eval_episodes,
                              ckpt_path=ckpt_path,
-                             eval_kwargs=evaluation)
+                             eval_kwargs=evaluation,
+                             checkpoint_frequency=CHECKPOINT_FREQUENCY)
 
     policy_kwargs = {"hierarchy_shape": hierarchy_shape,
                      "normalize_images": not object_centric}
@@ -137,25 +164,22 @@ def run(name: str = None,
         options_ppo.policy.load_pretrained_options(options.get("pretrained"), train_env, device)
 
     # Save config file and prune file to model dir for documentation
-    shutil.copy(src=config_path, dst=model_path / "config.yaml")
+    with open(model_path / "config.yaml", "w") as f:
+        yaml.dump(config, f, sort_keys=False)
+    # shutil.copy(src=config_path, dst=model_path / "config.yaml")
     if name != "debug":
         os.remove(config_path)
     if use_scobi:
         prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
         shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
-    print(f"Experiment '{bold(name)}' started.")
-    if description is not None:
-        print(description)
-    print(f"Started {type(options_ppo).__name__} training with {n_envs} actors and {n_eval_envs} evaluators...")
+    print(f"Starting experiment '{bold(name)}' with {type(options_ppo).__name__} training using {n_envs} actors and {n_eval_envs} evaluators...")
     options_ppo.learn(total_timesteps=total_timestamps, callback=cb_list)
 
 
 if __name__ == "__main__":
-    config_files = os.listdir(QUEUE_PATH)
-    while len(config_files) > 0:
+    # Keep processing config files as long as there are some left
+    while config_files := os.listdir(QUEUE_PATH):
         config_path = QUEUE_PATH + config_files[0]
-        with open(config_path, "r") as f:
-            config = yaml.load(f, Loader=yaml.Loader)
-        run(config_path=config_path, **config)
-        config_files = os.listdir(QUEUE_PATH)
+        run(config_path)
+    print("No more config files left. Shutting down...")

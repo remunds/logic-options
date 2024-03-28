@@ -325,8 +325,8 @@ def init_callbacks(exp_name: str,
                    eval_env,
                    n_eval_episodes: int,
                    ckpt_path: Path,
-                   eval_kwargs: dict) -> CallbackList:
-    checkpoint_frequency = 1_000_000
+                   eval_kwargs: dict,
+                   checkpoint_frequency: int = 10_000_000) -> CallbackList:
     rtpt_frequency = 100_000
 
     rtpt_iters = total_timestamps // rtpt_frequency

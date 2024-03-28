@@ -8,6 +8,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Sequence, Type
+import yaml
 
 import numpy as np
 import torch
@@ -220,3 +221,13 @@ def get_most_recent_checkpoint_steps(checkpoint_dir: str | Path) -> int | None:
             if steps > highest_steps:
                 highest_steps = steps
     return highest_steps
+
+
+def update_yaml(file_path, key, value):
+    with open(file_path) as f:
+        yaml_dict = yaml.safe_load(f)
+
+    yaml_dict[key] = value
+
+    with open(file_path, "w") as f:
+        yaml.dump(yaml_dict, f)
