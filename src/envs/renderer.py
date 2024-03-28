@@ -49,7 +49,7 @@ class Renderer:
         self.uses_options = self.model.hierarchy_size > 0
         self.logic = self.model.policy.logic_meta_policy
         if render_predicate_probs:
-            assert self.logic
+            raise RuntimeError("Predicate rendering only possible for a logic model. The specified model is neural.")
 
         vec_env = self.model.get_env()
 
@@ -60,8 +60,8 @@ class Renderer:
         self.fps = fps
 
         self.env = vec_env.envs[0].env
-        if isinstance(self.env, ScobiEnv):
-            self.env = self.env.oc_env.env.unwrapped
+        # if isinstance(self.env, ScobiEnv):
+        #     self.env = self.env.oc_env.env.unwrapped
 
         self.vec_env = vec_env
         self.vec_env.reset()
@@ -71,12 +71,13 @@ class Renderer:
         # env.render_termination_heatmap(True)
         # env.render_action_heatmap(True)
 
-        self.action_meanings = self.env.unwrapped.get_action_meanings()
-        if hasattr(self.env.unwrapped, "get_keys_to_action"):
-            self.keys2actions = self.env.unwrapped.get_keys_to_action()
-        elif shadow_mode or wait_for_input:
-            raise RuntimeError(f"Environment {self.env.unwrapped} has no keys-to-actions mapping.")
-        else:
+        self.action_meanings = self.env.get_action_meanings()
+        try:
+            self.keys2actions = self.env.get_keys_to_action()
+        except Exception:
+            if shadow_mode or wait_for_input:
+                raise RuntimeError(f"Environment {self.env} has no keys-to-actions mapping.")
+            print("Info: No key-to-action mapping found for this env. No manual user control possible.")
             self.keys2actions = None
         self.current_keys_down = set()
 
@@ -94,6 +95,7 @@ class Renderer:
 
         self.running = True
         self.paused = False
+        self.fast_forward = False
         self.reset = False
 
     def _init_pygame(self):
@@ -138,7 +140,9 @@ class Renderer:
                     action_str = self.action_meanings[action]
                 else:
                     action_str = str(action)
-                print("Proposed next action:", action_str)
+
+                if self.wait_for_input:
+                    print("Proposed next action:", action_str)
 
             self.reset = False
 
@@ -219,6 +223,12 @@ class Renderer:
                 elif event.key == pygame.K_r:  # 'R': reset
                     self.reset = True
 
+                elif event.key == pygame.K_f:  # 'F': fast forward
+                    self.fast_forward = True
+
+                elif event.key == pygame.K_t:  # 'T': trigger takeover
+                    self.shadow_mode = not self.shadow_mode
+
                 elif event.key == pygame.K_c:  # 'C': capture screenshot
                     file_name = f"{datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S')}.png"
                     pygame.image.save(self.window, SCREENSHOTS_BASE_PATH + file_name)
@@ -255,6 +265,9 @@ class Renderer:
                 if (event.key,) in self.keys2actions.keys():
                     self.current_keys_down.remove(event.key)
 
+                elif event.key == pygame.K_f:  # 'F': fast forward
+                    self.fast_forward = False
+
     def _render(self):
         self.window.fill((20, 20, 20))  # clear the entire window
         self._render_env()
@@ -266,7 +279,8 @@ class Renderer:
 
         pygame.display.flip()
         pygame.event.pump()
-        self.clock.tick(self.fps)
+        if not self.fast_forward:
+            self.clock.tick(self.fps)
 
     def _render_env(self):
         frame = self.vec_env.render().swapaxes(0, 1)
