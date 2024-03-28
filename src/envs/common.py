@@ -55,6 +55,7 @@ def make_scobi_env(name: str,
                        reward_mode=reward_mode,
                        refresh_yaml=refresh,
                        hud=True,
+                       mode="ram",
                        **kwargs)
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -133,7 +134,7 @@ def init_vec_env(name: str,
     if settings is None:
         settings = dict()
     settings["render_mode"] = render_mode
-    if object_centric:
+    if object_centric or logic:
         settings["render_oc_overlay"] = render_oc_overlay
 
     if logic:
