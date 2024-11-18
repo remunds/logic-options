@@ -1,0 +1,48 @@
+name: "neural_flat"
+description: "Classic deep policy"
+device: cuda
+cores: 4
+seed: 0
+
+environment:
+  name: "MeetingRoom"
+  settings:
+    n_buildings: 1
+    n_floors: 4
+    floor_shape: [11, 11]
+    max_steps: 100
+    walls_fixed: False
+  framestack: 1
+  normalize_observation: True
+  normalize_reward: True
+
+general:
+  hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [16, 16]  # the network architecture of each individual policy and value function
+  total_timesteps: 3e6
+  n_steps: 512
+  n_epochs: 6
+  batch_size: 256  # decrease if out-of-memory error is observed
+  gamma: 0.9
+  gae_lambda: 0.0
+  normalize_advantage: True
+
+meta_policy:
+  logic: False
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.25
+
+evaluation:
+  frequency: 10000
+  n_episodes: 10
+  deterministic: False
+  render: False
+  # early_stop_on_no_reward: 1000

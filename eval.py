@@ -1,12 +1,17 @@
-from options.ppo import load_agent
-from utils.callbacks import evaluate_policy
+from logic_options.options.ppo import load_agent
+from logic_options.utils.callbacks import evaluate_policy
 
 
 if __name__ == "__main__":
-    name = "scobot-paper/unpruned-2"
-    env_name = "ALE/Seaquest-v5"
-    n_envs = 10
-    n_eval_episodes = 100
+
+    # name = "scobot-paper/unpruned-2"
+    # env_name = "ALE/Seaquest-v5"
+    env_name="ALE/Kangaroo-v5"
+    name ="kangaroo_ill_def_rerun_8"
+    # n_envs = 10
+    # n_eval_episodes = 100
+    n_envs = 4
+    n_eval_episodes = 5
 
     model = load_agent(name, env_name, n_envs=n_envs)
     env = model.get_env()

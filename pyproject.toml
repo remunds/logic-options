@@ -1,0 +1,23 @@
+[project]
+name = "logic-options"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "nsfr",
+    "ocatari",
+    "scobi",
+    "stable-baselines3[extra]>=2.0.0",
+    "sty>=1.0.6",
+    "torch-utils>=0.1.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+scobi = { path = "ScoBots", editable = true }
+nsfr = { path = "NUDGE/nsfr", editable = true }
+ocatari = { git = "https://github.com/k4ntz/OC_Atari" }

@@ -1,7 +1,7 @@
-name: "debug"
+name: "neural_hierarchy"
 description: ""
 device: cuda
-cores: 2
+cores: 4
 seed: 0
 
 environment:
@@ -16,35 +16,49 @@ environment:
   normalize_observation: True
   normalize_reward: True
 
-model:
+general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch:  # the network architecture of each individual option policy
-  termination_regularizer: 0.01
-  logic_meta_policy: False
-  ppo:
-    n_steps: 128
-    n_epochs: 3
-    batch_size: 256
-    gamma: 0.99
-    clip_range:  # clipping epsilon
-      initial_value: 0.1
-      schedule_type: linear
-    vf_coef: 1
-    policy_ent_coef: 0.1
-    terminator_ent_coef: 0
-    clip_range_vf:
-    normalize_advantage: True
-    gae_lambda: 0.95
+  net_arch: [16, 16]  # the network architecture of each individual option policy
+  # termination_regularizer: 0.01
+  # logic_meta_policy: False
+  total_timesteps: 3e6
+  n_steps: 512
+  n_epochs: 6
+  batch_size: 256
+  gamma: 0.9
+  gae_lambda: 0.0
+  normalize_advantage: True
 
-training:
-  total_timesteps: 4e6
+meta_policy:
+  logic: False
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
   learning_rate:  # Adam
-    initial_value: 0.002
+    initial_value: 0.001
     schedule_type: exponential
     half_life_period: 0.25
 
+options:
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
+  terminator_ent_coef: 0.1
+  terminator_clip_range: 0.1
+  termination_regularizer: -0.2
+  learning_rate:  # Adam
+    initial_value: 0.001
+    schedule_type: exponential
+    half_life_period: 0.1
+
 evaluation:
-  frequency: 10000
+  frequency: 1000
   deterministic: False
   render: False
   early_stop_on_no_reward: 500

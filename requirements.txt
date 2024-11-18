@@ -1,5 +1,5 @@
-gymnasium[atari,accept-rom-license]
-stable-baselines3
+gymnasium[atari,accept-rom-license] == 0.28.1
+stable-baselines3[extra]
 rtpt
 termcolor
 torch==1.13

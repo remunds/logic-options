@@ -1,0 +1,278 @@
+ENVIRONMENT: Kangaroo-v5
+
+AVAILABLE_CONCEPTS:
+  objects:
+    - Player1
+    - Child1
+    - Fruit1
+    - Fruit2
+    - Fruit3
+    - Bell1
+    - Platform1
+    - Platform2
+    - Platform3
+    - Platform4
+    - Platform5
+    - Platform6
+    - Platform7
+    - Platform8
+    - Platform9
+    - Platform10
+    - Platform11
+    - Platform12
+    - Platform13
+    - Platform14
+    - Platform15
+    - Platform16
+    - Platform17
+    - Platform18
+    - Platform19
+    - Platform20
+    - Ladder1
+    - Ladder2
+    - Ladder3
+    - Ladder4
+    - Ladder5
+    - Ladder6
+    - Monkey1
+    - Monkey2
+    - Monkey3
+    - Monkey4
+    - FallingCoconut1
+    - ThrownCoconut1
+    - ThrownCoconut2
+    - ThrownCoconut3
+    - Life1
+    - Life2
+    - Life3
+    - Life4
+    - Life5
+    - Life6
+    - Life7
+    - Life8
+    - Time1
+
+  actions:
+    - NOOP
+    - FIRE
+    - UP
+    - RIGHT
+    - LEFT
+    - DOWN
+    - UPRIGHT
+    - UPLEFT
+    - DOWNRIGHT
+    - DOWNLEFT
+    - UPFIRE
+    - RIGHTFIRE
+    - LEFTFIRE
+    - DOWNFIRE
+    - UPRIGHTFIRE
+    - UPLEFTFIRE
+    - DOWNRIGHTFIRE
+    - DOWNLEFTFIRE
+
+  properties:
+    - POSITION:
+        in:
+          - OBJECT
+        description: get the position for given object
+    - POSITION_HISTORY:
+        in:
+          - OBJECT
+        description: get the current and last position for given object
+    - ORIENTATION:
+        in:
+          - OBJECT
+        description: get the orientation for given object
+    - RGB:
+        in:
+          - OBJECT
+        description: get the rgb value for given object
+    - WIDTH:
+        in:
+          - OBJECT
+        description: get the width for given object
+    - VALUE:
+        in:
+          - OBJECT
+        description: get the value for given object
+
+  functions:
+    - LINEAR_TRAJECTORY:
+        in:
+          - POSITION
+          - POSITION_HISTORY
+        description: x, y distance to trajectory
+    - DISTANCE:
+        in:
+          - POSITION
+          - POSITION
+        description: distance between two coordinates
+    - EUCLIDEAN_DISTANCE:
+        in:
+          - POSITION
+          - POSITION
+        description: euclidean distance between two coordinates
+    - CENTER:
+        in:
+          - POSITION
+          - POSITION
+        description: center position of two objects
+    - VELOCITY:
+        in:
+          - POSITION_HISTORY
+        description: velocity of object
+    - DIR_VELOCITY:
+        in:
+          - POSITION_HISTORY
+        description: directional velocity of object
+    - COLOR:
+        in:
+          - RGB
+        description: Index of colorname
+
+  aggregations:
+    - COUNT:
+        in:
+          - OBJECT_CATEGORY
+        description: Number of objects of this category
+
+SELECTION:
+  objects:
+    - Player1
+    - Child1
+    - Fruit1
+    - Fruit2
+    - Fruit3
+    - Bell1
+    - Platform1
+    - Platform2
+    - Platform3
+    - Platform4
+    - Platform5
+    - Platform6
+    - Platform7
+    - Platform8
+    - Platform9
+    - Platform10
+    - Platform11
+    - Platform12
+    - Platform13
+    - Platform14
+    - Platform15
+    - Platform16
+    - Platform17
+    - Platform18
+    - Platform19
+    - Platform20
+    - Ladder1
+    - Ladder2
+    - Ladder3
+    - Ladder4
+    - Ladder5
+    - Ladder6
+    - Monkey1
+    - Monkey2
+    - Monkey3
+    - Monkey4
+    - FallingCoconut1
+    - ThrownCoconut1
+    - ThrownCoconut2
+    - ThrownCoconut3
+    - Life1
+    - Life2
+    - Life3
+    - Life4
+    - Life5
+    - Life6
+    - Life7
+    - Life8
+    - Time1
+
+  actions:
+    - NOOP
+    - FIRE
+    - UP
+    - RIGHT
+    - LEFT
+    - DOWN
+    - UPRIGHT
+    - UPLEFT
+
+  properties:
+    - POSITION_HISTORY: Player1
+    - POSITION: Child1
+    - POSITION: Fruit1
+    - POSITION: Fruit2
+    - POSITION: Fruit3
+    - POSITION: Bell1
+    - POSITION: Platform1
+    - POSITION: Platform2
+    - POSITION: Platform3
+    - POSITION: Platform4
+    - POSITION: Platform5
+    - POSITION: Platform6
+    - POSITION: Platform7
+    - POSITION: Platform8
+    - POSITION: Platform9
+    - POSITION: Platform10
+    - POSITION: Platform11
+    - POSITION: Platform12
+    - POSITION: Platform13
+    - POSITION: Platform14
+    - POSITION: Platform15
+    - POSITION: Platform16
+    - POSITION: Platform17
+    - POSITION: Platform18
+    - POSITION: Platform19
+    - POSITION: Platform20
+    - POSITION: Ladder1
+    - POSITION: Ladder2
+    - POSITION: Ladder3
+    - POSITION: Ladder4
+    - POSITION: Ladder5
+    - POSITION: Ladder6
+    - POSITION_HISTORY: Monkey1
+    - POSITION_HISTORY: Monkey2
+    - POSITION_HISTORY: Monkey3
+    - POSITION_HISTORY: Monkey4
+    - POSITION_HISTORY: FallingCoconut1
+    - POSITION_HISTORY: ThrownCoconut1
+    - POSITION_HISTORY: ThrownCoconut2
+    - POSITION_HISTORY: ThrownCoconut3
+    - VALUE: Time1
+    - ORIENTATION: Player1
+
+  functions:
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: Child1
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: Monkey1
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: Monkey2
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: Monkey3
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: Monkey4
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: FallingCoconut1
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: ThrownCoconut1
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: ThrownCoconut2
+#    - DISTANCE:
+#        - POSITION: Player1
+#        - POSITION: ThrownCoconut3
+
+  aggregations:
+    - COUNT:
+      - category: Life
