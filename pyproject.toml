@@ -3,8 +3,9 @@ name = "logic-options"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 dependencies = [
+    "hackatari",
     "nsfr",
     "ocatari",
     "scobi",
@@ -21,3 +22,4 @@ build-backend = "hatchling.build"
 scobi = { path = "ScoBots", editable = true }
 nsfr = { path = "NUDGE/nsfr", editable = true }
 ocatari = { git = "https://github.com/k4ntz/OC_Atari" }
+hackatari = { path = "HackAtari", editable = true }

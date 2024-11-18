@@ -5,6 +5,7 @@ from pathlib import Path
 
 import gymnasium as gym
 from ocatari import OCAtari
+from hackatari import HackAtari 
 from scobi import Environment as ScobiEnv
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_atari_env, make_vec_env
@@ -27,6 +28,22 @@ def make_ocatari_env(name: str,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
         env = OCAtari(name, hud=True, **kwargs)
+        env = AtariWrapper(env, frame_skip=frameskip, terminal_on_life_loss=False, clip_reward=False)
+        env = Monitor(env)
+        env.reset(seed=seed + rank)
+        return env
+
+    set_random_seed(seed)
+    return _init
+
+def make_hackatari_env(name: str,
+                     rank: int = 0,
+                     seed: int = 0,
+                     frameskip: int = 4,
+                     **kwargs) -> Callable:
+    def _init() -> gym.Env:
+        env = HackAtari(name, hud=True, **kwargs)
+        # env = OCAtari(name, hud=True, **kwargs)
         env = AtariWrapper(env, frame_skip=frameskip, terminal_on_life_loss=False, clip_reward=False)
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -75,6 +92,9 @@ def make_logic_env(name: str,
     def _init():
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
+        elif "hack" in name:
+            raw_env = HackAtari(name, mode="revised", hud=True,
+                              render_oc_overlay=render_oc_overlay, **kwargs)
         elif "ALE" in name:
             raw_env = OCAtari(name, mode="revised", hud=True,
                               render_oc_overlay=render_oc_overlay, **kwargs)
@@ -113,6 +133,7 @@ def init_vec_env(name: str,
                  seed: int,
                  logic: bool = False,
                  object_centric: bool = False,
+                 hack: dict = {},
                  reward_mode: str = None,
                  prune_concept: str = None,
                  exclude_properties: bool = None,
@@ -164,7 +185,15 @@ def init_vec_env(name: str,
         vec_env = VecFrameStack(vec_env, n_stack=framestack)
 
     elif object_centric:
-        if no_scobi or prune_concept is None:
+        if hack: 
+            envs = [make_hackatari_env(name=name,
+                                     rank=i,
+                                     seed=seed,
+                                     frameskip=frameskip,
+                                     **hack,
+                                     **settings) for i in range(n_envs)]
+
+        elif no_scobi or prune_concept is None:
             envs = [make_ocatari_env(name=name,
                                      rank=i,
                                      seed=seed,
@@ -206,7 +235,7 @@ def init_vec_env(name: str,
                                    **settings) for i in range(n_envs)]
         if n_envs > 1:
             # only forkserver works for me (fork leads to deadlock (waiting for recv))
-            vec_env = SubprocVecEnv(envs, start_method='forkserver')
+            vec_env = SubprocVecEnv(envs, start_method='fork')
             # vec_env = SubprocVecEnv(envs, start_method=MULTIPROCESSING_START_METHOD)
         else:
             vec_env = DummyVecEnv(envs)
