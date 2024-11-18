@@ -4,6 +4,7 @@
 - install [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - `git clone https://github.com/remunds/logic-options`
     - this might take some time due to large files in the repository
+- `cd logic-options`
 - `uv sync`
 
 ## How to pretrain neural option
