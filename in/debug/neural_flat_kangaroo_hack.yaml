@@ -14,7 +14,7 @@ environment:
   normalize_reward: False
   hack: 
     modifs: ["disable_monkeys", "disable_coconut"]
-    rewardfunc_path: "./HackAtari/hackatari/context/kangaroo/scobots_reward.py"
+    rewardfunc_path: "./in/reward_funcs/kangaroo.py"
 
 general:
   hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options

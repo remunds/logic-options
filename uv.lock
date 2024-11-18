@@ -659,13 +659,10 @@ atari = [
 [[package]]
 name = "hackatari"
 version = "0.0.5"
-source = { editable = "HackAtari" }
+source = { git = "https://github.com/k4ntz/HackAtari#21e2c965ca1f3fb035693abe6cf7dcc1a50f191f" }
 dependencies = [
     { name = "ocatari" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "ocatari" }]
 
 [[package]]
 name = "idna"
@@ -970,7 +967,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "hackatari", editable = "HackAtari" },
+    { name = "hackatari", git = "https://github.com/k4ntz/HackAtari" },
     { name = "nsfr", editable = "NUDGE/nsfr" },
     { name = "ocatari", git = "https://github.com/k4ntz/OC_Atari" },
     { name = "scobi", editable = "ScoBots" },

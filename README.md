@@ -1,5 +1,24 @@
 # Hierarchical Logic RL-Agents
 
+## Install
+- install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `git clone https://github.com/remunds/logic-options`
+    - this might take some time due to large files in the repository
+- `uv sync`
+
+## How to pretrain neural option
+An example of how to pretrain a neural option for kangaroo can be found in `in/debug/neural_flat_kangaroo_hack.yaml`, where the game does not have any enemies, and the reward is adapted to incentivize moving up.
+
+Note how we define the 'hacks' under 'modifs'. 
+Also note how the new reward is defined in `in/reward_funcs/kangaroo.py`.
+
+Run the example by:
+- creating new dir in/queue if not exists
+- copying `in/debug/neural_flat_kangaroo_hack.yaml` to `in/queue/`
+- running `SCOBI_OBJ_EXTRACTOR=OC_Atari uv run train.py`
+
+---
+
 **This repository extends logic RL agents (based on [NUDGE](https://github.com/k4ntz/NUDGE)) with the Option-Critic framework ([Bacon et al., 2016](https://arxiv.org/abs/1609.05140)) using PyTorch**.
 
 The idea is to apply temporal abstraction (options) to improve the interpretability of logic agents, especially for more complex (real-world) tasks where the logic policy grows inscrutably large.
