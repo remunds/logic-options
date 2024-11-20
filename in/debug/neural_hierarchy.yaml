@@ -19,8 +19,6 @@ environment:
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   net_arch: [16, 16]  # the network architecture of each individual option policy
-  # termination_regularizer: 0.01
-  # logic_meta_policy: False
   total_timesteps: 10e7
   n_steps: 512
   n_epochs: 6
@@ -38,7 +36,7 @@ meta_policy:
   value_fn_coef: 0.05
   value_fn_clip_range: 0.1
   learning_rate:  # Adam
-    initial_value: 0.001
+    initial_value: 0.002
     schedule_type: exponential
     half_life_period: 0.25
 
@@ -53,7 +51,7 @@ options:
   terminator_clip_range: 0.1
   termination_regularizer: -0.2
   learning_rate:  # Adam
-    initial_value: 0.001
+    initial_value: 0.002
     schedule_type: exponential
     half_life_period: 0.1
 

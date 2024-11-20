@@ -14,7 +14,7 @@ environment:
     walls_fixed: False
   framestack: 1
   normalize_observation: False
-  normalize_reward: False
+  normalize_reward: True
 
 general:
   hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
