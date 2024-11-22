@@ -1,6 +1,6 @@
 name: "debug"
 description: "Classic deep policy"
-device: cpu
+device: cuda
 cores: 4
 seed: 0
 
