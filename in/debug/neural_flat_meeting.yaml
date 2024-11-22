@@ -19,7 +19,7 @@ environment:
 general:
   hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   net_arch: [64, 64]  # the network architecture of each individual policy and value function
-  total_timesteps: 10e7
+  total_timesteps: 10e6
   n_steps: 512
   n_epochs: 6
   batch_size: 256  # decrease if out-of-memory error is observed
