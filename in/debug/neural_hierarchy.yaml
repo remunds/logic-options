@@ -18,7 +18,8 @@ environment:
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch: [16, 16]  # the network architecture of each individual option policy
+  # net_arch: [16, 16]  # the network architecture of each individual option policy
+  net_arch: [8, 8]  # try smaller values to decrease possibility of choosing the same option all the time 
   total_timesteps: 10e6
   n_steps: 512
   n_epochs: 6
@@ -29,7 +30,8 @@ general:
 
 meta_policy:
   logic: False
-  policy_ent_coef: 0.1
+  # policy_ent_coef: 0.1
+  policy_ent_coef: 0.3 # increase entropy, s.t. meta policy is encouraged to explore
   policy_clip_range:  # PPO clipping epsilon
     initial_value: 0.1
     schedule_type: linear

@@ -22,7 +22,7 @@ general:
   n_epochs: 6
   batch_size: 256  # decrease if out-of-memory error is observed
   gamma: 0.99
-  gae_lambda: 0.95
+  gae_lambda: 0.0
   normalize_advantage: True
 
 meta_policy:
@@ -47,7 +47,8 @@ options:
   value_fn_clip_range: 0.1
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: -0.2
+  # termination_regularizer: -0.2
+  termination_regularizer: 0.01 #bacon et al.
   learning_rate:  # Adam
     initial_value: 0.002
     schedule_type: exponential
