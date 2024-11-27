@@ -13,6 +13,7 @@ from logic_options.utils.render import render_options_overlay
 from eval_dist_to_joey import get_distance_to_joey
 
 from stable_baselines3.common.vec_env import unwrap_vec_normalize
+import time
 
 SCREENSHOTS_BASE_PATH = "out/screenshots/"
 PREDICATE_PROBS_COL_WIDTH = 300
@@ -151,9 +152,10 @@ class Renderer:
 
             if self.shadow_mode:
                 if self.wait_for_input:
-                    while human_action == 0 and self.running and not self.reset:
+                    while human_action is None and self.running and not self.reset:
                         self._handle_user_input()
                         human_action = self._get_action()
+                        time.sleep(0.1)
 
                 if not self.running:
                     break  # outer game loop
@@ -165,7 +167,7 @@ class Renderer:
                         if len(predicates) > 0:
                             human_action = predicates[0]
                         else:
-                            human_action = 0  # NOOP
+                            human_action = None  # NOOP
                     actions[0] = human_action
 
             # Apply action
@@ -206,9 +208,11 @@ class Renderer:
         pressed_keys.sort()
         pressed_keys = tuple(pressed_keys)
         if pressed_keys in self.keys2actions.keys():
+            print(f"Pressed keys: {pressed_keys}")
+            print(self.keys2actions[pressed_keys])
             return self.keys2actions[pressed_keys]
         else:
-            return 0  # NOOP
+            return None  # NOOP
 
     def _handle_user_input(self):
         events = pygame.event.get()
