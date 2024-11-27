@@ -34,7 +34,8 @@ def to_tensor(obs):
 def get_torch_device(device: str):
     if "cuda" in device:
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA is not available.")
+            print("CUDA is not available. Falling back to CPU.")
+            return torch.device("cpu")
 
         if device == "cuda":  # pick any free GPU
             gpu = get_free_gpus()[0]
