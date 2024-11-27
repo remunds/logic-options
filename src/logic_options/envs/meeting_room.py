@@ -664,7 +664,8 @@ class MeetingRoom(Env):
         # Init overlay surface
         overlay_surface = pygame.Surface(self.window.get_size(), pygame.SRCALPHA)
 
-        termination_tensor = th.tensor([1], dtype=th.float32, device="cuda")
+        # termination_tensor = th.tensor([1], dtype=th.float32, device="cuda")
+        termination_tensor = th.tensor([1], dtype=th.float32)
 
         orig_pos = self.current_pos.copy()
         for x in range(self.floor_shape[0]):
@@ -672,7 +673,8 @@ class MeetingRoom(Env):
                 if not self.map[orig_pos[0], orig_pos[1], x, y]:  # if no wall
                     self.current_pos[2:4] = [x, y]
                     obs = self._get_observation()
-                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
+                    # obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
+                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
                     termination_logp, _ = self.option.evaluate_terminations(obs_norm, termination_tensor)
                     alpha = int(200 * np.exp(termination_logp[0].cpu().detach().numpy()))
                     self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
@@ -687,7 +689,8 @@ class MeetingRoom(Env):
         # Init overlay surface
         overlay_surface = pygame.Surface(self.window.get_size(), pygame.SRCALPHA)
 
-        action_tensor = th.tensor([self.action], device="cuda")
+        # action_tensor = th.tensor([self.action], device="cuda")
+        action_tensor = th.tensor([self.action])
 
         orig_pos = self.current_pos.copy()
         for x in range(self.floor_shape[0]):
@@ -695,7 +698,8 @@ class MeetingRoom(Env):
                 if not self.map[orig_pos[0], orig_pos[1], x, y]:  # if no wall
                     self.current_pos[2:4] = [x, y]
                     obs = self._get_observation()
-                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
+                    # obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
+                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
                     _, action_logp, _ = self.policy.evaluate_actions(obs_norm, action_tensor)
                     alpha = int(200 * np.exp(action_logp[0].cpu().detach().numpy()))
                     self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
