@@ -30,10 +30,10 @@ def run(config_path: str):
         config = yaml.load(f, Loader=yaml.Loader)
 
     # Mandatory hyperparams
-    environment = config["environment"]
-    general = config["general"]
-    meta_policy = config["meta_policy"]
-    evaluation = config["evaluation"]
+    environment = config["environment"].copy()
+    general = config["general"].copy()
+    meta_policy = config["meta_policy"].copy()
+    evaluation = config["evaluation"].copy()
 
     # Optional hyperparams
     name = config.get("name")
