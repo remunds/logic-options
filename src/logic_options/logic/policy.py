@@ -14,9 +14,10 @@ from stable_baselines3.common.type_aliases import Schedule
 
 from logic_options.envs.meeting_room import PLAYER_VIEW_SIZE
 from logic_options.logic.base import LARK_PATH, LANG_PATH
+from logic_options.options.meta_policy import MetaPolicy
 
-
-class NudgePolicy(ActorCriticPolicy):
+# class NudgePolicy(ActorCriticPolicy):
+class NudgePolicy(MetaPolicy):
     """Wrapper class for NUDGE. Enables to use NUDGE while preserving the standard SB3 AC interface.
     Takes logic state tensors as input. Hence, the logic state representation needs to be done before
     and outside of this class."""

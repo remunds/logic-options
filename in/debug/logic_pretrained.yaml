@@ -29,7 +29,7 @@ general:
 
 meta_policy:
   logic: True
-  policy_ent_coef: 0.00005
+  policy_ent_coef: 0.00001
   policy_clip_range:  # PPO clipping epsilon
     initial_value: 0.2
     schedule_type: linear
@@ -49,7 +49,7 @@ options:
   value_fn_clip_range:
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: -0.5
+  termination_regularizer: -0.2
   learning_rate:  # Adam
     initial_value: 0.002
     schedule_type: exponential
@@ -57,13 +57,13 @@ options:
   pretrained:
     - level: 0
       position: 0
-      model_path: in/components/target
+      model_path: in/pretrained/target_option
       policy_trainable: False
       value_fn_trainable: True
       terminator_trainable: True
     - level: 0
       position: 1
-      model_path: in/components/elevator
+      model_path: in/pretrained/elevator_option
       policy_trainable: False
       value_fn_trainable: True
       terminator_trainable: True

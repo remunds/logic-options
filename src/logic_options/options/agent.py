@@ -4,7 +4,7 @@ from typing import Tuple, Any, List, Dict
 import numpy as np
 import torch as th
 from gymnasium import spaces
-from stable_baselines3.common.distributions import CategoricalDistribution
+from stable_baselines3.common.distributions import CategoricalDistribution, Distribution
 from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
@@ -12,6 +12,7 @@ from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from logic_options.options.option import OptionCollection, Option
 from logic_options.options.hierarchy import OptionsHierarchy
 from logic_options.logic.policy import NudgePolicy
+from logic_options.options.meta_policy import MetaPolicy
 
 
 class OptionsAgent(BasePolicy):
@@ -30,7 +31,8 @@ class OptionsAgent(BasePolicy):
         converts them to actual option IDs before usage.
     """
 
-    meta_policy: ActorCriticPolicy
+    # meta_policy: ActorCriticPolicy
+    meta_policy: MetaPolicy
     options_hierarchy: OptionsHierarchy
 
     def __init__(self,
@@ -77,7 +79,8 @@ class OptionsAgent(BasePolicy):
                 **kwargs
             )
         else:
-            self.meta_policy = ActorCriticPolicy(
+            # self.meta_policy = ActorCriticPolicy(
+            self.meta_policy = MetaPolicy(
                 observation_space=observation_space,
                 action_space=options_hierarchy.action_option_spaces[0],
                 lr_schedule=lr_schedule,
@@ -221,6 +224,10 @@ class OptionsAgent(BasePolicy):
         """
         option = self.get_option_by_idx(option_idx)
         return option.forward(obs, deterministic)
+    
+    def _get_terminations(self, option_distribution: Distribution, deterministic: bool = False) -> th.Tensor:
+        best_option = option_distribution.get_actions(deterministic)
+
 
     def forward_all(
             self,
@@ -252,7 +259,16 @@ class OptionsAgent(BasePolicy):
         log_probs = th.zeros(n_envs, option_traces.shape[1] + 1)
 
         # Forward meta policy and replace top-level option if needed
-        new_options, global_values, log_probs[:, 0] = self.meta_policy(obs, deterministic)
+
+        # TODO: modify to get log_probs of all options
+
+        #TODO: For all policies (meta + options): use distribution 
+        # to decide if next level option should terminate (based on highest log_prob)
+
+        # new_options, global_values, log_probs[:, 0] = self.meta_policy(obs, deterministic)
+        global_values, option_distribution = self.meta_policy(obs, deterministic)
+        new_options = option_distribution.get_actions(deterministic)
+
         is_terminated = option_terminations[:, 0]
         option_traces[is_terminated, 0] = new_options[is_terminated]  # is predicate if meta_policy is logic
         values[:, 0] = global_values.squeeze()
@@ -337,6 +353,36 @@ class OptionsAgent(BasePolicy):
                 log_probs[env_id, level] = log_prob
 
         return terminations, log_probs
+    
+    def forward_new_terminator(
+            self,
+            obs: th.Tensor,
+            option_traces: th.Tensor,
+            deterministic: bool = False
+    ) -> Tuple[th.Tensor, th.Tensor]:
+        """
+        Use log_prob of actions of all options to determine whether 
+        current option should terminate (because another option is better). 
+        """
+        # get all log_probs
+        n_envs = len(obs)
+        option_traces = option_traces.clone().type(th.long)
+        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
+        log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.float)
+        for env_id, trace in enumerate(option_traces):
+            env_obs = th.unsqueeze(obs[env_id], dim=0)
+            for level, position in enumerate(trace):
+                option = self.options_hierarchy[level][position]
+                _, log_prob = option(env_obs, deterministic)
+                log_probs[env_id, level] = log_prob
+        #TODO
+        # get highest log_prob for each option
+
+        # check if highest log_prob is higher than current log_prob
+        # if yes, terminate current option and start new option
+
+
+
 
     def get_option_termination_dist(self, obs: th.Tensor, option_idx: th.Tensor) -> CategoricalDistribution:
         option = self.get_option_by_idx(option_idx)
