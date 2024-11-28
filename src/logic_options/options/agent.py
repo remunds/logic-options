@@ -34,6 +34,7 @@ class OptionsAgent(BasePolicy):
     # meta_policy: ActorCriticPolicy
     meta_policy: MetaPolicy
     options_hierarchy: OptionsHierarchy
+    policy_terminator: bool = False
 
     def __init__(self,
                  observation_space: spaces.Space,
@@ -224,16 +225,42 @@ class OptionsAgent(BasePolicy):
         """
         option = self.get_option_by_idx(option_idx)
         return option.forward(obs, deterministic)
-    
-    def _get_terminations(self, option_distribution: Distribution, deterministic: bool = False) -> th.Tensor:
-        best_option = option_distribution.get_actions(deterministic)
 
+    def get_terminations(self, obs, deterministic=False):
+        global_values, option_distribution = self.meta_policy(obs, deterministic)
+        return self._get_terminations(len(obs), option_distribution, deterministic)
+
+    def _get_terminations(self, n_envs, option_distribution: Distribution, deterministic: bool = False, xi: float=-0.1) -> th.Tensor:
+        sampled_option = option_distribution.get_actions(deterministic)
+        if not isinstance(option_distribution, CategoricalDistribution):
+            raise NotImplementedError("Only discrete action spaces are supported for now.")
+
+        # get log_probs of all options/actions
+        # distribution expects shape (n_envs, n_actions)
+        n_actions = option_distribution.action_dim
+        log_probs = th.zeros((n_envs, n_actions)).to(self.device)
+        action_tensor = th.arange(n_actions).to(self.device)
+        for a in range(n_actions):
+            log_probs[:, a] = option_distribution.log_prob(action_tensor[a])
+
+        # Maggis way: max(0, 2p(w*|s) / p(w*|s)+p(w|s) - 1)
+        # My way: 1-(p(w|s)/p(w*|s)) (still need the max if sampling)
+        env_indices = th.arange(log_probs.shape[0]).to(self.device)
+        log_probs_regularized = log_probs.T + xi
+        terminations = th.max(th.tensor(0), 1 - th.exp(log_probs_regularized - log_probs[env_indices, sampled_option]).T)
+
+        # sample from bernoulli distribution with p=termination
+        if deterministic:
+            terminations_sample = terminations > 0.5
+        else:
+            terminations_sample = th.bernoulli(terminations).bool()
+        return terminations_sample, terminations
 
     def forward_all(
             self,
             obs: th.Tensor,
             option_traces: th.Tensor,
-            option_terminations: th.Tensor,
+            option_terminations: th.Tensor, #not used, if self.policy_terminator is True
             deterministic: bool = False
     ) -> ((th.Tensor, th.Tensor), th.Tensor, th.Tensor):
         """
@@ -260,16 +287,23 @@ class OptionsAgent(BasePolicy):
 
         # Forward meta policy and replace top-level option if needed
 
-        # TODO: modify to get log_probs of all options
-
-        #TODO: For all policies (meta + options): use distribution 
+        # For all policies (meta + options): use action/option-distribution 
         # to decide if next level option should terminate (based on highest log_prob)
-
         # new_options, global_values, log_probs[:, 0] = self.meta_policy(obs, deterministic)
         global_values, option_distribution = self.meta_policy(obs, deterministic)
         new_options = option_distribution.get_actions(deterministic)
+        log_probs[:, 0] = option_distribution.log_prob(new_options)
 
-        is_terminated = option_terminations[:, 0]
+        if self.policy_terminator:
+            terminations, _ = self._get_terminations(n_envs, option_distribution, deterministic)
+            env_indices = th.arange(terminations.shape[0]).unsqueeze(1).to(self.device)
+            option_terminations = terminations[env_indices, option_traces].bool()
+
+        # temrinations should have shape (n_envs, n_options)
+        # import ipdb; ipdb.set_trace()
+        is_terminated = option_terminations[:, 0] # In what env has policy on level 0 ended?
+
+        # replace highest level option with new option if it has terminated in the env
         option_traces[is_terminated, 0] = new_options[is_terminated]  # is predicate if meta_policy is logic
         values[:, 0] = global_values.squeeze()
 
@@ -284,11 +318,15 @@ class OptionsAgent(BasePolicy):
 
                 option = self.options_hierarchy[level][option_pos]
 
+                # Could probably reuse termination_distribution here 
                 new_lower_level_option_pos, values[env][level + 1], log_probs[env][level + 1] = \
                     option(env_obs, deterministic)
 
                 # Replace terminated lower-level option
-                if option_terminations[env][level + 1]:
+                # if option_terminations[env][level + 1]:
+                # Replace any option that terminated or where a higher level option terminated
+                # because if higher-level option terminates, lower-level option terminates as well.
+                if option_terminations[env][:level + 2].any():
                     option_traces[env][level + 1] = new_lower_level_option_pos
 
             # Determine new action (always executed)

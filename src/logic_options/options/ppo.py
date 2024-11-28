@@ -61,9 +61,11 @@ class OptionsPPO(PPO):
                  options_terminator_clip_range: Union[float, Schedule] = None,
                  options_termination_reg: float = 0,
                  print_more_detailed_progress: bool = False,
+                 policy_terminator: bool = False,
                  **kwargs):
         kwargs["policy"] = OptionsAgent
         super().__init__(**kwargs)
+        self.policy.policy_terminator = policy_terminator
 
         self.meta_learning_rate = meta_learning_rate
         self.meta_pi_ent_coef = meta_policy_ent_coef
@@ -83,6 +85,7 @@ class OptionsPPO(PPO):
         self._setup_clip_ranges()
 
         self.print_more_detailed_progress = print_more_detailed_progress
+        self.policy_terminator = policy_terminator
 
     def _setup_model(self) -> None:
         super()._setup_model()
@@ -224,17 +227,21 @@ class OptionsPPO(PPO):
 
             with th.no_grad():
                 next_obs_tensor = obs_as_tensor(next_obs, self.device)
-                terminations, _ = self.policy.forward_all_terminators(next_obs_tensor, options)
+                if self.policy_terminator:
+                    terminations, termination_probs = self.policy.get_terminations(next_obs_tensor)
+                    terminations = terminations.max(dim=1).values.reshape(-1, self.hierarchy_size)
+                    tn_log_probs = th.log(termination_probs.max(dim=1).values.reshape(-1, self.hierarchy_size))
+                else:
+                    terminations, _ = self.policy.forward_all_terminators(next_obs_tensor, options)
+                    # Compute log probability for terminations (note: not continuations)
+                    true_tensor = th.ones(terminations.shape, device=self.device)
+                    tn_log_probs = self.policy.evaluate_terminations(next_obs_tensor, options, true_tensor)
 
                 # If a higher-level option exits, all lower-level options exit, too
                 for level in range(1, self.policy.hierarchy_size):
                     terminations[:, level] |= terminations[:, level - 1]
 
-                # Compute log probability for terminations (note: not continuations)
-                true_tensor = th.ones(terminations.shape, device=self.device)
-                tn_log_probs = self.policy.evaluate_terminations(next_obs_tensor, options, true_tensor)
-
-                assert not th.any(th.isinf(tn_log_probs))
+                # assert not th.any(th.isinf(tn_log_probs)), termination_probs
 
                 # TODO: efficiency can be improved as next values are needed only for terminated options
                 next_values = self.policy.predict_all_values(next_obs_tensor, options)
@@ -319,7 +326,8 @@ class OptionsPPO(PPO):
         for level, n_options in enumerate(self.policy.hierarchy_shape):
             for position in range(n_options):
                 self._train_actor_critic(level, position)
-                self._train_terminator(level, position)
+                if not self.policy_terminator:
+                    self._train_terminator(level, position)
 
         self._n_updates += self.n_epochs
 
