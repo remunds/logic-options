@@ -35,6 +35,8 @@ class OptionsAgent(BasePolicy):
     meta_policy: MetaPolicy
     options_hierarchy: OptionsHierarchy
     policy_terminator: bool = False
+    termination_regularizer: float = 0.0
+    termination_mode: str = "raban"
 
     def __init__(self,
                  observation_space: spaces.Space,
@@ -51,7 +53,6 @@ class OptionsAgent(BasePolicy):
 
         if net_arch is None:
             net_arch = [64, 64]
-
         self.lr_schedule = lr_schedule
         self.hierarchy_shape = hierarchy_shape
         self.logic_meta_policy = logic_meta_policy
@@ -230,7 +231,11 @@ class OptionsAgent(BasePolicy):
         global_values, option_distribution = self.meta_policy(obs, deterministic)
         return self._get_terminations(len(obs), option_distribution, deterministic)
 
-    def _get_terminations(self, n_envs, option_distribution: Distribution, deterministic: bool = False, xi: float=-0.1) -> th.Tensor:
+    def _get_terminations(self, n_envs, option_distribution: Distribution, deterministic: bool = False) -> th.Tensor:
+        """
+        Computes what option should terminate based on the log probabilities of all options of the meta-policy.
+        """
+        xi = self.termination_regularizer
         sampled_option = option_distribution.get_actions(deterministic)
         if not isinstance(option_distribution, CategoricalDistribution):
             raise NotImplementedError("Only discrete action spaces are supported for now.")
@@ -243,11 +248,14 @@ class OptionsAgent(BasePolicy):
         for a in range(n_actions):
             log_probs[:, a] = option_distribution.log_prob(action_tensor[a])
 
-        # Maggis way: max(0, 2p(w*|s) / p(w*|s)+p(w|s) - 1)
-        # My way: 1-(p(w|s)/p(w*|s)) (still need the max if sampling)
         env_indices = th.arange(log_probs.shape[0]).to(self.device)
-        log_probs_regularized = log_probs.T + xi
-        terminations = th.max(th.tensor(0), 1 - th.exp(log_probs_regularized - log_probs[env_indices, sampled_option]).T)
+        probs_regularized = th.exp(log_probs.T) + xi
+        if self.termination_mode == "maggi":
+            # Maggis way: max(0, 2p(w*|s) / p(w*|s)+p(w|s) - 1)
+            terminations = th.max(th.tensor(0), 2 * th.exp(log_probs[env_indices, sampled_option]) / (probs_regularized + th.exp(log_probs[env_indices, sampled_option])) - 1).T
+        else:
+            # My way: max(0, 1-((p(w|s)+xi)/p(w*|s)))
+            terminations = th.max(th.tensor(0), 1 - (probs_regularized / th.exp(log_probs[env_indices, sampled_option])).T)
 
         # sample from bernoulli distribution with p=termination
         if deterministic:
@@ -278,7 +286,10 @@ class OptionsAgent(BasePolicy):
         option_traces = option_traces.clone().type(th.long)
 
         if self.hierarchy_size == 0:
-            actions, values, log_probs = self.meta_policy(obs, deterministic)
+            values, option_distribution = self.meta_policy(obs, deterministic)
+            # actions, values, log_probs = self.meta_policy(obs, deterministic)
+            actions = option_distribution.get_actions(deterministic)
+            log_probs = option_distribution.log_prob(actions)
             return (option_traces, actions), values, log_probs.unsqueeze(1)
 
         actions = th.zeros(n_envs, *self.meta_policy.action_space.shape)
@@ -300,7 +311,6 @@ class OptionsAgent(BasePolicy):
             option_terminations = terminations[env_indices, option_traces].bool()
 
         # temrinations should have shape (n_envs, n_options)
-        # import ipdb; ipdb.set_trace()
         is_terminated = option_terminations[:, 0] # In what env has policy on level 0 ended?
 
         # replace highest level option with new option if it has terminated in the env

@@ -19,7 +19,7 @@ environment:
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   net_arch: [16, 16]  # the network architecture of each individual policy and value function
-  total_timesteps: 3e6
+  total_timesteps: 10e6
   n_steps: 512
   n_epochs: 6
   batch_size: 256  # decrease if out-of-memory error is observed
@@ -39,6 +39,7 @@ meta_policy:
     initial_value: 0.001
     schedule_type: exponential
     half_life_period: 0.25
+  policy_terminator: False # Use new meta-probability based termination
 
 options:
   policy_ent_coef: 0.1
@@ -71,5 +72,5 @@ options:
 evaluation:
   frequency: 10000
   deterministic: False
-  n_episodes: 10
+  n_episodes: 8
   render: False

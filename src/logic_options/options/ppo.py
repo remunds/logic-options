@@ -62,10 +62,13 @@ class OptionsPPO(PPO):
                  options_termination_reg: float = 0,
                  print_more_detailed_progress: bool = False,
                  policy_terminator: bool = False,
+                 policy_termination_mode: str = "raban",
                  **kwargs):
         kwargs["policy"] = OptionsAgent
         super().__init__(**kwargs)
         self.policy.policy_terminator = policy_terminator
+        self.policy.termination_regularizer = options_termination_reg
+        self.policy.termination_mode = policy_termination_mode
 
         self.meta_learning_rate = meta_learning_rate
         self.meta_pi_ent_coef = meta_policy_ent_coef
@@ -227,16 +230,16 @@ class OptionsPPO(PPO):
 
             with th.no_grad():
                 next_obs_tensor = obs_as_tensor(next_obs, self.device)
-                if self.policy_terminator:
+                if self.policy_terminator and self.policy.hierarchy_size > 0:
                     terminations, termination_probs = self.policy.get_terminations(next_obs_tensor)
-                    terminations = terminations.max(dim=1).values.reshape(-1, self.hierarchy_size)
-                    tn_log_probs = th.log(termination_probs.max(dim=1).values.reshape(-1, self.hierarchy_size))
+                    terminations = terminations.max(dim=1).values.reshape(-1, self.policy.hierarchy_size)
+                    tn_log_probs = th.log(termination_probs.max(dim=1).values).reshape(-1, self.policy.hierarchy_size)
+
                 else:
                     terminations, _ = self.policy.forward_all_terminators(next_obs_tensor, options)
                     # Compute log probability for terminations (note: not continuations)
-                    true_tensor = th.ones(terminations.shape, device=self.device)
+                    true_tensor = th.ones(size=terminations.shape, device=self.device)
                     tn_log_probs = self.policy.evaluate_terminations(next_obs_tensor, options, true_tensor)
-
                 # If a higher-level option exits, all lower-level options exit, too
                 for level in range(1, self.policy.hierarchy_size):
                     terminations[:, level] |= terminations[:, level - 1]

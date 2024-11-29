@@ -147,6 +147,7 @@ def run(config_path: str):
         options_kwargs = dict()
 
     policy_terminator = meta_policy.pop("policy_terminator", False) 
+    policy_termination_mode = meta_policy.pop("policy_termination_mode", "raban")
     options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,
@@ -159,6 +160,7 @@ def run(config_path: str):
         meta_value_fn_coef=meta_policy["value_fn_coef"],
         meta_value_fn_clip_range=meta_policy["value_fn_clip_range"],
         policy_terminator=policy_terminator,
+        policy_termination_mode=policy_termination_mode,
         **general,
         **options_kwargs,
     )

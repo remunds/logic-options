@@ -19,8 +19,8 @@ environment:
 
 general:
   hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch: [16, 16]  # the network architecture of each individual policy and value function
-  total_timesteps: 10e6
+  net_arch: [8, 8]  # the network architecture of each individual policy and value function
+  total_timesteps: 3e6
   n_steps: 512
   n_epochs: 6
   batch_size: 256  # decrease if out-of-memory error is observed
@@ -40,6 +40,8 @@ meta_policy:
     initial_value: 0.002
     schedule_type: exponential
     half_life_period: 0.25
+  policy_terminator: True #Should make no difference
+  
 
 evaluation:
   frequency: 10000

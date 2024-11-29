@@ -30,8 +30,7 @@ general:
 
 meta_policy:
   logic: False
-  # policy_ent_coef: 0.1
-  policy_ent_coef: 0.3 # increase entropy, s.t. meta policy is encouraged to explore
+  policy_ent_coef: 0.1
   policy_clip_range:  # PPO clipping epsilon
     initial_value: 0.1
     schedule_type: linear
@@ -41,6 +40,8 @@ meta_policy:
     initial_value: 0.002
     schedule_type: exponential
     half_life_period: 0.25
+  policy_terminator: True # Use new termination by meta-probabilities
+  policy_termination_mode: "maggi"
 
 options:
   policy_ent_coef: 0.1
