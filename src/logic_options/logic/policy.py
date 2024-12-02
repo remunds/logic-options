@@ -12,9 +12,9 @@ from stable_baselines3.common.distributions import Distribution, CategoricalDist
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
 
-from envs.meeting_room import PLAYER_VIEW_SIZE
-from logic.base import LARK_PATH, LANG_PATH
-from options.meta_policy import MetaPolicy
+from logic_options.envs.meeting_room import PLAYER_VIEW_SIZE
+from logic_options.logic.base import LARK_PATH, LANG_PATH
+from logic_options.options.meta_policy import MetaPolicy
 
 # class NudgePolicy(ActorCriticPolicy):
 class NudgePolicy(MetaPolicy):

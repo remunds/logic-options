@@ -3,8 +3,8 @@ from typing import List
 from gymnasium.spaces import Discrete, Space
 from torch import nn
 
-from options.option import Option
-from utils.common import get_option_name
+from logic_options.options.option import Option
+from logic_options.utils.common import get_option_name
 
 
 class OptionsHierarchy(nn.Module):

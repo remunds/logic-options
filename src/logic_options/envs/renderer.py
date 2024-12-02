@@ -7,9 +7,9 @@ from scobi.core import Environment as ScobiEnv
 from typing import Union
 from nsfr.nsfr import NSFReasoner
 
-from options.ppo import load_agent
-from logic.env_wrapper import LogicEnvWrapper
-from utils.render import render_options_overlay
+from logic_options.options.ppo import load_agent
+from logic_options.logic.env_wrapper import LogicEnvWrapper
+from logic_options.utils.render import render_options_overlay
 from eval_dist_to_joey import get_distance_to_joey
 
 from stable_baselines3.common.vec_env import unwrap_vec_normalize
@@ -86,8 +86,8 @@ class Renderer:
         # env.vec_norm = vec_norm
         # env.policy = model.policy.meta_policy
 
-        if self.logic:
-            self.model.policy.meta_policy.actor.print_program()
+        # if self.logic:
+        #     self.model.policy.meta_policy.actor.print_program()
 
         self.predicates = self.model.policy.meta_policy.predicates if self.logic else None
         self.nsfr_reasoner = self.model.policy.meta_policy.actor if self.logic else None
@@ -131,7 +131,7 @@ class Renderer:
 
             if self.shadow_mode:
                 if self.uses_options and self.logic:
-                    self.nsfr_reasoner.print_probs(self.nsfr_reasoner.V_T)
+                    # self.nsfr_reasoner.print_probs(self.nsfr_reasoner.V_T)
                     print("\nProposed next option:", self.predicates[options.squeeze()])
 
                 action = actions.squeeze()
@@ -162,12 +162,12 @@ class Renderer:
 
                 if not self.reset:
                     # convert action into some matching predicate
-                    if self.logic:
-                        predicates = self.env.get_predicates_for_action(human_action)
-                        if len(predicates) > 0:
-                            human_action = predicates[0]
-                        else:
-                            human_action = None  # NOOP
+                    # if self.logic:
+                    #     predicates = self.env.get_predicates_for_action(human_action)
+                    #     if len(predicates) > 0:
+                    #         human_action = predicates[0]
+                    #     else:
+                    #         human_action = None  # NOOP
                     actions[0] = human_action
 
             # Apply action
@@ -245,9 +245,16 @@ class Renderer:
                     if option_pos < len(self.model.policy.options_hierarchy[0]):
                         option_to_render = self.model.policy.options_hierarchy[0][option_pos]
                         if self.env.option != option_to_render:
-                            self.env.render_termination_heatmap_of_option(option_to_render, self.vec_norm)
+                            import ipdb; ipdb.set_trace()
+                            if self.model.policy.policy_terminator:
+                                self.env.render_termination_heatmap_by_policy(self.model.policy, option_pos, self.vec_norm)
+                            else:
+                                self.env.render_termination_heatmap_of_option(option_to_render, self.vec_norm)
                         else:
-                            self.env.render_termination_heatmap_of_option(None)
+                            if self.model.policy.policy_terminator: 
+                                self.env.render_termination_heatmap_by_policy(None, None)
+                            else:
+                                self.env.render_termination_heatmap_of_option(None)
                         self._render()
                     else:
                         print(f"No top-level option at pos {option_pos}.")

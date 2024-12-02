@@ -5,8 +5,8 @@ import pygame
 import torch as th
 from gymnasium import spaces
 
-from envs.common import make_logic_env
-from options.agent import OptionsAgent
+from logic_options.envs.common import make_logic_env
+from logic_options.options.agent import OptionsAgent
 
 SCREENSHOTS_BASE_PATH = "../../out/screenshots/"
 

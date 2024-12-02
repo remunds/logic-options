@@ -14,11 +14,11 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStack, VecNormalize, DummyVecEnv
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 
-from envs.meeting_room import MeetingRoom
-from logic.env_wrapper import LogicEnvWrapper
+from logic_options.envs.meeting_room import MeetingRoom
+from logic_options.logic.env_wrapper import LogicEnvWrapper
 
-from common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
-from envs.util import get_atari_identifier
+from logic_options.common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
+from logic_options.envs.util import get_atari_identifier
 
 
 def make_ocatari_env(name: str,

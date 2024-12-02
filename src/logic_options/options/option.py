@@ -13,8 +13,8 @@ from stable_baselines3.common.torch_layers import FlattenExtractor
 from stable_baselines3.common.vec_env import VecNormalize
 from torch import nn
 
-from utils.common import get_net_from_layer_dims
-from options.meta_policy import MetaPolicy
+from logic_options.utils.common import get_net_from_layer_dims
+from logic_options.options.meta_policy import MetaPolicy
 
 
 class Option(nn.Module):

@@ -3,10 +3,10 @@ from pathlib import Path
 import yaml
 import torch as th
 
-from envs.common import init_train_eval_envs
-from envs.util import get_atari_identifier
-from utils.callbacks import init_callbacks
-from options.ppo import load_agent
+from logic_options.envs.common import init_train_eval_envs
+from logic_options.envs.util import get_atari_identifier
+from logic_options.utils.callbacks import init_callbacks
+from logic_options.options.ppo import load_agent
 
 ENV_NAME = "ALE/Kangaroo-v5"
 MODEL_NAME = "reward-shaping/v2-2"

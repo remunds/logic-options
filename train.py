@@ -7,13 +7,13 @@ import torch as th
 import yaml
 from stable_baselines3.common.logger import configure
 
-from envs.common import init_train_eval_envs, get_focus_file_path
-from envs.util import get_env_identifier
-from options.ppo import OptionsPPO
-from utils.callbacks import init_callbacks
-from utils.common import hyperparams_to_experiment_name, get_torch_device, update_yaml
-from utils.console import bold
-from utils.param_schedule import maybe_make_schedule
+from logic_options.envs.common import init_train_eval_envs, get_focus_file_path
+from logic_options.envs.util import get_env_identifier
+from logic_options.options.ppo import OptionsPPO
+from logic_options.utils.callbacks import init_callbacks
+from logic_options.utils.common import hyperparams_to_experiment_name, get_torch_device, update_yaml
+from logic_options.utils.console import bold
+from logic_options.utils.param_schedule import maybe_make_schedule
 
 OUT_BASE_PATH = "out/"
 QUEUE_PATH = "in/queue/"

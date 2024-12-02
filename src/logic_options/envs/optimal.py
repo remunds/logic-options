@@ -1,7 +1,7 @@
 """Computes the average of the shortest path for MeetingRoom."""
 import numpy as np
 
-from meeting_room import MeetingRoom
+from logic_options.envs.meeting_room import MeetingRoom
 
 N_SAMPLES = 1000
 

@@ -16,13 +16,13 @@ from stable_baselines3.ppo.ppo import PPO
 from torch.nn.functional import mse_loss
 from tqdm import tqdm
 
-from common import MODELS_BASE_PATH
-from envs.common import init_vec_env
-from envs.util import get_env_identifier
-from options.agent import OptionsAgent
-from options.option import Terminator
-from options.rollout_buffer import OptionsRolloutBuffer
-from utils.common import get_option_name, get_most_recent_checkpoint_steps
+from logic_options.common import MODELS_BASE_PATH
+from logic_options.envs.common import init_vec_env
+from logic_options.envs.util import get_env_identifier
+from logic_options.options.agent import OptionsAgent
+from logic_options.options.option import Terminator
+from logic_options.options.rollout_buffer import OptionsRolloutBuffer
+from logic_options.utils.common import get_option_name, get_most_recent_checkpoint_steps
 
 
 class OptionsPPO(PPO):

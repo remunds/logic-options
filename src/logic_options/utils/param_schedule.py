@@ -4,7 +4,7 @@ from typing import Callable
 
 import numpy as np
 
-from utils.common import is_sorted
+from logic_options.utils.common import is_sorted
 
 
 class ParamScheduler:

@@ -6,7 +6,7 @@ import time
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.console import num2text, sec2hhmmss
+from logic_options.utils.console import num2text, sec2hhmmss
 
 
 class Logger:

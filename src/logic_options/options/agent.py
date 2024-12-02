@@ -9,10 +9,10 @@ from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
-from options.option import OptionCollection, Option
-from options.hierarchy import OptionsHierarchy
-from logic.policy import NudgePolicy
-from options.meta_policy import MetaPolicy
+from logic_options.options.option import OptionCollection, Option
+from logic_options.options.hierarchy import OptionsHierarchy
+from logic_options.logic.policy import NudgePolicy
+from logic_options.options.meta_policy import MetaPolicy
 
 
 class OptionsAgent(BasePolicy):

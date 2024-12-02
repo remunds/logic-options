@@ -1,4 +1,4 @@
-from envs.common import init_vec_env
+from logic_options.envs.common import init_vec_env
 import numpy as np
 
 

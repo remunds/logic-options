@@ -1,7 +1,7 @@
 import torch as th
 
 from nsfr.utils.common import bool_to_probs
-from envs.meeting_room import PLAYER_VIEW_SIZE
+from logic_options.envs.meeting_room import PLAYER_VIEW_SIZE
 
 
 def north_of_target(logic_state: th.Tensor) -> th.Tensor:

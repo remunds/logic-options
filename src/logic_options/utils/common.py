@@ -16,8 +16,8 @@ from ocatari.ram.game_objects import GameObject
 from tensorboard import program
 from torch import nn
 
-from common import MODELS_BASE_PATH
-from envs.util import get_atari_identifier, get_env_identifier
+from logic_options.common import MODELS_BASE_PATH
+from logic_options.envs.util import get_atari_identifier, get_env_identifier
 
 
 def to_model_dir(model_name, env_name):

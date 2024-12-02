@@ -9,8 +9,8 @@ from gymnasium.core import ActType, ObsType
 from stable_baselines3.common.vec_env import VecNormalize
 import torch as th
 
-from options.option import Option
-from utils.render import draw_arrow, draw_label
+from logic_options.options.option import Option
+from logic_options.utils.render import draw_arrow, draw_label
 
 PLAYER_VIEW_SIZE = 7  # odd number
 
