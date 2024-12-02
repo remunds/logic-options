@@ -51,7 +51,7 @@ options:
   value_fn_clip_range:
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: -0.2
+  termination_regularizer: 0.01
   learning_rate:  # Adam
     initial_value: 0.002
     schedule_type: exponential
