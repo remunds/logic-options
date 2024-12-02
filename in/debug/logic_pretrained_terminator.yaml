@@ -1,4 +1,4 @@
-name: "logic_pretrained"
+name: "debug"
 description: "Uses the pre-trained components"
 device: cuda
 cores: 1
@@ -18,7 +18,7 @@ environment:
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch: [16, 16]  # the network architecture of each individual policy and value function
+  net_arch: [4, 4]  # the network architecture of each individual policy and value function
   total_timesteps: 10e6
   n_steps: 512
   n_epochs: 6
@@ -29,7 +29,7 @@ general:
 
 meta_policy:
   logic: True
-  policy_ent_coef: 0.00001
+  policy_ent_coef: 0.000001
   policy_clip_range:  # PPO clipping epsilon
     initial_value: 0.2
     schedule_type: linear
@@ -39,7 +39,7 @@ meta_policy:
     initial_value: 0.001
     schedule_type: exponential
     half_life_period: 0.25
-  policy_terminator: False # Use new meta-probability based termination
+  policy_terminator: True # Use new meta-probability based termination
   policy_termination_mode: "raban"
 
 options:
@@ -62,13 +62,13 @@ options:
       model_path: in/pretrained/target_option
       policy_trainable: False
       value_fn_trainable: True
-      terminator_trainable: True
+      terminator_trainable: False
     - level: 0
       position: 1
       model_path: in/pretrained/elevator_option
       policy_trainable: False
       value_fn_trainable: True
-      terminator_trainable: True
+      terminator_trainable: False
 
 evaluation:
   frequency: 10000

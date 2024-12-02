@@ -131,7 +131,7 @@ class OptionEvalCallback(EvalCallback):
 class RtptCallback(BaseCallback):
     def __init__(self, exp_name, max_iter, verbose=0):
         super(RtptCallback, self).__init__(verbose)
-        self.rtpt = RTPT(name_initials="RE",
+        self.rtpt = RTPT(name_initials="QD",
                          experiment_name=exp_name,
                          max_iterations=max_iter)
         self.rtpt.start()
@@ -253,7 +253,6 @@ def evaluate_policy(
 
     while (episode_counts < episode_count_targets).any():
         (options, actions), _, _ = model.forward_all(observations, options, option_terminations, deterministic)
-
         new_observations, rewards, dones, infos = env.step(actions)
         current_rewards += rewards
         current_lengths += 1

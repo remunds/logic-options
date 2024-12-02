@@ -5,7 +5,6 @@ from gymnasium import Wrapper, Env, spaces
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import GameObject
 from nsfr.utils.logic import get_lang
-
 from envs.util import get_env_identifier
 from logic.state_extraction import LogicStateExtractor
 from logic.base import LARK_PATH, LANG_PATH

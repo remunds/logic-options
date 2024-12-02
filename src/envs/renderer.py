@@ -13,6 +13,7 @@ from utils.render import render_options_overlay
 from eval_dist_to_joey import get_distance_to_joey
 
 from stable_baselines3.common.vec_env import unwrap_vec_normalize
+import time
 
 SCREENSHOTS_BASE_PATH = "out/screenshots/"
 PREDICATE_PROBS_COL_WIDTH = 300
@@ -60,8 +61,8 @@ class Renderer:
         self.fps = fps
 
         self.env = vec_env.envs[0].env
-        # if isinstance(self.env, ScobiEnv):
-        #     self.env = self.env.oc_env.env.unwrapped
+        if isinstance(self.env, ScobiEnv):
+            self.env = self.env.oc_env.env.unwrapped
 
         self.vec_env = vec_env
         self.vec_env.reset()
@@ -69,7 +70,7 @@ class Renderer:
         if self.uses_options and hasattr(self.env, "set_render_option_history"):
             self.env.set_render_option_history(True)
         # env.render_termination_heatmap(True)
-        # env.render_action_heatmap(True)
+        # self.env._render_action_heatmap()
 
         self.action_meanings = self.env.get_action_meanings()
         try:
@@ -151,9 +152,10 @@ class Renderer:
 
             if self.shadow_mode:
                 if self.wait_for_input:
-                    while human_action == 0 and self.running and not self.reset:
+                    while human_action is None and self.running and not self.reset:
                         self._handle_user_input()
                         human_action = self._get_action()
+                        time.sleep(0.1)
 
                 if not self.running:
                     break  # outer game loop
@@ -165,7 +167,7 @@ class Renderer:
                         if len(predicates) > 0:
                             human_action = predicates[0]
                         else:
-                            human_action = 0  # NOOP
+                            human_action = None  # NOOP
                     actions[0] = human_action
 
             # Apply action
@@ -206,11 +208,16 @@ class Renderer:
         pressed_keys.sort()
         pressed_keys = tuple(pressed_keys)
         if pressed_keys in self.keys2actions.keys():
+            print(f"Pressed keys: {pressed_keys}")
+            print(self.keys2actions[pressed_keys])
             return self.keys2actions[pressed_keys]
         else:
-            return 0  # NOOP
+            return None  # NOOP
 
     def _handle_user_input(self):
+
+        analyze_termination_keys = {
+            pygame.K_v: 0, pygame.K_b: 1, pygame.K_n: 2, pygame.K_m: 3}
         events = pygame.event.get()
         for event in events:
             if event.type == pygame.QUIT:  # window close button clicked
@@ -233,8 +240,8 @@ class Renderer:
                     file_name = f"{datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S')}.png"
                     pygame.image.save(self.window, SCREENSHOTS_BASE_PATH + file_name)
 
-                elif pygame.K_0 <= event.key <= pygame.K_9:  # analyze option termination
-                    option_pos = event.key - pygame.K_0
+                elif event.key in analyze_termination_keys.keys():  # analyze option termination
+                    option_pos = analyze_termination_keys[event.key] 
                     if option_pos < len(self.model.policy.options_hierarchy[0]):
                         option_to_render = self.model.policy.options_hierarchy[0][option_pos]
                         if self.env.option != option_to_render:
@@ -245,8 +252,9 @@ class Renderer:
                     else:
                         print(f"No top-level option at pos {option_pos}.")
 
-                elif pygame.K_KP1 <= event.key <= pygame.K_KP0:  # analyze option invocation probability
-                    option_pos = (event.key - pygame.K_KP1 + 1) % 10
+                elif pygame.K_0 <= event.key <= pygame.K_9:  # analyze option invocation probability
+                    print(f"Option invocation probability for option {event.key - pygame.K_0}:")
+                    option_pos = event.key - pygame.K_0
                     if option_pos < len(self.model.policy.options_hierarchy[0]):
                         if self.env.action != option_pos:
                             self.env.render_action_heatmap_for_policy(policy=self.model.policy.meta_policy,

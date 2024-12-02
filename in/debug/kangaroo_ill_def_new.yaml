@@ -1,13 +1,13 @@
-name: "kangaroo_ill_def_rerun"
+name: "debug"
 description: "Rerun kangaroo ill defined experiment."
-device: cuda:0
+device: cuda:14
 cores: 1
 seed: 0
 
 environment:
   name: "ALE/Kangaroo-v5"
   object_centric: True
-  reward_mode: env  # env, human, mixed
+  reward_mode: human  # env, human, mixed
   framestack: 4
   frameskip: 1
   normalize_observation: True

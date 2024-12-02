@@ -275,8 +275,4 @@ SELECTION:
 
   aggregations:
     - COUNT:
-<<<<<<< HEAD
       - category: Life
-=======
-      - category: Life
->>>>>>> 699e631 (try reproduce)

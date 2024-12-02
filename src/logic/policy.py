@@ -5,6 +5,8 @@ from nsfr.fol.logic import Const
 from nsfr.nsfr import NSFReasoner
 from nsfr.facts_converter import FactsConverter
 from nsfr.valuation import ValuationModule
+# from nsfr.valuation import YOLOValuationModule
+# from nsfr.logic_utils import build_infer_module, get_lang
 from nsfr.utils.logic import build_infer_module, get_lang
 from stable_baselines3.common.distributions import Distribution, CategoricalDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy
@@ -12,9 +14,10 @@ from stable_baselines3.common.type_aliases import Schedule
 
 from envs.meeting_room import PLAYER_VIEW_SIZE
 from logic.base import LARK_PATH, LANG_PATH
+from options.meta_policy import MetaPolicy
 
-
-class NudgePolicy(ActorCriticPolicy):
+# class NudgePolicy(ActorCriticPolicy):
+class NudgePolicy(MetaPolicy):
     """Wrapper class for NUDGE. Enables to use NUDGE while preserving the standard SB3 AC interface.
     Takes logic state tensors as input. Hence, the logic state representation needs to be done before
     and outside of this class."""
@@ -89,16 +92,16 @@ class NudgePolicy(ActorCriticPolicy):
         dist = self.categorical.proba_distribution(pred_logits)
         return dist
 
-    def forward(
-            self,
-            obs: th.Tensor,
-            deterministic: bool = False
-    ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
-        pred_dist = self.get_distribution(obs)
-        predicates = pred_dist.get_actions(deterministic)
-        log_probs = pred_dist.log_prob(predicates)
-        values = self.predict_values(obs)
-        return predicates, values, log_probs
+    # def forward(
+    #         self,
+    #         obs: th.Tensor,
+    #         deterministic: bool = False
+    # ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+    #     pred_dist = self.get_distribution(obs)
+    #     predicates = pred_dist.get_actions(deterministic)
+    #     log_probs = pred_dist.log_prob(predicates)
+    #     values = self.predict_values(obs)
+    #     return predicates, values, log_probs
 
     def evaluate_actions(
             self,

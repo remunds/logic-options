@@ -1,4 +1,4 @@
-from logic_options.envs.renderer import Renderer
+from envs.renderer import Renderer
 
 if __name__ == "__main__":
     # renderer = Renderer(env_name="ALE/Seaquest-v5",

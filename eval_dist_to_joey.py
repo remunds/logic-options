@@ -6,8 +6,8 @@ from scobi.reward_shaping import _get_game_objects_by_category
 from scobi.core import Environment as ScobiEnv
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 
-from logic_options.envs.common import init_vec_env
-from logic_options.options.ppo import load_agent
+from envs.common import init_vec_env
+from options.ppo import load_agent
 
 
 def get_distance_to_joey(game_objects):

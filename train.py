@@ -7,13 +7,13 @@ import torch as th
 import yaml
 from stable_baselines3.common.logger import configure
 
-from logic_options.envs.common import init_train_eval_envs, get_focus_file_path
-from logic_options.envs.util import get_env_identifier
-from logic_options.options.ppo import OptionsPPO
-from logic_options.utils.callbacks import init_callbacks
-from logic_options.utils.common import hyperparams_to_experiment_name, get_torch_device, update_yaml
-from logic_options.utils.console import bold
-from logic_options.utils.param_schedule import maybe_make_schedule
+from envs.common import init_train_eval_envs, get_focus_file_path
+from envs.util import get_env_identifier
+from options.ppo import OptionsPPO
+from utils.callbacks import init_callbacks
+from utils.common import hyperparams_to_experiment_name, get_torch_device, update_yaml
+from utils.console import bold
+from utils.param_schedule import maybe_make_schedule
 
 OUT_BASE_PATH = "out/"
 QUEUE_PATH = "in/queue/"
@@ -81,7 +81,7 @@ def run(config_path: str):
     device = get_torch_device(device)
 
     object_centric = environment.get("object_centric")
-    use_scobi = object_centric and (environment.get("prune_concept") == 'pruned'
+    use_scobi = object_centric and (environment.get("prune_concept") == 'default'
                                     or environment.get("reward_mode") in ['human', 'mixed'])
     n_envs = cores
     n_eval_envs = cores

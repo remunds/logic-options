@@ -1,5 +1,5 @@
-from logic_options.options.ppo import load_agent
-from logic_options.utils.callbacks import evaluate_policy
+from options.ppo import load_agent
+from utils.callbacks import evaluate_policy
 
 
 if __name__ == "__main__":
