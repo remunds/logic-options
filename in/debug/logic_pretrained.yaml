@@ -40,6 +40,7 @@ meta_policy:
     schedule_type: exponential
     half_life_period: 0.25
   policy_terminator: False # Use new meta-probability based termination
+  policy_termination_mode: "raban"
 
 options:
   policy_ent_coef: 0.1

@@ -92,16 +92,16 @@ class NudgePolicy(MetaPolicy):
         dist = self.categorical.proba_distribution(pred_logits)
         return dist
 
-    def forward(
-            self,
-            obs: th.Tensor,
-            deterministic: bool = False
-    ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
-        pred_dist = self.get_distribution(obs)
-        predicates = pred_dist.get_actions(deterministic)
-        log_probs = pred_dist.log_prob(predicates)
-        values = self.predict_values(obs)
-        return predicates, values, log_probs
+    # def forward(
+    #         self,
+    #         obs: th.Tensor,
+    #         deterministic: bool = False
+    # ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+    #     pred_dist = self.get_distribution(obs)
+    #     predicates = pred_dist.get_actions(deterministic)
+    #     log_probs = pred_dist.log_prob(predicates)
+    #     values = self.predict_values(obs)
+    #     return predicates, values, log_probs
 
     def evaluate_actions(
             self,

@@ -144,6 +144,7 @@ class OptionsAgent(BasePolicy):
             # Load actor-critic policy
             ppo = OptionsPPO.load(model_path + ".zip", env, custom_objects={"progress_rollout_train": None,
                                                                             "progress_total": None})
+            # Old meta_policy becomes the option's policy
             policy: ActorCriticPolicy = ppo.policy.meta_policy
 
             old_option = self.options_hierarchy.options[level][position]
@@ -252,10 +253,14 @@ class OptionsAgent(BasePolicy):
         probs_regularized = th.exp(log_probs.T) + xi
         if self.termination_mode == "maggi":
             # Maggis way: max(0, 2p(w*|s) / p(w*|s)+p(w|s) - 1)
-            terminations = th.max(th.tensor(0), 2 * th.exp(log_probs[env_indices, sampled_option]) / (probs_regularized + th.exp(log_probs[env_indices, sampled_option])) - 1).T
+            # terminations = th.max(th.tensor(0), 2 * th.exp(log_probs[env_indices, sampled_option]) / (probs_regularized + th.exp(log_probs[env_indices, sampled_option])) - 1).T
+            terminations = th.clamp((2 * th.exp(log_probs[env_indices, sampled_option]) / (probs_regularized + th.exp(log_probs[env_indices, sampled_option])) - 1).T, 0, 1)
         else:
             # My way: max(0, 1-((p(w|s)+xi)/p(w*|s)))
-            terminations = th.max(th.tensor(0), 1 - (probs_regularized / th.exp(log_probs[env_indices, sampled_option])).T)
+            # terminations = th.max(th.tensor(0), 1 - (probs_regularized / th.exp(log_probs[env_indices, sampled_option])).T)
+            terminations = th.clamp((1 - (probs_regularized / th.exp(input=log_probs[env_indices, sampled_option])).T), 0, 1)
+
+        assert th.all((terminations >= 0) & (terminations <= 1)), "terminations contains values outside the range [0, 1]"
 
         # sample from bernoulli distribution with p=termination
         if deterministic:
@@ -292,9 +297,9 @@ class OptionsAgent(BasePolicy):
             log_probs = option_distribution.log_prob(actions)
             return (option_traces, actions), values, log_probs.unsqueeze(1)
 
-        actions = th.zeros(n_envs, *self.meta_policy.action_space.shape)
-        values = th.zeros(n_envs, option_traces.shape[1] + 1)
-        log_probs = th.zeros(n_envs, option_traces.shape[1] + 1)
+        actions = th.zeros(n_envs, *self.meta_policy.action_space.shape, device=self.device)
+        values = th.zeros(n_envs, option_traces.shape[1] + 1, device=self.device)
+        log_probs = th.zeros(n_envs, option_traces.shape[1] + 1, device=self.device)
 
         # Forward meta policy and replace top-level option if needed
 
@@ -342,7 +347,11 @@ class OptionsAgent(BasePolicy):
             # Determine new action (always executed)
             lowest_level_option_pos = self.preds2options(option_traces[env][-1])
             lowest_level_option = self.options_hierarchy[-1][lowest_level_option_pos]
-            actions[env], values[env, -1], log_probs[env, -1] = lowest_level_option(env_obs, deterministic)
+            # actions[env], values[env, -1], log_probs[env, -1] = lowest_level_option(env_obs, deterministic)
+            lowest_level_vals, lowest_level_dist = lowest_level_option(env_obs, deterministic)
+            actions[env] = lowest_level_dist.get_actions(deterministic)
+            values[env, -1] = lowest_level_vals
+            log_probs[env, -1] = lowest_level_dist.log_prob(actions[env])
 
         return (option_traces, actions), values, log_probs
 

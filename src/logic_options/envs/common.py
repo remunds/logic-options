@@ -235,7 +235,7 @@ def init_vec_env(name: str,
                                    **settings) for i in range(n_envs)]
         if n_envs > 1:
             # only forkserver works for me (fork leads to deadlock (waiting for recv))
-            vec_env = SubprocVecEnv(envs, start_method='fork')
+            vec_env = SubprocVecEnv(envs, start_method='forkserver')
             # vec_env = SubprocVecEnv(envs, start_method=MULTIPROCESSING_START_METHOD)
         else:
             vec_env = DummyVecEnv(envs)

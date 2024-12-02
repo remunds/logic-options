@@ -6,7 +6,7 @@ import numpy as np
 import torch as th
 from gymnasium.spaces import Space
 from stable_baselines3.common.distributions import CategoricalDistribution
-from stable_baselines3.common.policies import ActorCriticPolicy, BaseModel
+from stable_baselines3.common.policies import BaseModel
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
 from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.common.torch_layers import FlattenExtractor
@@ -14,6 +14,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 from torch import nn
 
 from logic_options.utils.common import get_net_from_layer_dims
+from logic_options.options.meta_policy import MetaPolicy
 
 
 class Option(nn.Module):
@@ -38,7 +39,7 @@ class Option(nn.Module):
                  lr_schedule: Schedule,
                  observation_space: Space = None,
                  action_space: Space = None,
-                 policy: ActorCriticPolicy = None,
+                 policy: MetaPolicy = None,
                  policy_trainable: bool = True,
                  value_fn_trainable: bool = True,
                  terminator_trainable: bool = True,
@@ -55,7 +56,8 @@ class Option(nn.Module):
         if policy is not None:
             self._policy = policy
         else:
-            self._policy = ActorCriticPolicy(
+            # self._policy = ActorCriticPolicy(
+            self._policy = MetaPolicy(
                 observation_space,
                 action_space,
                 lr_schedule,

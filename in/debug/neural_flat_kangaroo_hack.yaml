@@ -13,7 +13,7 @@ environment:
   normalize_observation: True
   normalize_reward: False
   hack: 
-    modifs: ["disable_monkeys", "disable_coconut"]
+    # modifs: ["disable_monkeys", "disable_coconut"]
     rewardfunc_path: "./in/reward_funcs/kangaroo.py"
 
 general:

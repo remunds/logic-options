@@ -66,9 +66,12 @@ class OptionsPPO(PPO):
                  **kwargs):
         kwargs["policy"] = OptionsAgent
         super().__init__(**kwargs)
-        self.policy.policy_terminator = policy_terminator
-        self.policy.termination_regularizer = options_termination_reg
-        self.policy.termination_mode = policy_termination_mode
+        if hasattr(self, "policy"):
+            # if not, the model was loaded from a checkpoint (and an option)
+            # policy will be loaded afterwards
+            self.policy.policy_terminator = policy_terminator
+            self.policy.termination_regularizer = options_termination_reg
+            self.policy.termination_mode = policy_termination_mode
 
         self.meta_learning_rate = meta_learning_rate
         self.meta_pi_ent_coef = meta_policy_ent_coef

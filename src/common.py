@@ -11,5 +11,5 @@ REWARD_MODE = {
     "mixed": 2,
     None: None,
 }
-MULTIPROCESSING_START_METHOD = "spawn" if os.name == 'nt' else "fork"  # 'nt' == Windows
+MULTIPROCESSING_START_METHOD = "spawn" if os.name == 'nt' else "forkserver"  # 'nt' == Windows
 MODELS_BASE_PATH = "out/"
