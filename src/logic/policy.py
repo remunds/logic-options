@@ -24,6 +24,8 @@ class NudgePolicy(MetaPolicy):
     # TODO: replace parent class ActorCriticPolicy with BasePolicy and implement own value net
 
     optimizer_class: Type[th.optim.Adam]
+    termination_regularizer: float = 0.00
+    termination_mode: str = "raban"
 
     def __init__(self,
                  env_name: str,
@@ -53,7 +55,7 @@ class NudgePolicy(MetaPolicy):
         self.predicates = predicates
         self.n_predicates = n_predicates
 
-        val_fn_path = f"src/logic/valuation/{env_name}.py"
+        val_fn_path = f"src/logic_options/logic/valuation/{env_name}.py"
         valuation_module = ValuationModuleExtended(val_fn_path, lang, device=device)
 
         facts_converter = FactsConverter(lang=lang, valuation_module=valuation_module, device=device)
@@ -113,6 +115,48 @@ class NudgePolicy(MetaPolicy):
         log_prob = dist.log_prob(actions)
         entropy = dist.entropy()
         return values, log_prob, entropy
+    
+    def get_terminations(self, obs, deterministic=False):
+        # global_values, option_distribution = self.meta_policy(obs, deterministic)
+        option_distribution = self.get_distribution(obs)
+        return self._get_terminations(len(obs), option_distribution, deterministic)
+
+    def _get_terminations(self, n_envs, option_distribution: Distribution, deterministic: bool = False) -> th.Tensor:
+        """
+        Computes what option should terminate based on the log probabilities of all options of the meta-policy.
+        """
+        xi = self.termination_regularizer
+        sampled_option = option_distribution.get_actions(deterministic)
+        if not isinstance(option_distribution, CategoricalDistribution):
+            raise NotImplementedError("Only discrete action spaces are supported for now.")
+
+        # get log_probs of all options/actions
+        # distribution expects shape (n_envs, n_actions)
+        n_actions = option_distribution.action_dim
+        log_probs = th.zeros((n_envs, n_actions)).to(self.device)
+        action_tensor = th.arange(n_actions).to(self.device)
+        for a in range(n_actions):
+            log_probs[:, a] = option_distribution.log_prob(action_tensor[a])
+
+        env_indices = th.arange(log_probs.shape[0]).to(self.device)
+        probs_regularized = th.exp(log_probs.T) + xi
+        if self.termination_mode == "maggi":
+            # Maggis way: max(0, 2p(w*|s) / p(w*|s)+p(w|s) - 1)
+            # terminations = th.max(th.tensor(0), 2 * th.exp(log_probs[env_indices, sampled_option]) / (probs_regularized + th.exp(log_probs[env_indices, sampled_option])) - 1).T
+            terminations = th.clamp((2 * th.exp(log_probs[env_indices, sampled_option]) / (probs_regularized + th.exp(log_probs[env_indices, sampled_option])) - 1).T, 0, 1)
+        else:
+            # My way: max(0, 1-((p(w|s)+xi)/p(w*|s)))
+            # terminations = th.max(th.tensor(0), 1 - (probs_regularized / th.exp(log_probs[env_indices, sampled_option])).T)
+            terminations = th.clamp((1 - (probs_regularized / th.exp(input=log_probs[env_indices, sampled_option])).T), 0, 1)
+
+        assert th.all((terminations >= 0) & (terminations <= 1)), "terminations contains values outside the range [0, 1]"
+
+        # sample from bernoulli distribution with p=termination
+        if deterministic:
+            terminations_sample = terminations > 0.5
+        else:
+            terminations_sample = th.bernoulli(terminations).bool()
+        return terminations_sample, terminations
 
 
 class ValuationModuleExtended(ValuationModule):

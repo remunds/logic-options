@@ -115,6 +115,7 @@ class MeetingRoom(Env):
         self.vec_norm = None
         self.action = None
         self.policy = None
+        self.option_pos = None
         self.option_history_map = np.zeros((self.n_buildings, self.n_floors, *floor_shape), dtype=int) - 1
 
         # Setup rendering
@@ -523,9 +524,11 @@ class MeetingRoom(Env):
                 if self.render_option_history:
                     self._render_option_history_field(x, y)
 
-        if self.option is not None:
+        if self.option is not None or self.option_pos is not None:
+            print(f"render termination based on: {'meta-policy' if self.option is None else 'option'}")
             self._render_termination_heatmap()
         elif self.action is not None:
+            print("render action")
             self._render_action_heatmap()
 
     def _render_field(self, x_coord, y_coord, color=(255, 255, 255), alpha: float = 0, surface = None):
@@ -650,7 +653,7 @@ class MeetingRoom(Env):
             (pygame.K_d,): 1,  # east
             (pygame.K_s,): 2,  # south
             (pygame.K_a,): 3,  # west
-            (pygame.K_PLUS,): 4,  # next
+            (pygame.K_EQUALS,): 4,  # next
             (pygame.K_MINUS,): 5,  # prev
         }
 
@@ -674,9 +677,21 @@ class MeetingRoom(Env):
                     self.current_pos[2:4] = [x, y]
                     obs = self._get_observation()
                     # obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
-                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
-                    termination_logp, _ = self.option.evaluate_terminations(obs_norm, termination_tensor)
-                    alpha = int(200 * np.exp(termination_logp[0].cpu().detach().numpy()))
+                    if self.vec_norm is not None:
+                        obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
+                    else:
+                        obs_norm = th.tensor(obs).unsqueeze(0)
+
+                    if self.option_pos is not None and self.policy is not None:
+                        # use meta-policy termination probabilities
+                        _, termination_probs = self.policy.meta_policy.get_terminations(obs_norm)
+                        termination_probs = termination_probs[0, self.option_pos]
+                    else:
+                        # use option termination probabilities
+                        termination_logp, _ = self.option.evaluate_terminations(obs_norm, termination_tensor)[0]
+                        termination_probs = th.exp(termination_logp)
+                    # alpha = int(200 * np.exp(termination_logp[0].cpu().detach().numpy()))
+                    alpha = int(200 * termination_probs.cpu().detach().numpy())
                     self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
         self.current_pos = orig_pos
 
@@ -699,8 +714,12 @@ class MeetingRoom(Env):
                     self.current_pos[2:4] = [x, y]
                     obs = self._get_observation()
                     # obs_norm = th.tensor(self.vec_norm.normalize_obs(obs), device="cuda").unsqueeze(0)
-                    obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
+                    if self.vec_norm is not None:
+                        obs_norm = th.tensor(self.vec_norm.normalize_obs(obs)).unsqueeze(0)
+                    else:
+                        obs_norm = th.tensor(obs).unsqueeze(0)
                     _, action_logp, _ = self.policy.evaluate_actions(obs_norm, action_tensor)
+                    print(np.exp(action_logp[0].cpu().detach().numpy()))
                     alpha = int(200 * np.exp(action_logp[0].cpu().detach().numpy()))
                     self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
         self.current_pos = orig_pos
@@ -718,6 +737,11 @@ class MeetingRoom(Env):
         self.option = option
         if option is not None and option.vec_norm is not None:
             vec_norm = option.vec_norm
+        self.vec_norm = vec_norm
+
+    def render_termination_heatmap_by_policy(self, policy, option_pos, vec_norm=None):
+        self.policy = policy
+        self.option_pos = option_pos
         self.vec_norm = vec_norm
 
     def render_action_heatmap_for_policy(self, action, policy=None, vec_norm=None):
