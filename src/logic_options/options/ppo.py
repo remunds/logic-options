@@ -63,6 +63,8 @@ class OptionsPPO(PPO):
                  print_more_detailed_progress: bool = False,
                  policy_terminator: bool = False,
                  policy_termination_mode: str = "raban",
+                 meta_activity_coef: float = 0,
+                 options_activity_coef: float = 0,
                  **kwargs):
         kwargs["policy"] = OptionsAgent
         super().__init__(**kwargs)
@@ -78,6 +80,7 @@ class OptionsPPO(PPO):
         self.meta_pi_clip_range = meta_policy_clip_range
         self.meta_vf_coef = meta_value_fn_coef
         self.meta_vf_clip_range = meta_value_fn_clip_range
+        self.meta_activity_coef = meta_activity_coef
 
         self.options_learning_rate = options_learning_rate
         self.options_pi_ent_coef = options_policy_ent_coef
@@ -87,6 +90,7 @@ class OptionsPPO(PPO):
         self.options_tn_ent_coef = options_terminator_ent_coef
         self.options_tn_clip_range = options_terminator_clip_range
         self.options_tn_reg = options_termination_reg
+        self.options_activity_coef = options_activity_coef
 
         self._setup_clip_ranges()
 
@@ -362,6 +366,7 @@ class OptionsPPO(PPO):
             evaluate_fn = policy.evaluate_actions
             pi_ent_coef = self.meta_pi_ent_coef
             vf_coef = self.meta_vf_coef
+            activity_coef = self.meta_activity_coef
             clip_range_pi, clip_range_vf = self._get_current_meta_clip_ranges()
         else:
             option = self.policy.options_hierarchy[level][position]
@@ -372,14 +377,24 @@ class OptionsPPO(PPO):
             evaluate_fn = option.evaluate_actions
             pi_ent_coef = self.options_pi_ent_coef
             vf_coef = self.options_vf_coef
+            activity_coef = self.options_activity_coef
             clip_range_pi, clip_range_vf = self._get_current_options_clip_ranges()
 
         entropy_losses = []
         pg_losses, value_losses = [], []
         clip_fractions = []
+        activity_losses = []
         approx_kl_divs = loss = None
 
         continue_training = True
+
+
+        highest_level = self.policy.hierarchy_size - 1
+        if level < highest_level: 
+            # not action level -> encourage uniform option activation
+            num_options = self.policy.hierarchy_shape[level + 1]
+            log_prob_should_be = np.log(1 / num_options)
+
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
@@ -441,7 +456,16 @@ class OptionsPPO(PPO):
                     if not option.value_fn_trainable:
                         value_loss = 0
 
-                loss = policy_loss + pi_ent_coef * entropy_loss + vf_coef * value_loss
+                # if activity_loss:
+                activity_loss_active = True
+                activity_loss = 0 
+                if activity_loss_active and level < highest_level:
+                    activity_loss = (log_prob - log_prob_should_be).abs().mean()
+                    activity_losses.append(activity_loss.item())
+                else:
+                    activity_losses.append(activity_loss)
+
+                loss = policy_loss + pi_ent_coef * entropy_loss + vf_coef * value_loss + activity_coef * activity_loss
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
@@ -481,6 +505,8 @@ class OptionsPPO(PPO):
             self.logger.record(base_str + "entropy_loss", np.mean(entropy_losses))
             self.logger.record(base_str + "approx_kl", np.mean(approx_kl_divs))
             self.logger.record(base_str + "clip_fraction", np.mean(clip_fractions))
+            if activity_loss:
+                self.logger.record(base_str + "activity_loss", np.mean(activity_losses))
             values = self.rollout_buffer.get_values(level, position)
             returns = self.rollout_buffer.get_returns(level, position)
             explained_var = explained_variance(values.flatten(), returns.flatten())

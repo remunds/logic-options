@@ -131,6 +131,7 @@ def run(config_path: str):
     # Init all meta policy schedules
     meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range"))
     meta_learning_rate = maybe_make_schedule(meta_policy.pop("learning_rate"))
+    options_activity_coef = options.pop("activity_coef", 0.0)
 
     if options is not None:
         options_kwargs = dict(
@@ -142,12 +143,15 @@ def run(config_path: str):
             options_terminator_ent_coef=options["terminator_ent_coef"],
             options_terminator_clip_range=options["terminator_clip_range"],
             options_termination_reg=options["termination_regularizer"],
+            options_activity_coef=options_activity_coef,
         )
     else:
         options_kwargs = dict()
 
     policy_terminator = meta_policy.pop("policy_terminator", False) 
     policy_termination_mode = meta_policy.pop("policy_termination_mode", "raban")
+    meta_activity_coef = meta_policy.pop("activity_coef", 0.0)
+
     options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,
@@ -161,6 +165,7 @@ def run(config_path: str):
         meta_value_fn_clip_range=meta_policy["value_fn_clip_range"],
         policy_terminator=policy_terminator,
         policy_termination_mode=policy_termination_mode,
+        meta_activity_coef=meta_activity_coef,
         **general,
         **options_kwargs,
     )

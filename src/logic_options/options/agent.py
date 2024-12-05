@@ -123,7 +123,7 @@ class OptionsAgent(BasePolicy):
             return
 
         self.pretrained_options = configuration
-        from options.ppo import OptionsPPO
+        from logic_options.options.ppo import OptionsPPO
 
         for component in configuration:
             level = component["level"]
