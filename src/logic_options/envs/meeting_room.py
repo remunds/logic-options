@@ -740,6 +740,7 @@ class MeetingRoom(Env):
         self.vec_norm = vec_norm
 
     def render_termination_heatmap_by_policy(self, policy, option_pos, vec_norm=None):
+        # import ipdb; ipdb.set_trace()
         self.policy = policy
         self.option_pos = option_pos
         self.vec_norm = vec_norm

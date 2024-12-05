@@ -47,7 +47,6 @@ class Renderer:
                                 render_mode="rgb_array",
                                 render_oc_overlay=render_oc_overlay,
                                 reward_mode="human")
-        import ipdb; ipdb.set_trace()
         self.uses_options = self.model.hierarchy_size > 0
         self.logic = self.model.policy.logic_meta_policy
         if render_predicate_probs:
@@ -244,9 +243,12 @@ class Renderer:
                 elif event.key in analyze_termination_keys.keys():  # analyze option termination
                     option_pos = analyze_termination_keys[event.key] 
                     if option_pos < len(self.model.policy.options_hierarchy[0]):
+                        if self.env.action is not None:
+                            # currently rendering action heatmap, turn off
+                            self.env.render_action_heatmap_for_policy(action=None)
+
                         option_to_render = self.model.policy.options_hierarchy[0][option_pos]
-                        if self.env.option != option_to_render:
-                            # if self.model.policy.policy_terminator:
+                        if self.env.option != option_to_render and self.env.option_pos != option_pos:
                             if self.model.policy_terminator:
                                 self.env.render_termination_heatmap_by_policy(self.model.policy, option_pos, self.vec_norm)
                             else:
@@ -265,6 +267,13 @@ class Renderer:
                     print(f"Option invocation probability for option {event.key - pygame.K_0}:")
                     option_pos = event.key - pygame.K_0
                     if option_pos < len(self.model.policy.options_hierarchy[0]):
+                        if self.env.option is not None:
+                            # currently rendering option termination heatmap, turn off
+                            self.env.render_termination_heatmap_of_option(None)
+                        if self.env.option_pos is not None:
+                            # currently rendering option termination heatmap, turn off
+                            self.env.render_termination_heatmap_by_policy(None, None)
+
                         if self.env.action != option_pos:
                             self.env.render_action_heatmap_for_policy(policy=self.model.policy.meta_policy,
                                                                       action=option_pos,
