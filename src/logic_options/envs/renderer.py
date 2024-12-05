@@ -47,6 +47,7 @@ class Renderer:
                                 render_mode="rgb_array",
                                 render_oc_overlay=render_oc_overlay,
                                 reward_mode="human")
+        import ipdb; ipdb.set_trace()
         self.uses_options = self.model.hierarchy_size > 0
         self.logic = self.model.policy.logic_meta_policy
         if render_predicate_probs:
@@ -245,13 +246,14 @@ class Renderer:
                     if option_pos < len(self.model.policy.options_hierarchy[0]):
                         option_to_render = self.model.policy.options_hierarchy[0][option_pos]
                         if self.env.option != option_to_render:
-                            import ipdb; ipdb.set_trace()
-                            if self.model.policy.policy_terminator:
+                            # if self.model.policy.policy_terminator:
+                            if self.model.policy_terminator:
                                 self.env.render_termination_heatmap_by_policy(self.model.policy, option_pos, self.vec_norm)
                             else:
                                 self.env.render_termination_heatmap_of_option(option_to_render, self.vec_norm)
                         else:
-                            if self.model.policy.policy_terminator: 
+                            # if self.model.policy.policy_terminator: 
+                            if self.model.policy_terminator: 
                                 self.env.render_termination_heatmap_by_policy(None, None)
                             else:
                                 self.env.render_termination_heatmap_of_option(None)
