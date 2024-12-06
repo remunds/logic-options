@@ -13,6 +13,7 @@ from logic_options.utils.render import render_options_overlay
 from eval_dist_to_joey import get_distance_to_joey
 
 from stable_baselines3.common.vec_env import unwrap_vec_normalize
+from stable_baselines3.common.utils import obs_as_tensor
 import time
 
 SCREENSHOTS_BASE_PATH = "out/screenshots/"
@@ -122,7 +123,27 @@ class Renderer:
         while self.running:
             # print(obs[0, 0])
 
+            # (options, actions), _, _ = self.model.forward_all(obs, options, option_terminations, self.deterministic)
             (options, actions), _, _ = self.model.forward_all(obs, options, option_terminations, self.deterministic)
+            # log_prob all possible options
+            # [env][option] .. [1(dist)]
+            prob_tensor = th.tensor([0, 1, 2, 3, 4, 5], device=self.model.device)
+            if isinstance(obs, np.ndarray):
+                obs = obs_as_tensor(obs, self.model.device)
+            if len(self.model.policy.options_hierarchy.options) > 0:
+                option_tensor = th.tensor([0, 1, 2], device=self.model.device)
+            else:
+                option_tensor = th.tensor([0, 1, 2, 3, 4, 5], device=self.model.device)
+            meta_probs = self.model.policy.meta_policy(obs)[1].log_prob(option_tensor).exp()
+            print(meta_probs)
+            if len(self.model.policy.options_hierarchy.options) > 0:
+                probs = self.model.policy.options_hierarchy[0][0](obs)[1].log_prob(prob_tensor).exp()
+                print(probs)
+                probs = self.model.policy.options_hierarchy[0][1](obs)[1].log_prob(prob_tensor).exp()
+                print(probs)
+                probs = self.model.policy.options_hierarchy[0][2](obs)[1].log_prob(prob_tensor).exp()
+                print(probs)
+
 
             if self.uses_options and hasattr(self.env, "register_current_option"):
                 self.env.register_current_option(options[0])
@@ -209,7 +230,6 @@ class Renderer:
         pressed_keys = tuple(pressed_keys)
         if pressed_keys in self.keys2actions.keys():
             print(f"Pressed keys: {pressed_keys}")
-            print(self.keys2actions[pressed_keys])
             return self.keys2actions[pressed_keys]
         else:
             return None  # NOOP

@@ -719,7 +719,6 @@ class MeetingRoom(Env):
                     else:
                         obs_norm = th.tensor(obs).unsqueeze(0)
                     _, action_logp, _ = self.policy.evaluate_actions(obs_norm, action_tensor)
-                    print(np.exp(action_logp[0].cpu().detach().numpy()))
                     alpha = int(200 * np.exp(action_logp[0].cpu().detach().numpy()))
                     self._render_field(x, y, color=(*color, alpha), surface=overlay_surface)
         self.current_pos = orig_pos
