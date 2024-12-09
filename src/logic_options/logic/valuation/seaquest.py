@@ -66,6 +66,19 @@ def oxygen_low(oxygen_bar: th.Tensor) -> th.Tensor:
     result = oxygen_bar[..., 1] < 16
     return bool_to_probs(result)
 
+def oxygen_high_or_med(oxygen_bar: th.Tensor) -> th.Tensor:
+    """True iff oxygen bar is above 16/64."""
+    result = oxygen_bar[..., 1] >= 16
+    return bool_to_probs(result)
+
+# check all 6 divers for visibility
+def diver_available(collected_diver1: th.Tensor, collected_diver2: th.Tensor, collected_diver3: th.Tensor, collected_diver4: th.Tensor, collected_diver5: th.Tensor, collected_diver6: th.Tensor) -> th.Tensor:
+    """True iff at least one collected diver symbol is not visible (and thus available)."""
+    # result = visible(collected_diver1) & visible(collected_diver2) & visible(collected_diver3) & visible(collected_diver4) & visible(collected_diver5) & visible(collected_diver6) 
+    # simply check visibility
+    result = collected_diver1[..., 0] == 0 or collected_diver2[..., 0] == 0 or collected_diver3[..., 0] == 0 or collected_diver4[..., 0] == 0 or collected_diver5[..., 0] == 0 or collected_diver6[..., 0] == 0
+    return bool_to_probs(result)
+
 
 def test_predicate_global(global_state: th.Tensor) -> th.Tensor:
     result = global_state[..., 0, 2] < 100

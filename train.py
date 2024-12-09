@@ -131,9 +131,9 @@ def run(config_path: str):
     # Init all meta policy schedules
     meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range"))
     meta_learning_rate = maybe_make_schedule(meta_policy.pop("learning_rate"))
-    options_activity_coef = options.pop("activity_coef", 0.0)
 
     if options is not None:
+        options_activity_coef = options.pop("activity_coef", 0.0)
         options_kwargs = dict(
             options_policy_clip_range=maybe_make_schedule(options.pop("policy_clip_range")),
             options_learning_rate=maybe_make_schedule(options.pop("learning_rate")),

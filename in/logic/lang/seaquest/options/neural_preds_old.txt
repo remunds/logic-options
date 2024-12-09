@@ -1,5 +1,6 @@
 visible:1:oenemy
 visible:1:odiver
+visible:1:ocollecteddiver
 facing_left:1:oplayer
 facing_right:1:oplayer
 left_of:2:oplayer,oenemy
@@ -17,3 +18,5 @@ same_depth:2:oplayer,oenemy
 same_depth:2:oplayer,odiver
 same_depth:2:oplayer,omissile
 oxygen_low:1:ooxygenbar
+oxygen_high_or_med:1:ooxygenbar
+diver_available:6:ocollecteddiver,ocollecteddiver,ocollecteddiver,ocollecteddiver,ocollecteddiver,ocollecteddiver

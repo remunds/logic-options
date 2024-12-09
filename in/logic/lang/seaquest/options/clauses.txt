@@ -1,0 +1,3 @@
+opt0_collect_divers(X):-oxygen_high_or_med(oxygenbar).
+opt1_surface(X):-oxygen_low(oxygenbar),visible(collecteddiver).
+opt2_fight_enemies(X):-close_by(player,enemy).

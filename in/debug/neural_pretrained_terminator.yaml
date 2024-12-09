@@ -1,7 +1,7 @@
 name: "debug"
 description: "Uses the pre-trained components"
 device: cuda
-cores: 1
+cores: 4
 seed: 0
 
 environment:
@@ -28,20 +28,20 @@ general:
   normalize_advantage: True
 
 meta_policy:
-  logic: True
-  policy_ent_coef: 0.00001
+  logic: False
+  policy_ent_coef: 0.1
   policy_clip_range:  # PPO clipping epsilon
     initial_value: 0.2
     schedule_type: linear
-  value_fn_coef: 0.0025
+  value_fn_coef: 0.05
   value_fn_clip_range:
   learning_rate:  # Adam
-    initial_value: 0.001
+    initial_value: 0.002
     schedule_type: exponential
     half_life_period: 0.25
   policy_terminator: True # Use new meta-probability based termination
   policy_termination_mode: "raban"
-  activity_coef: 0 #No activity loss
+  activity_coef: 0 # Do not use activity loss
 
 options:
   policy_ent_coef: 0.1

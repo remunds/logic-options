@@ -1,0 +1,63 @@
+name: "logic_hierarchy"
+description: ""
+device: cuda
+cores: 1
+seed: 0
+
+environment:
+  name: "ALE/Seaquest-v5"
+  object_centric: False
+  reward_mode: env  # env, human, mixed
+  framestack: 1
+  frameskip: 1
+  normalize_observation: False
+  normalize_reward: False
+  # prune_concept: default  # default or external: use pruned focusfile (from default 'focusfiles' dir or external 'baselines_focusfiles' dir. for custom pruning and or docker mount)
+  exclude_properties: False  # exclude object properties (like position) from feature vector
+  freeze_invisible_obj: False
+
+general:
+  hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [16, 16]  # the network architecture of each individual policy and value function
+  total_timesteps: 10e6
+  n_steps: 512
+  n_epochs: 6
+  batch_size: 256  # decrease if out-of-memory error is observed
+  gamma: 0.99
+  gae_lambda: 0.0
+  normalize_advantage: True
+
+meta_policy:
+  logic: True
+  policy_ent_coef: 0.00001
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.2
+    schedule_type: linear
+  value_fn_coef: 0.0025
+  value_fn_clip_range: 0.1
+  learning_rate:  # Adam
+    initial_value: 0.001
+    schedule_type: exponential
+    half_life_period: 0.25
+
+options:
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
+  terminator_ent_coef: 0.1
+  terminator_clip_range: 0.1
+  termination_regularizer: -100 # directly terminate for better learning
+  # termination_regularizer: 0.01 #bacon et al.
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.1
+
+evaluation:
+  frequency: 10000
+  deterministic: False
+  n_episodes: 10
+  render: False
