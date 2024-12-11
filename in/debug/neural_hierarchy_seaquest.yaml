@@ -1,0 +1,64 @@
+name: "debug"
+description: ""
+device: cuda
+cores: 1
+seed: 0
+
+environment:
+  name: "ALE/Seaquest-v5"
+  object_centric: True
+  reward_mode: env
+  framestack: 4
+  frameskip: 1
+  normalize_observation: True
+  normalize_reward: True
+
+general:
+  hierarchy_shape: [8]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  # net_arch: [16, 16]  # the network architecture of each individual option policy
+  net_arch: [8, 8]  # try smaller values to decrease possibility of choosing the same option all the time 
+  total_timesteps: 10e6
+  n_steps: 512
+  n_epochs: 6
+  batch_size: 256
+  gamma: 0.9
+  gae_lambda: 0.0
+  normalize_advantage: True
+
+meta_policy:
+  logic: False
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.25
+  policy_terminator: False
+  # policy_terminator: True # Use new termination by meta-probabilities
+  # policy_termination_mode: "maggi"
+
+options:
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
+  terminator_ent_coef: 0.1
+  terminator_clip_range: 0.1
+  termination_regularizer: -0.2
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.1
+
+evaluation:
+  frequency: 10000
+  deterministic: True
+  render: False
+  early_stop_on_no_reward: 500
+  n_episodes: 12
