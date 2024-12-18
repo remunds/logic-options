@@ -52,7 +52,6 @@ class Option(nn.Module):
                 and action_space is not None)
 
         super().__init__()
-
         if policy is not None:
             self._policy = policy
         else:
@@ -64,6 +63,7 @@ class Option(nn.Module):
                 features_extractor_class=FlattenExtractor,
                 features_extractor_kwargs=None,
                 share_features_extractor=True,
+                net_arch=net_arch,
                 **kwargs
             )
 
@@ -100,6 +100,7 @@ class Option(nn.Module):
                 optimizer_kwargs=self._policy.optimizer_kwargs,
                 normalize_images=self._policy.normalize_images,
             )
+        import ipdb; ipdb.set_trace()
 
     def get_policy(self):
         return self._policy
@@ -204,6 +205,12 @@ class Terminator(BaseModel):
 
     def _get_dist_from_latent(self, latent_tn: th.Tensor) -> CategoricalDistribution:
         mean_termination = self.net(latent_tn)
+        # starts low at tensor([[-0.6931,  0.6931]], grad_fn=<LogSoftmaxBackward>)
+        # but grows with training
+        # tensor([[-1.2959,  1.4343]], device='cuda:0')
+        if th.isnan(mean_termination).any():
+            print("Found NaN in termination logits")
+            import ipdb; ipdb.set_trace()
         return self.categorical.proba_distribution(action_logits=mean_termination)
 
     def evaluate(self, obs: th.Tensor, terminations: th.Tensor) -> (th.Tensor, th.Tensor):

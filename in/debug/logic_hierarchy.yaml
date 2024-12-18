@@ -47,7 +47,7 @@ options:
   value_fn_clip_range: 0.1
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: -0.2
+  termination_regularizer: -0.2 #works best
   # termination_regularizer: 0.01 #bacon et al.
   learning_rate:  # Adam
     initial_value: 0.002

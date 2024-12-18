@@ -411,36 +411,6 @@ class OptionsAgent(BasePolicy):
 
         return terminations, log_probs
     
-    def forward_new_terminator(
-            self,
-            obs: th.Tensor,
-            option_traces: th.Tensor,
-            deterministic: bool = False
-    ) -> Tuple[th.Tensor, th.Tensor]:
-        """
-        Use log_prob of actions of all options to determine whether 
-        current option should terminate (because another option is better). 
-        """
-        # get all log_probs
-        n_envs = len(obs)
-        option_traces = option_traces.clone().type(th.long)
-        option_traces[:, 0] = self.preds2options(option_traces[:, 0])
-        log_probs = th.zeros((n_envs, self.hierarchy_size), dtype=th.float)
-        for env_id, trace in enumerate(option_traces):
-            env_obs = th.unsqueeze(obs[env_id], dim=0)
-            for level, position in enumerate(trace):
-                option = self.options_hierarchy[level][position]
-                _, log_prob = option(env_obs, deterministic)
-                log_probs[env_id, level] = log_prob
-        #TODO
-        # get highest log_prob for each option
-
-        # check if highest log_prob is higher than current log_prob
-        # if yes, terminate current option and start new option
-
-
-
-
     def get_option_termination_dist(self, obs: th.Tensor, option_idx: th.Tensor) -> CategoricalDistribution:
         option = self.get_option_by_idx(option_idx)
         return option.get_termination_dist(obs)
