@@ -289,7 +289,6 @@ class OptionsAgent(BasePolicy):
         """
         n_envs = len(obs)
         option_traces = option_traces.clone().type(th.long)
-
         if self.hierarchy_size == 0:
             values, option_distribution = self.meta_policy(obs, deterministic)
             # actions, values, log_probs = self.meta_policy(obs, deterministic)
@@ -334,6 +333,7 @@ class OptionsAgent(BasePolicy):
                 option = self.options_hierarchy[level][option_pos]
 
                 # Could probably reuse termination_distribution here 
+                #TODO: adapt to new forward call (values, dist), only important with higher hierarchy levels
                 new_lower_level_option_pos, values[env][level + 1], log_probs[env][level + 1] = \
                     option(env_obs, deterministic)
 

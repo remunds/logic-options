@@ -168,8 +168,8 @@ class Renderer:
 
             self.reset = False
 
-            self._handle_user_input()
-            human_action = self._get_action()
+            # self._handle_user_input()
+            # human_action = self._get_action()
 
             if self.shadow_mode:
                 if self.wait_for_input:

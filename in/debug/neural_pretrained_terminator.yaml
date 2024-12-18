@@ -18,7 +18,7 @@ environment:
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch: [4, 4]  # the network architecture of each individual policy and value function
+  net_arch: [2, 2]  # the network architecture of each individual policy and value function
   total_timesteps: 10e6
   n_steps: 512
   n_epochs: 6
@@ -40,7 +40,7 @@ meta_policy:
     schedule_type: exponential
     half_life_period: 0.25
   policy_terminator: True # Use new meta-probability based termination
-  policy_termination_mode: "raban"
+  policy_termination_mode: "maggi"
   activity_coef: 0 # Do not use activity loss
 
 options:
@@ -52,7 +52,7 @@ options:
   value_fn_clip_range:
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: 0.01
+  termination_regularizer: 0.00
   learning_rate:  # Adam
     initial_value: 0.002
     schedule_type: exponential

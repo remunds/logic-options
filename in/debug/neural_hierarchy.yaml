@@ -19,7 +19,7 @@ environment:
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   # net_arch: [16, 16]  # the network architecture of each individual option policy
-  net_arch: [8, 8]  # try smaller values to decrease possibility of choosing the same option all the time 
+  net_arch: [2, 2]  # try smaller values to decrease possibility of choosing the same option all the time 
   total_timesteps: 10e6
   n_steps: 512
   n_epochs: 6
@@ -52,14 +52,14 @@ options:
   value_fn_clip_range: 0.1
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: -0.2
+  termination_regularizer: 0.0
   learning_rate:  # Adam
     initial_value: 0.002
     schedule_type: exponential
     half_life_period: 0.1
 
 evaluation:
-  frequency: 1000
+  frequency: 10000
   deterministic: False
   render: False
   early_stop_on_no_reward: 500
