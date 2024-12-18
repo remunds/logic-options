@@ -3,4 +3,4 @@ opt1:1:image
 opt2:1:image
 opt0_collect_divers:1:image
 opt1_surface:1:image
-opt2_idle:1:image
+opt2_fight_enemies:1:image

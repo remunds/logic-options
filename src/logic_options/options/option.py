@@ -100,7 +100,6 @@ class Option(nn.Module):
                 optimizer_kwargs=self._policy.optimizer_kwargs,
                 normalize_images=self._policy.normalize_images,
             )
-        import ipdb; ipdb.set_trace()
 
     def get_policy(self):
         return self._policy
