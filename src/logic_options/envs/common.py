@@ -43,7 +43,6 @@ def make_hackatari_env(name: str,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
         env = HackAtari(name, hud=True, **kwargs)
-        # env = OCAtari(name, hud=True, **kwargs)
         env = AtariWrapper(env, frame_skip=frameskip, terminal_on_life_loss=False, clip_reward=False)
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -88,13 +87,14 @@ def make_logic_env(name: str,
                    render_oc_overlay: bool,
                    accept_predicates: bool = True,
                    seed: int = None,
+                   hack: dict = {},
                    **kwargs):
     def _init():
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
-        elif "hack" in name:
+        if hack:
             raw_env = HackAtari(name, mode="revised", hud=True,
-                              render_oc_overlay=render_oc_overlay, **kwargs)
+                              render_oc_overlay=render_oc_overlay, **hack)
         elif "ALE" in name:
             raw_env = OCAtari(name, mode="revised", hud=True,
                               render_oc_overlay=render_oc_overlay, **kwargs)
@@ -166,7 +166,7 @@ def init_vec_env(name: str,
         assert framestack == 1
         assert not normalize_observation
         vec_env = DummyVecEnv([make_logic_env(name, accept_predicates=accept_predicates,
-                                              **settings)])
+                                              hack=hack,**settings)])
 
     elif name == "MeetingRoom":
         if n_envs > 1:
@@ -183,7 +183,6 @@ def init_vec_env(name: str,
                                vec_env_cls=vec_env_cls,
                                vec_env_kwargs=vec_env_kwargs)
         vec_env = VecFrameStack(vec_env, n_stack=framestack)
-
     elif object_centric:
         if hack: 
             envs = [make_hackatari_env(name=name,

@@ -195,14 +195,21 @@ class Terminator(BaseModel):
         return termination.type(th.BoolTensor), log_prob
 
     def get_distribution(self, obs: th.Tensor) -> CategoricalDistribution:
+        if th.isnan(obs).any():
+            print("Found NaN in obs")
+            import ipdb; ipdb.set_trace()
         latent_tn = self._get_latent(obs)
         return self._get_dist_from_latent(latent_tn)
 
     def _get_latent(self, obs: th.Tensor) -> th.Tensor:
         features = self.extract_features(obs, self.features_extractor)
+        if th.isnan(features).any():
+            print("Found NaN in features")
+            import ipdb; ipdb.set_trace()
         return self.mlp_extractor.forward(features)
 
     def _get_dist_from_latent(self, latent_tn: th.Tensor) -> CategoricalDistribution:
+        # here, latent_tn is already nan
         mean_termination = self.net(latent_tn)
         # starts low at tensor([[-0.6931,  0.6931]], grad_fn=<LogSoftmaxBackward>)
         # but grows with training

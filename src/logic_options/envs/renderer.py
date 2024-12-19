@@ -170,6 +170,7 @@ class Renderer:
 
             # self._handle_user_input()
             # human_action = self._get_action()
+            human_action = None
 
             if self.shadow_mode:
                 if self.wait_for_input:

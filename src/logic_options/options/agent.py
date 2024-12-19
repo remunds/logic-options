@@ -50,7 +50,6 @@ class OptionsAgent(BasePolicy):
                  device: str = None,
                  **kwargs):
         super().__init__(observation_space=observation_space, action_space=action_space)
-
         if net_arch is None:
             net_arch = [64, 64]
         self.lr_schedule = lr_schedule
