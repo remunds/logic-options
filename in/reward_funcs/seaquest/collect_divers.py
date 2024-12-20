@@ -20,7 +20,7 @@ def reward_function(self) -> float:
     if current_divers > collected_divers: 
         reward += 10
 
-    if player is not None and (player.dy != 0 or player.dx != 0) and player.y < 46: # 46 is surface
+    if player is not None and (player.dy != 0 or player.dx != 0) and player.y > 46: # 46 is surface
         # encourage moving under water
         reward += 0.01
 
