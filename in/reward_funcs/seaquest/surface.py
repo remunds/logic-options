@@ -3,6 +3,7 @@ oxygen_low = False
 def reward_function(self) -> float:
     # requires oxygen to be low
     # +0.1 for moving up (-0.1 for moving down)
+    # +0.01 for staying down
     # -100 for losing a life
 
     global prev_player, oxygen_low
@@ -11,9 +12,10 @@ def reward_function(self) -> float:
     reward = 0
 
     for obj in self.objects:
-        if 'oxygenbar' in str(obj).lower() and 'depleted' not in str(obj).lower():
+        obj_name = str(obj).lower()
+        if 'oxygenbar' in obj_name and 'depleted' not in obj_name and 'logo' not in obj_name: 
             oxygenbar = obj
-        if 'player' in str(obj).lower() and 'missile' not in str(obj).lower() and 'score' not in str(obj).lower():
+        if 'player' in obj_name and 'missile' not in obj_name and 'score' not in obj_name:
             player = obj
     
     if oxygenbar is not None:

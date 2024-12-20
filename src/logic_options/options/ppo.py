@@ -581,6 +581,13 @@ class OptionsPPO(PPO):
                 # Optimization step
                 terminator.optimizer.zero_grad()
                 loss.backward()
+                # log the gradients
+                grads = [p.grad for p in terminator.parameters() if p.grad is not None]
+                # check if any grad is smaller than 1e-6 or larger than 1e6
+                if any(grad.abs().max() > 1e6 for grad in grads):
+                    print("Gradients are exploding, skipping update")
+                    self.logger.record("terminator/grads", th.cat([g.flatten() for g in grads]).norm().item())
+                    continue_training = False
                 # Clip grad norm
                 th.nn.utils.clip_grad_norm_(terminator.parameters(), self.max_grad_norm)
                 terminator.optimizer.step()

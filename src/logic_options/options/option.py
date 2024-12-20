@@ -190,19 +190,23 @@ class Terminator(BaseModel):
         :return: termination and log probability of terminating
         """
         distribution = self.get_distribution(obs)
+        self.distribution = distribution #TODO: remove
         termination = distribution.get_actions(deterministic=deterministic).squeeze(0)
         log_prob = distribution.log_prob(termination)
         return termination.type(th.BoolTensor), log_prob
 
     def get_distribution(self, obs: th.Tensor) -> CategoricalDistribution:
+        self.obs = obs #TODO: remove
         if th.isnan(obs).any():
             print("Found NaN in obs")
             import ipdb; ipdb.set_trace()
         latent_tn = self._get_latent(obs)
+        self.latent_tn = latent_tn #TODO: remove
         return self._get_dist_from_latent(latent_tn)
 
     def _get_latent(self, obs: th.Tensor) -> th.Tensor:
         features = self.extract_features(obs, self.features_extractor)
+        self.features = features #TODO: remove
         if th.isnan(features).any():
             print("Found NaN in features")
             import ipdb; ipdb.set_trace()
