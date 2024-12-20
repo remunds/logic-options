@@ -1,24 +1,28 @@
+prev_player = None
 collected_divers = 0
 def reward_function(self) -> float:
     # +1 reward for collecting a diver
     # -10 for losing a life
-    global collected_divers
+
+    global prev_player, collected_divers
+    player = None
     current_divers = 0
-    lives = None
     reward = 0
 
     for obj in self.objects:
-        if 'collecteddiver' in str(obj).lower():
+        obj_name = str(obj).lower()
+        if 'collecteddiver' in obj_name: 
             current_divers += 1
-        if 'lives' in str(obj).lower():
-            lives = obj
+        if 'player' in obj_name and 'missile' not in obj_name and 'score' not in obj_name:
+            player = obj
 
     reward += current_divers
     reward -= collected_divers
 
-    if lives is not None:
-        reward += lives.value_diff * 10 # is (val-prev_val) (-1 if lost a life)
+    if prev_player is not None and player is None: # player is dead
+        reward -= 10
 
     collected_divers = current_divers
+    prev_player = player
 
     return reward

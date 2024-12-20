@@ -120,6 +120,8 @@ class Renderer:
 
         obs = self.vec_env.reset()
 
+        prev_meta_probs = None
+
         while self.running:
             # print(obs[0, 0])
 
@@ -135,14 +137,18 @@ class Renderer:
             else:
                 option_tensor = th.tensor([0, 1, 2, 3, 4, 5], device=self.model.device)
             meta_probs = self.model.policy.meta_policy(obs)[1].log_prob(option_tensor).exp()
-            print(meta_probs)
-            if len(self.model.policy.options_hierarchy.options) > 0:
-                probs = self.model.policy.options_hierarchy[0][0](obs)[1].log_prob(prob_tensor).exp()
-                print(probs)
-                probs = self.model.policy.options_hierarchy[0][1](obs)[1].log_prob(prob_tensor).exp()
-                print(probs)
-                probs = self.model.policy.options_hierarchy[0][2](obs)[1].log_prob(prob_tensor).exp()
-                print(probs)
+
+            if prev_meta_probs is None or not th.eq(meta_probs, prev_meta_probs).all():
+                print(meta_probs)
+                prev_meta_probs = meta_probs
+
+                if len(self.model.policy.options_hierarchy.options) > 0:
+                    probs = self.model.policy.options_hierarchy[0][0](obs)[1].log_prob(prob_tensor).exp()
+                    print(probs)
+                    probs = self.model.policy.options_hierarchy[0][1](obs)[1].log_prob(prob_tensor).exp()
+                    print(probs)
+                    probs = self.model.policy.options_hierarchy[0][2](obs)[1].log_prob(prob_tensor).exp()
+                    print(probs)
 
 
             if self.uses_options and hasattr(self.env, "register_current_option"):

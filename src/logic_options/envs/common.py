@@ -92,9 +92,9 @@ def make_logic_env(name: str,
     def _init():
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
-        if hack:
+        elif hack:
             raw_env = HackAtari(name, mode="revised", hud=True,
-                              render_oc_overlay=render_oc_overlay, **hack)
+                              render_oc_overlay=render_oc_overlay, **hack, **kwargs)
         elif "ALE" in name:
             raw_env = OCAtari(name, mode="revised", hud=True,
                               render_oc_overlay=render_oc_overlay, **kwargs)
