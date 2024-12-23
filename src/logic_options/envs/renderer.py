@@ -104,6 +104,7 @@ class Renderer:
         pygame.init()
         pygame.display.set_caption("Environment")
         frame = self.vec_env.render().swapaxes(0, 1)
+        # frame = self.vec_env.render()
         self.env_render_shape = frame.shape[:2]
         window_shape = list(self.env_render_shape)
         if self.render_predicate_probs:
@@ -117,6 +118,7 @@ class Renderer:
         option_terminations = th.ones(1, self.model.hierarchy_size, dtype=th.bool, device=self.model.device)
         options = th.zeros(1, self.model.hierarchy_size, dtype=th.long, device=self.model.device)
         length = 0
+        print_probs = False
 
         obs = self.vec_env.reset()
 
@@ -138,7 +140,7 @@ class Renderer:
                 option_tensor = th.tensor([0, 1, 2, 3, 4, 5], device=self.model.device)
             meta_probs = self.model.policy.meta_policy(obs)[1].log_prob(option_tensor).exp()
 
-            if prev_meta_probs is None or not th.eq(meta_probs, prev_meta_probs).all():
+            if print_probs and (prev_meta_probs is None or not th.eq(meta_probs, prev_meta_probs).all()):
                 print(meta_probs)
                 prev_meta_probs = meta_probs
 
@@ -206,6 +208,7 @@ class Renderer:
                 # d = get_distance_to_joey(game_objects)
                 # print("Distance to Joey:", d)
 
+                print(f"Reward {reward[0]:.2f}")
                 if self.shadow_mode and float(reward) != 0:
                     print(f"Reward {reward[0]:.2f}")
 

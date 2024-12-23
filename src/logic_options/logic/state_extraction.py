@@ -4,7 +4,7 @@ from abc import ABC
 import torch as th
 import numpy as np
 from ocatari.ram.game_objects import GameObject
-from ocatari.ram.seaquest import MAX_ESSENTIAL_OBJECTS
+from ocatari.ram.seaquest import MAX_NB_OBJECTS
 
 
 class LogicStateExtractor(ABC):
@@ -104,15 +104,15 @@ class SeaquestExtractor(LogicStateExtractor):
         # Compute index offsets. Needed to deal with multiple same-category objects
         self.obj_offsets = {}
         offset = 0
-        for (obj, max_count) in MAX_ESSENTIAL_OBJECTS.items():
+        for (obj, max_count) in MAX_NB_OBJECTS.items():
             self.obj_offsets[obj] = offset
             offset += max_count
-        self.relevant_objects = set(MAX_ESSENTIAL_OBJECTS.keys())
+        self.relevant_objects = set(MAX_NB_OBJECTS.keys())
 
     def __call__(self, obs: List[GameObject]) -> th.Tensor:
         state = th.zeros((self.n_objects, self.n_features), dtype=th.int32)
 
-        obj_count = {k: 0 for k in MAX_ESSENTIAL_OBJECTS.keys()}
+        obj_count = {k: 0 for k in MAX_NB_OBJECTS.keys()}
 
         for obj in obs:
             if obj.category not in self.relevant_objects:

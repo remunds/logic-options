@@ -7,7 +7,8 @@ def reward_function(self) -> float:
 
     global prev_player
     player = None
-    enemies = []
+    sharks = []
+    subs = []
     missiles = []
     reward = 0
 
@@ -15,8 +16,10 @@ def reward_function(self) -> float:
         obj_name = str(obj).lower()
         if 'player' in obj_name and 'missile' not in obj_name and 'score' not in obj_name:
             player = obj
-        if 'shark' in obj_name or 'submarine' in obj_name: 
-            enemies.append(obj.xy)
+        if 'shark' in obj_name:
+            sharks.append(obj.xy)
+        if 'submarine' in obj_name:
+            subs.append(obj.xy)
         if 'playermissile' in obj_name:
             missiles.append(obj.xy)
     
@@ -24,13 +27,30 @@ def reward_function(self) -> float:
         # encourage moving under water
         reward += 0.01
 
-    def dist(a, b):
-        return ((a[0] - b[0])**2 + (a[1] - b[1])**2)**0.5
-    
+    def hit_shark(missile, shark):
+        # 0 is x, 1 is y
+        # shark has height 7
+        # +/- on x axis depends on direction that we shoot at (and shark travels at 5px/it)
+        if missile[0] in range(shark[0]-7, shark[0]+7) and missile[1] in range(shark[1], shark[1]+7):
+            return True 
+        return False
+
+    def hit_sub(missile, submarine):
+        # 0 is x, 1 is y
+        # submarine has height 11
+        if missile[0] in range(submarine[0]-7, submarine[0]+7) and missile[1] in range(submarine[1], submarine[1]+11):
+            return True
+        return False
+
+
     for missile in missiles:
-        for enemy in enemies:
-            if dist(missile, enemy) < 7:
+        for shark in sharks:
+            if hit_shark(missile, shark):
                 reward += 10 # reward missiles that are close
+        for sub in subs:
+            if hit_sub(missile, sub):
+                reward += 10
+        
 
     if prev_player is not None and player is None: # player is dead
         # player died

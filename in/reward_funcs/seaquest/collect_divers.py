@@ -27,6 +27,11 @@ def reward_function(self) -> float:
 
     if prev_player is not None and player is None: # player is dead
         reward -= 100
+    
+    # print(player.visible)
+    # if abs(player.dy) > 10:
+    #     # dying alternative
+    #     reward -= 100
 
     collected_divers = current_divers
     prev_player = player

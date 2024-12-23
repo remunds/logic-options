@@ -12,7 +12,6 @@ from stable_baselines3.common.env_util import make_atari_env, make_vec_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStack, VecNormalize, DummyVecEnv
-from stable_baselines3.common.atari_wrappers import AtariWrapper
 
 from logic_options.envs.meeting_room import MeetingRoom
 from logic_options.logic.env_wrapper import LogicEnvWrapper
@@ -27,8 +26,7 @@ def make_ocatari_env(name: str,
                      frameskip: int = 4,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
-        env = OCAtari(name, hud=True, **kwargs)
-        env = AtariWrapper(env, frame_skip=frameskip, terminal_on_life_loss=False, clip_reward=False)
+        env = OCAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         env = Monitor(env)
         env.reset(seed=seed + rank)
         return env
@@ -42,8 +40,7 @@ def make_hackatari_env(name: str,
                      frameskip: int = 4,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
-        env = HackAtari(name, hud=True, **kwargs)
-        env = AtariWrapper(env, frame_skip=frameskip, terminal_on_life_loss=False, clip_reward=False)
+        env = HackAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         env = Monitor(env)
         env.reset(seed=seed + rank)
         return env
@@ -93,10 +90,10 @@ def make_logic_env(name: str,
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
         elif hack:
-            raw_env = HackAtari(name, mode="revised", hud=True,
+            raw_env = HackAtari(name, mode="revised", hud=True, dopamine_pooling=False,
                               render_oc_overlay=render_oc_overlay, **hack, **kwargs)
         elif "ALE" in name:
-            raw_env = OCAtari(name, mode="revised", hud=True,
+            raw_env = OCAtari(name, mode="revised", hud=True, dopamine_pooling=False,
                               render_oc_overlay=render_oc_overlay, **kwargs)
         else:
             raise NotImplementedError()
