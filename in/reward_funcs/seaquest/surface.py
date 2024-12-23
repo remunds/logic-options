@@ -20,17 +20,19 @@ def reward_function(self) -> float:
             player = obj
         if 'collecteddiver' in obj_name:
             divers += 1
+
     if oxygenbar is not None:
         # if oxygen is low, encourage moving up
         if oxygenbar.value < 30:
             oxygen_low = True
             if player is not None:
-                reward -= player.dy / 10 # is y-prev_y
+                reward -= player.dy # is y-prev_y
         else:
             oxygen_low = False
             # more than enough oxygen available, encourage staying down
-            if player is not None and player.y > 46: # 46 is surface
-                reward += 0.01
+            if player is not None and player.y == 46: # 46 is surface
+                print(player)
+                reward -= 0.1 # discourage staying on surface
 
     if prev_player_y is not None and player is None: # player is dead
         # player surfaced with low oxygen -> reward
