@@ -26,7 +26,7 @@ def reward_function(self) -> float:
 
 
     if prev_player is not None and player is None: # player is dead
-        reward -= 100
+        reward = -100
     
     # print(player.visible)
     # if abs(player.dy) > 10:
