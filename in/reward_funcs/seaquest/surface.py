@@ -31,7 +31,6 @@ def reward_function(self) -> float:
             oxygen_low = False
             # more than enough oxygen available, encourage staying down
             if player is not None and player.y == 46: # 46 is surface
-                print(player)
                 reward -= 0.1 # discourage staying on surface
 
     if prev_player_y is not None and player is None: # player is dead
