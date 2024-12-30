@@ -2,15 +2,15 @@ from ocatari.ram.seaquest import Player, Shark, Submarine, PlayerMissile
 
 ENEMIES = 0
 COLLISION = False
-
+ON_SURFACE = True
 
 def check_collision(obj1, obj2):
     """
     Check if two GameObjects collide based on their bounding boxes.
     """
     # Calculate boundaries for object A
-    right1 = obj1.x + obj1.w + 5
-    bottom1 = obj1.y + obj1.h + 5
+    right1 = obj1.x + obj1.w + 10
+    bottom1 = obj1.y + obj1.h + 10
 
     # Calculate boundaries for object B
     right2 = obj2.x + obj2.w
@@ -29,6 +29,7 @@ def check_collision(obj1, obj2):
 def reward_function(self) -> float:
     global ENEMIES
     global COLLISION
+    global ON_SURFACE
 
     game_objects = self.objects
     reward = 0.0
@@ -57,6 +58,15 @@ def reward_function(self) -> float:
         reward += 1
         COLLISION = False
 
+    if player:
+        if player.y > 46:
+            ON_SURFACE = False
+        elif player.y == 46 and not ON_SURFACE: # Player surfaces
+            # punish dying and surfacing
+            ON_SURFACE = True
+            reward -= 1
+
+        
     ENEMIES = len(enemies)
 
     return reward

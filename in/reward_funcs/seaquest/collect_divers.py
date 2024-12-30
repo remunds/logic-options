@@ -1,9 +1,9 @@
 from ocatari.ram.seaquest import Player, Diver
 
-LOW_OXYGEN = False
 DIVERS = 0
 COLLISION = False
 COLLECTED = 0
+ON_SURFACE = False
 
 
 def check_collision(obj1, obj2):
@@ -32,6 +32,7 @@ def reward_function(self) -> float:
     global DIVERS
     global COLLISION
     global COLLECTED
+    global ON_SURFACE
 
     game_objects = self.objects
     reward = 0.0
@@ -59,6 +60,14 @@ def reward_function(self) -> float:
         reward += 1  # Scaled down reward for collecting a diver
         COLLECTED += 1
         COLLISION = False
+
+    if player:
+        if player.y > 46:
+            ON_SURFACE = True
+        elif player.y == 46 and not ON_SURFACE:
+            # punish dying and surfacing
+            ON_SURFACE = True
+            reward -= 1
 
     # update diver count
     DIVERS = len(divers)
