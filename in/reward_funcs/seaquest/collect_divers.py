@@ -3,7 +3,7 @@ from ocatari.ram.seaquest import Player, Diver
 DIVERS = 0
 COLLISION = False
 COLLECTED = 0
-ON_SURFACE = False
+ON_SURFACE = True
 
 
 def check_collision(obj1, obj2):
@@ -63,7 +63,7 @@ def reward_function(self) -> float:
 
     if player:
         if player.y > 46:
-            ON_SURFACE = True
+            ON_SURFACE = False
         elif player.y == 46 and not ON_SURFACE:
             # punish dying and surfacing
             ON_SURFACE = True
