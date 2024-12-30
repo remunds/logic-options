@@ -1,4 +1,4 @@
-from ocatari.ram.seaquest import Player, Diver
+from ocatari.ram.seaquest import Player, Diver, Shark, Submarine, PlayerMissile, EnemyMissile, OxygenBar
 
 LOW_OXYGEN = False
 DIVERS = 0
@@ -29,6 +29,7 @@ def check_collision(obj1, obj2):
 
 
 def reward_function(self) -> float:
+    global LOW_OXYGEN
     global DIVERS
     global COLLISION
     global COLLECTED
@@ -39,6 +40,10 @@ def reward_function(self) -> float:
     # Define categories for easy identification
     player = None
     divers = []
+    enemies = []
+    player_missiles = []
+    enemy_missiles = []
+    oxygen_bar = None
 
     # Classify objects
     for obj in game_objects:
@@ -46,21 +51,44 @@ def reward_function(self) -> float:
             player = obj
         elif isinstance(obj, Diver):
             divers.append(obj)
+        elif isinstance(obj, Shark) or isinstance(obj, Submarine):
+            enemies.append(obj)
+        elif isinstance(obj, PlayerMissile):
+            player_missiles.append(obj)
+        elif isinstance(obj, EnemyMissile):
+            enemy_missiles.append(obj)
+        elif isinstance(obj, OxygenBar):
+            oxygen_bar = obj
 
     if player:
         for diver in divers:
-            # detect diver collection
-            if check_collision(player, diver): 
+            if check_collision(player, diver) and COLLECTED != 6:
                 COLLISION = True
 
     if DIVERS > len(divers) and COLLISION:
-        # if previous diver count is higher than current diver count
-        # and a collection was detected -> actually collected a diver
         reward += 1  # Scaled down reward for collecting a diver
         COLLECTED += 1
         COLLISION = False
 
-    # update diver count
     DIVERS = len(divers)
+
+    if player and player.y == 46:
+        if COLLECTED == 6:
+            reward += 100 # high reward for surfacing with all divers
+            COLLECTED = 0
+        elif COLLECTED > 0:
+            COLLECTED -= 1
+            if LOW_OXYGEN:
+                reward += 5 # some reward for surfacing with low oxygen
+            else:
+                reward += 0 
+        LOW_OXYGEN = False
+
+    if oxygen_bar and player and player.y != 46:
+        if oxygen_bar.value < 20: 
+            LOW_OXYGEN = True
+        else:
+            LOW_OXYGEN = False
+
 
     return reward

@@ -1,104 +1,102 @@
-# prev_player_y = None
-# oxygen_low = False
-# def reward_function(self) -> float:
-#     # requires oxygen to be low
-#     # +0.1 for moving up (-0.1 for moving down)
-#     # +0.01 for staying down
-#     # -100 for losing a life
+from ocatari.ram.seaquest import Player, Diver, Shark, Submarine, PlayerMissile, EnemyMissile, OxygenBar
 
-#     global prev_player_y, oxygen_low
-#     player = None
-#     oxygenbar = None # max is 64
-#     reward = 0
-#     divers = 0
+NO_OXYGEN = False
+ON_SURFACE = False
+LOW_OXYGEN = False
+DIVERS = 0
+COLLISION = False
+COLLECTED = 0
 
-#     for obj in self.objects:
-#         obj_name = str(obj).lower()
-#         if 'oxygenbar' in obj_name and 'depleted' not in obj_name and 'logo' not in obj_name: 
-#             oxygenbar = obj
-#         if 'player' in obj_name and 'missile' not in obj_name and 'score' not in obj_name:
-#             player = obj
-#         if 'collecteddiver' in obj_name:
-#             divers += 1
 
-#     if oxygenbar is not None:
-#         # if oxygen is low, encourage moving up
-#         if oxygenbar.value < 30:
-#             oxygen_low = True
-#             if player is not None:
-#                 reward -= player.dy # is y-prev_y
-#         else:
-#             oxygen_low = False
-#             # more than enough oxygen available, encourage staying down
-#             if player is not None and player.y == 46: # 46 is surface
-#                 reward -= 0.1 # discourage staying on surface
+def check_collision(obj1, obj2):
+    """
+    Check if two GameObjects collide based on their bounding boxes.
+    """
+    # Calculate boundaries for object A
+    right1 = obj1.x + obj1.w + 5
+    bottom1 = obj1.y + obj1.h + 5
 
-#     if prev_player_y is not None and player is None: # player is dead
-#         # player surfaced with low oxygen -> reward
-#         if prev_player_y == 46 and oxygen_low:
-#             print('surfaced with low oxygen')
-#             reward += 100
-#         else:
-#         # either early surfacing, or enemy 
-#             reward -= 100
+    # Calculate boundaries for object B
+    right2 = obj2.x + obj2.w
+    bottom2 = obj2.y + obj2.h
 
-#     if prev_player_y is not None and player is not None: 
-#         if prev_player_y > 46 and player.y == 46 and divers > 0:
-#             # player surfaced with at least one diver (not dying)
-#             # it's okay, since later the meta policy will decide when to surface
-#             # here, we just want to learn to surface
-#             print('surfaced with diver')
-#             reward += 100
+    # Check for overlap on the x-axis
+    collision_x = obj1.x < right2 and right1 > obj2.x
 
-#     if player is not None:
-#         prev_player_y = player.y
-#     else:
-#         prev_player_y = None
-#     return reward 
+    # Check for overlap on the y-axis
+    collision_y = obj1.y < bottom2 and bottom1 > obj2.y
 
-prev_player = None
-moving_up_counter = 0
-deepest_point = 0
-reward_given = False
-def reward_function(self):
-    # reward long upward movements
-    # player.y
-    global moving_up_counter, deepest_point, prev_player, reward_given
+    # Return True if both conditions are met, otherwise False
+    return collision_x and collision_y
+
+
+def reward_function(self) -> float:
+    global LOW_OXYGEN
+    global NO_OXYGEN
+    global ON_SURFACE
+    global DIVERS
+    global COLLISION
+    global COLLECTED
+
+    game_objects = self.objects
+    reward = 0.0
+
+    # Define categories for easy identification
     player = None
-    reward = 0
+    divers = []
+    enemies = []
+    player_missiles = []
+    enemy_missiles = []
+    oxygen_bar = None
 
-    for obj in self.objects:
-        obj_name = str(obj).lower()
-        if 'player' in obj_name and 'missile' not in obj_name and 'score' not in obj_name:
+    # Classify objects
+    for obj in game_objects:
+        if isinstance(obj, Player):
             player = obj
+        elif isinstance(obj, Diver):
+            divers.append(obj)
+        elif isinstance(obj, Shark) or isinstance(obj, Submarine):
+            enemies.append(obj)
+        elif isinstance(obj, PlayerMissile):
+            player_missiles.append(obj)
+        elif isinstance(obj, EnemyMissile):
+            enemy_missiles.append(obj)
+        elif isinstance(obj, OxygenBar):
+            oxygen_bar = obj
 
+    if player:
+        for enemy in enemies:
+            if check_collision(player, enemy): 
+                COLLISION = True
+        for missile in enemy_missiles:
+            if check_collision(player, missile):
+                COLLISION = True
 
-    if player is not None:
-        reward_given = False
-        if player.dy < 0:
-            # moving up
-            if player.y > deepest_point:
-                # starting point of upward movement
-                deepest_point = player.y
-            moving_up_counter += 1
-            if moving_up_counter > 20:
-                reward += 0.1
-        elif player.dy > 0:
-            moving_up_counter = 0
-            deepest_point = 46
-    
-    reward *= (deepest_point-46)
-    
-    if prev_player is not None and player is None:
-        # crashed
-        deepest_point = 46
-        if not reward_given:
-            if prev_player.y == 46: 
-                reward = 10 # reward for reaching the surface
-            else:
-                reward =  -100
-            reward_given = True
+    if player and player.y == 46:
+        if NO_OXYGEN:
+            reward -= 1 # some penalty for drowning
+        elif COLLISION:
+            reward -= 1 # some penalty for colliding
+        elif LOW_OXYGEN: 
+            reward += 5 # some reward for surfacing with low oxygen
+        elif not ON_SURFACE:
+            # surfacing although enough oxygen
+            reward -= 0.1
 
-    prev_player = player
+        # reset flags
+        ON_SURFACE = True
+        NO_OXYGEN = False
+        LOW_OXYGEN = False
+        COLLISION = False
+    else:
+        ON_SURFACE = False
+
+    if oxygen_bar and player and player.y != 46:
+        if oxygen_bar.value == 0:
+            NO_OXYGEN = True
+        elif oxygen_bar.value < 20: 
+            LOW_OXYGEN = True
+        else:
+            LOW_OXYGEN = False
 
     return reward

@@ -1,60 +1,62 @@
-prev_player = None
+from ocatari.ram.seaquest import Player, Shark, Submarine, PlayerMissile
+
+ENEMIES = 0
+COLLISION = False
+
+
+def check_collision(obj1, obj2):
+    """
+    Check if two GameObjects collide based on their bounding boxes.
+    """
+    # Calculate boundaries for object A
+    right1 = obj1.x + obj1.w + 5
+    bottom1 = obj1.y + obj1.h + 5
+
+    # Calculate boundaries for object B
+    right2 = obj2.x + obj2.w
+    bottom2 = obj2.y + obj2.h
+
+    # Check for overlap on the x-axis
+    collision_x = obj1.x < right2 and right1 > obj2.x
+
+    # Check for overlap on the y-axis
+    collision_y = obj1.y < bottom2 and bottom1 > obj2.y
+
+    # Return True if both conditions are met, otherwise False
+    return collision_x and collision_y
+
 
 def reward_function(self) -> float:
-    # +10 for each enemy killed
-    # + 0.01 for moving around unterwater
-    # -10 for losing a life
+    global ENEMIES
+    global COLLISION
 
-    global prev_player
+    game_objects = self.objects
+    reward = 0.0
+
+    # Define categories for easy identification
     player = None
-    sharks = []
-    subs = []
-    missiles = []
-    reward = 0
+    enemies = []
+    player_missiles = []
 
-    for obj in self.objects:
-        obj_name = str(obj).lower()
-        if 'player' in obj_name and 'missile' not in obj_name and 'score' not in obj_name:
+    # Classify objects
+    for obj in game_objects:
+        if isinstance(obj, Player):
             player = obj
-        if 'shark' in obj_name:
-            sharks.append(obj.xy)
-        if 'submarine' in obj_name:
-            subs.append(obj.xy)
-        if 'playermissile' in obj_name:
-            missiles.append(obj.xy)
-    
-    if player is not None and (player.dy != 0 or player.dx != 0) and player.y > 46: # 46 is surface
-        # encourage moving under water
-        reward += 0.01
+        elif isinstance(obj, Shark) or isinstance(obj, Submarine):
+            enemies.append(obj)
+        elif isinstance(obj, PlayerMissile):
+            player_missiles.append(obj)
 
-    def hit_shark(missile, shark):
-        # 0 is x, 1 is y
-        # shark has height 7
-        # +/- on x axis depends on direction that we shoot at (and shark travels at 5px/it)
-        if missile[0] in range(shark[0]-7, shark[0]+7) and missile[1] in range(shark[1], shark[1]+7):
-            return True 
-        return False
+    if player:
+        for missile in player_missiles:
+            for enemy in enemies:
+                if check_collision(missile, enemy):
+                    COLLISION = True
 
-    def hit_sub(missile, submarine):
-        # 0 is x, 1 is y
-        # submarine has height 11
-        if missile[0] in range(submarine[0]-7, submarine[0]+7) and missile[1] in range(submarine[1], submarine[1]+11):
-            return True
-        return False
+    if ENEMIES > len(enemies) and COLLISION:
+        reward += 1
+        COLLISION = False
 
+    ENEMIES = len(enemies)
 
-    for missile in missiles:
-        for shark in sharks:
-            if hit_shark(missile, shark):
-                reward += 10 # reward missiles that are close
-        for sub in subs:
-            if hit_sub(missile, sub):
-                reward += 10
-        
-
-    if prev_player is not None and player is None: # player is dead
-        # player died
-        reward -= 100
-
-    prev_player = player
     return reward
