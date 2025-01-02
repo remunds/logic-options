@@ -651,6 +651,9 @@ class OptionsPPO(PPO):
         :param optimizers:
             An optimizer or a list of optimizers.
         """
+        if isinstance(lr_schedule, float):
+            # Constant learning rate
+            return
         # Log the current learning rate
         self.logger.record("hyperparameter_schedule/learning_rate",
                            lr_schedule(self._current_progress_remaining))
