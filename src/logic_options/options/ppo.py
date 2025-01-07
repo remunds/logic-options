@@ -110,7 +110,6 @@ class OptionsPPO(PPO):
                                              self.policy.hierarchy_size,
                                              device=self.device,
                                              dtype=th.long)
-
         self.rollout_buffer = OptionsRolloutBuffer(
             self.n_steps,
             self.observation_space,
@@ -749,7 +748,6 @@ def load_agent(name: str = None,
 
     if device is None:
         device = config["device"]
-
     model = OptionsPPO.load(checkpoint_path,
                             env=env,
                             verbose=verbose,

@@ -1,50 +1,48 @@
-name: "default_ppo_enemies"
+name: "debug"
 description: "Classic deep policy"
-device: cuda:14
+device: cuda
 cores: 4
 seed: 0
 
-# This uses the HP's from https://huggingface.co/sb3/ppo-SeaquestNoFrameskip-v4
-
 environment:
-  name: "ALE/Seaquest-v5"
+  name: "ALE/Pong-v5"
   object_centric: True
   reward_mode: env  # env, human, mixed (only relevant for scobi)
-  framestack: 1
-  frameskip: 1
+  framestack: 4
+  frameskip: 4
   normalize_observation: True
   normalize_reward: False
   hack: 
     # modifs: []
-    rewardfunc_path: "./in/reward_funcs/seaquest/fight_enemies.py"
+    # rewardfunc_path: "./in/reward_funcs/seaquest/collect_divers.py"
 
 general:
   hierarchy_shape: []  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   net_arch: [64, 64]  # the network architecture of each individual policy and value function
   total_timesteps: 10e6
-  n_steps: 128
+  n_steps: 256
   n_epochs: 4
-  batch_size: 256
+  batch_size: 256  # decrease if out-of-memory error is observed
   gamma: 0.99
   gae_lambda: 0.95
   normalize_advantage: True
 
 meta_policy:
   logic: False
-  policy_ent_coef: 0.01
-  policy_clip_range:
-     initial_value: 0.1
-     schedule_type: linear
-  value_fn_coef: 0.5
-  value_fn_clip_range:
-  learning_rate: 
-    initial_value: 2.5e-4
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
     schedule_type: linear
-  max_grad_norm: 0.5
+  value_fn_coef: 0.05
+  value_fn_clip_range:
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.25
 
 evaluation:
-  frequency: 100000
+  frequency: 10000
   n_episodes: 10
-  deterministic: True
+  deterministic: False
   render: False
   # early_stop_on_no_reward: 1000

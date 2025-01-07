@@ -90,11 +90,9 @@ def make_logic_env(name: str,
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
         elif hack:
-            raw_env = HackAtari(name, mode="revised", hud=True, dopamine_pooling=False,
-                              render_oc_overlay=render_oc_overlay, **hack, **kwargs)
+            raw_env = HackAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         elif "ALE" in name:
-            raw_env = OCAtari(name, mode="revised", hud=True, dopamine_pooling=False,
-                              render_oc_overlay=render_oc_overlay, **kwargs)
+            raw_env = OCAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         else:
             raise NotImplementedError()
         raw_env.reset(seed=seed)

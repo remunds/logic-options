@@ -1,7 +1,7 @@
 name: "debug"
 description: ""
 device: cuda
-cores: 1
+cores: 4
 seed: 0
 
 environment:
@@ -35,9 +35,8 @@ meta_policy:
   learning_rate:  # Adam
     initial_value: 2.5e-4
     schedule_type: linear
-  policy_terminator: False
-  # policy_terminator: True # Use new termination by meta-probabilities
-  # policy_termination_mode: "maggi"
+  policy_terminator: True
+  policy_termination_mode: raban
 
 options:
   policy_ent_coef: 0.01
@@ -48,10 +47,24 @@ options:
   value_fn_clip_range: 
   terminator_ent_coef: 0.01
   terminator_clip_range: 0.1
-  termination_regularizer: -0.2
+  termination_regularizer: -100 # force temrination
   learning_rate:  # Adam
     initial_value: 2.5e-4
     schedule_type: linear
+  activity_coef: 0
+  pretrained:
+    - level: 0
+      position: 0
+      model_path: in/pretrained/seaquest/shoot_enemies
+      policy_trainable: False
+      value_fn_trainable: True
+      terminator_trainable: True
+    - level: 0
+      position: 1
+      model_path: in/pretrained/seaquest/divers
+      policy_trainable: False
+      value_fn_trainable: True
+      terminator_trainable: True
 
 evaluation:
   frequency: 100000
