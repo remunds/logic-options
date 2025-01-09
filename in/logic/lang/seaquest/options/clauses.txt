@@ -1,3 +1,3 @@
-opt0_collect_divers(X):-oxygen_high_or_med(oxygenbar),close_by(player,diver).
-opt1_surface(X):-oxygen_low(oxygenbar).
-opt2_idle(X):-oxygen_high_or_med(oxygenbar).
+opt0_shoot_enemies(X):-oxygen_high_or_med(oxygenbar).
+opt1_collect_divers(X):-oxygen_high_or_med(oxygenbar),visible(diver).
+opt2_rest(X):-oxygen_low(oxygenbar).

@@ -12,6 +12,8 @@ environment:
   frameskip: 1
   normalize_observation: True
   normalize_reward: True
+  hack:
+    rewardfunc_path: "./in/reward_funcs/seaquest/hackatari_reward.py"
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
@@ -55,13 +57,13 @@ options:
   pretrained:
     - level: 0
       position: 0
-      model_path: in/pretrained/seaquest/shoot_enemies
+      model_path: in/pretrained/seaquest/fight_enemies
       policy_trainable: False
       value_fn_trainable: True
       terminator_trainable: True
     - level: 0
       position: 1
-      model_path: in/pretrained/seaquest/divers
+      model_path: in/pretrained/seaquest/collect_divers
       policy_trainable: False
       value_fn_trainable: True
       terminator_trainable: True
@@ -70,5 +72,5 @@ evaluation:
   frequency: 100000
   deterministic: True
   render: False
-  early_stop_on_no_reward: 500
+  # early_stop_on_no_reward: 500
   n_episodes: 10
