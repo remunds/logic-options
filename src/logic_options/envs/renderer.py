@@ -119,6 +119,8 @@ class Renderer:
         options = th.zeros(1, self.model.hierarchy_size, dtype=th.long, device=self.model.device)
         length = 0
         print_probs = False
+        print_choice = True
+        prev_choice = None
 
         obs = self.vec_env.reset()
 
@@ -139,6 +141,11 @@ class Renderer:
             else:
                 option_tensor = th.tensor([0, 1, 2, 3, 4, 5], device=self.model.device)
             meta_probs = self.model.policy.meta_policy(obs)[1].log_prob(option_tensor).exp()
+            curr_choice = th.argmax(meta_probs).item()
+
+            if print_choice and (prev_choice != curr_choice):
+                print(f"Chose option {curr_choice}")
+                prev_choice = curr_choice
 
             if print_probs and (prev_meta_probs is None or not th.eq(meta_probs, prev_meta_probs).all()):
                 print(meta_probs)
@@ -207,8 +214,8 @@ class Renderer:
                 # game_objects = self.vec_env.envs[0].env.oc_env.objects
                 # d = get_distance_to_joey(game_objects)
                 # print("Distance to Joey:", d)
-
-                print(f"Reward {reward[0]:.2f}")
+                if float(reward) != 0:
+                    print(f"Reward {reward[0]:.2f}")
                 if self.shadow_mode and float(reward) != 0:
                     print(f"Reward {reward[0]:.2f}")
 
