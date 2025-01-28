@@ -28,7 +28,8 @@ class LogicStateExtractor(ABC):
         registered_extractors = {
             "freeway": FreewayExtractor,
             "asterix": AsterixExtractor,
-            "seaquest": SeaquestExtractor,
+            # "seaquest": SeaquestExtractor,
+            "seaquest": DummyExtractor,
             "meetingroom": DummyExtractor,
         }
         if env_name not in registered_extractors.keys():
@@ -95,7 +96,7 @@ class AsterixExtractor(LogicStateExtractor):
         return self.n_objects, self.n_features
 
 
-class SeaquestExtractor(LogicStateExtractor):
+class SeaquestExtractorOld(LogicStateExtractor):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.n_objects = 43

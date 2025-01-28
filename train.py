@@ -173,6 +173,7 @@ def run(config_path: str):
     new_logger = configure(str(log_path), ["tensorboard"])
     options_ppo.set_logger(new_logger)
 
+    print("obs space: ", train_env.observation_space)
     # Transfer learning with existing components (if specified)
     if options is not None:
         options_ppo.policy.load_pretrained_options(options.get("pretrained"), train_env, device)
@@ -188,6 +189,7 @@ def run(config_path: str):
         shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
     print(f"Starting experiment '{bold(name)}' with {type(options_ppo).__name__} training using {n_envs} actors and {n_eval_envs} evaluators...")
+
     options_ppo.learn(total_timesteps=total_timestamps, callback=cb_list)
 
 

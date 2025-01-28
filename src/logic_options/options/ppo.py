@@ -757,8 +757,8 @@ def load_agent(name: str = None,
                                             "progress_rollout_train": None,
                                             "_last_option_terminations": None,
                                             "_last_active_options": None})
-    if config.get("options") is not None and config.get("options").get("pretrained") is not None:
-        print("Loading pretrained options...")
-        model.policy.load_pretrained_options(config["options"]["pretrained"], env, device)
+    # if config.get("options") is not None and config.get("options").get("pretrained") is not None:
+    #     print("Loading pretrained options...")
+    #     model.policy.load_pretrained_options(config["options"]["pretrained"], env, device)
 
     return model

@@ -1,3 +1,3 @@
-visible:1:odiver
-oxygen_low:1:ooxygenbar
-oxygen_high_or_med:1:ooxygenbar
+oxygen_high_or_med:1:img
+divers_visible:1:img
+oxygen_low:1:img

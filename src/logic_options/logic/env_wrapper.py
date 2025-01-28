@@ -75,8 +75,8 @@ class LogicEnvWrapper(Wrapper):
         raw_obs, info = self.env.reset(**kwargs)
         self.is_reset = True
         self.ret = 0
-        if isinstance(self.env, OCAtari):
-            raw_obs = self.env.objects
+        # if isinstance(self.env, OCAtari):
+        #     raw_obs = self.env.objects
         logic_obs = self.logic_state_extractor(raw_obs)
         return logic_obs, info
 
@@ -84,8 +84,8 @@ class LogicEnvWrapper(Wrapper):
         if self.accepts_predicates:
             action = self.pred2action[action]
         raw_obs, reward, terminated, truncated, info = self.env.step(action)
-        if isinstance(self.env, OCAtari):
-            raw_obs = self.env.objects
+        # if isinstance(self.env, OCAtari):
+        #     raw_obs = self.env.objects
         logic_obs = self.logic_state_extractor(raw_obs)
         reward += self._get_reward(raw_obs)
         self.ret += reward

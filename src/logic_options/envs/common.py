@@ -87,10 +87,14 @@ def make_logic_env(name: str,
                    hack: dict = {},
                    **kwargs):
     def _init():
+        #TODO: when loading pretrained options the spaces
+        #  have different shapes (logic vs normal) -> Why? How to fix?
+        # Problem seems to be mainly the shape of the observation space,
+        # in meetingroom logic and neural are equal, in atari they are not
         if name == "MeetingRoom":
             raw_env = MeetingRoom(**kwargs)
         elif hack:
-            raw_env = HackAtari(name, hud=True, dopamine_pooling=False, **kwargs)
+            raw_env = HackAtari(name, hud=True, dopamine_pooling=False, **hack, **kwargs)
         elif "ALE" in name:
             raw_env = OCAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         else:

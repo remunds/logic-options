@@ -103,7 +103,7 @@ def reward_function(self) -> float:
             ON_SURFACE = False
         elif player.y == 46 and not ON_SURFACE:
             if COLLISION_ENEMY:
-                reward -= 1
+                reward -= 10
                 COLLISION_ENEMY = False
             elif COLLECTED == 6:
                 reward += 100
@@ -113,7 +113,7 @@ def reward_function(self) -> float:
                 if LOW_OXYGEN:
                     reward += 10
                 else:
-                    reward -= 0.1 # punish early surfacing
+                    reward -= 1 # punish early surfacing
             else:
                 reward -= 1 # punish dying and early surfacing
             ON_SURFACE = True

@@ -5,28 +5,31 @@ NO_OXYGEN = False
 COLLISION = False
 NON_SURFACE_COUNTER = 0
 
-
-def check_collision(obj1, obj2):
+def check_collision(player, obj):
     """
     Check if two GameObjects collide based on their bounding boxes.
     """
+    # (x, y) is the top left corner of the object
     # Calculate boundaries for object A
-    right1 = obj1.x + obj1.w + 5
-    bottom1 = obj1.y + obj1.h + 5
+    left1 = player.x - 2
+    right1 = player.x + player.w + 2
+    top1 = player.y - 2
+    bottom1 = player.y + player.h + 2
 
     # Calculate boundaries for object B
-    right2 = obj2.x + obj2.w
-    bottom2 = obj2.y + obj2.h
+    left2 = obj.x
+    right2 = obj.x + obj.w
+    top2 = obj.y
+    bottom2 = obj.y + obj.h
 
     # Check for overlap on the x-axis
-    collision_x = obj1.x < right2 and right1 > obj2.x
+    collision_x = left1 < right2 and right1 > left2
 
     # Check for overlap on the y-axis
-    collision_y = obj1.y < bottom2 and bottom1 > obj2.y
+    collision_y =  top1 < bottom2 and bottom1 > top2
 
     # Return True if both conditions are met, otherwise False
     return collision_x and collision_y
-
 
 def reward_function(self) -> float:
     global ON_SURFACE
@@ -67,9 +70,10 @@ def reward_function(self) -> float:
         # this event triggers the reward calculation
         reward = NON_SURFACE_COUNTER / MAX_COUNTER
         if NO_OXYGEN or COLLISION:
-            reward /= 3  # not surfacing on time / colliding
-        if not ON_SURFACE and reward < 0.1:
-            reward = -0.10
+            # reward /= 3  # not surfacing on time / colliding
+            reward = -1 + reward   # the longer the player stays underwater, the less negative the reward
+        # if not ON_SURFACE and reward < 0.1:
+        #     reward = -0.10
 
         # reset flags
         NON_SURFACE_COUNTER = 0
