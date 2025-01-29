@@ -8,10 +8,9 @@
 - `uv sync`
 
 ## How to pretrain neural option
-An example of how to pretrain a neural option for kangaroo can be found in `in/debug/neural_flat_kangaroo_hack.yaml`, where the game does not have any enemies, and the reward is adapted to incentivize moving up.
+An example config that pretrains a neural option for kangaroo can be found in `in/debug/neural_flat_kangaroo_hack.yaml`.
 
-Note how we define the 'hacks' under 'modifs'. 
-Also note how the new reward is defined in `in/reward_funcs/kangaroo.py`.
+Note how we define a new reward in `in/reward_funcs/kangaroo.py`.
 
 Run the example by:
 - creating new dir in/queue if not exists
