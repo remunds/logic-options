@@ -55,6 +55,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             gae_lambda: float = 1,
             gamma: float = 0.99,
             n_envs: int = 1,
+            n_rewards: int = 1,
             seed: int = None,
     ):
         super().__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
@@ -63,15 +64,18 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.gamma = gamma
         self.generator_ready = False
         self.rng = np.random.default_rng(seed=seed)
+        self.n_rewards = n_rewards
         self.reset()
         self.total_transitions = self.buffer_size * self.n_envs
 
     def reset(self) -> None:
         base_shape = (self.buffer_size, self.n_envs)
+        # reward_shape = (*base_shape, self.n_rewards)
 
         self.observations = np.zeros((*base_shape, *self.obs_shape), dtype=np.float32)
         self.actions = np.zeros((*base_shape, self.action_dim), dtype=np.float32)
-        self.rewards = np.zeros(base_shape, dtype=np.float32)
+        # self.rewards = np.zeros(base_shape, dtype=np.float32)
+        self.rewards = np.zeros((*base_shape, self.n_rewards), dtype=np.float32)
         self.dones = np.zeros(base_shape, dtype=np.float32)
         self.episode_starts = np.zeros(base_shape, dtype=np.float32)
         self.next_observations = np.zeros((*base_shape, *self.obs_shape), dtype=np.float32)
@@ -80,12 +84,14 @@ class OptionsRolloutBuffer(BaseBuffer):
         self.option_terminations = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
         self.option_tn_log_probs = np.zeros((*base_shape, self.option_hierarchy_size), dtype=np.float32)
 
-        self.advantages = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
+        # self.advantages = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
+        self.advantages = np.zeros((*base_shape, self.option_hierarchy_size + 1, self.n_rewards), dtype=np.float32)
         self.advantages[:] = np.nan
         # Higher-level policies do not always make a decision. For these non-decision
         # time steps, no advantage is computed, represented as NaNs.
 
-        self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
+        # self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
+        self.returns = np.zeros((*base_shape, self.option_hierarchy_size + 1, self.n_rewards), dtype=np.float32)
         self.log_probs = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         self.values = np.zeros((*base_shape, self.option_hierarchy_size + 1), dtype=np.float32)
         # Keeps value of next state as determined by the option saved in option_traces (not the option in t+1)
@@ -159,7 +165,8 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         indices = np.where(decisions)[0]
 
-        return self._get(indices, level, self._get_actor_critic_samples, batch_size)
+        # return self._get(indices, level, self._get_actor_critic_samples, batch_size)
+        return self._get(indices, level, position, self._get_actor_critic_samples, batch_size)
 
     def get_terminator_train_data(
             self,
@@ -181,6 +188,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             self,
             indices: np.array,
             level: int,
+            position: int,
             samples_getter: Callable,
             batch_size: Optional[int] = None,
     ) -> Generator:
@@ -197,7 +205,7 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         start_idx = 0
         while start_idx < n_transitions:
-            yield samples_getter(indices[start_idx: start_idx + batch_size], level)
+            yield samples_getter(indices[start_idx: start_idx + batch_size], level, position)
             start_idx += batch_size
 
     def _prepare_generator(self):
@@ -235,6 +243,7 @@ class OptionsRolloutBuffer(BaseBuffer):
             self,
             indices: np.ndarray,
             level: int = -1,
+            position: int = None,
     ) -> ActorCriticSamples:
         if level == self.option_hierarchy_size - 1:
             # Lowest-level options decide over actions
@@ -243,11 +252,18 @@ class OptionsRolloutBuffer(BaseBuffer):
             # Higher-level options decide over options
             options_actions = self.option_traces[indices, ..., level + 1]
 
+       # TODO: choose the value for the correct option (and their reward-func)
+       # requires adding new parameter
+        # first position is meta-policy reward, rest are the option-specific ones
+        if position is None or self.returns.shape[-1] == 1:
+            position = 0
+        else:
+            position += 1
         data = (
             self.observations[indices],
             options_actions,
-            self.returns[indices, ..., level + 1],
-            self.advantages[indices, ..., level + 1],
+            self.returns[indices, ..., level + 1, position],
+            self.advantages[indices, ..., level + 1, position],
             self.log_probs[indices, ..., level + 1],
             self.values[indices, ..., level + 1],
             self.next_values[indices, ..., level + 1],
@@ -323,12 +339,21 @@ class OptionsRolloutBuffer(BaseBuffer):
     def get_returns(self, level: Union[int, th.Tensor] = -1, position: Union[int, th.Tensor] = None):
         assert isinstance(level, int)
         decisions = self.get_decisions(level, position)
-        return self.returns[decisions, level+1]
+        # return self.returns[decisions, level+1]
+        if position is None or self.returns.shape[-1] == 1:
+            position = 0
+        else:
+            position += 1
+        return self.returns[decisions, level+1, position]
 
     def compute_returns_and_advantage(self, dones: np.ndarray) -> None:
         """Computes the returns by applying the Generalized Advantage Estimation for
         Options (GAEO) to the rewards. Builds up on the GAE of the SB3 package."""
-        shape = self.advantages.shape
+        # TODO: if multiple rewards, we need to adjust returns and advantages
+
+        # shape = self.advantages.shape
+        shape = self.values.shape
+        reward_shape = self.advantages.shape
 
         # Identify policy decision points
         decisions = np.ones(shape, dtype='bool')
@@ -336,10 +361,11 @@ class OptionsRolloutBuffer(BaseBuffer):
         # Lowest-level options always make a decision, hence omitted here
 
         # Keep track of properties between decision points
-        reward = np.zeros(shape[1:], dtype=np.float32)
+        # reward = np.zeros(shape[1:], dtype=np.float32)
+        reward = np.zeros(reward_shape[1:], dtype=np.float32)
         next_decision = np.ones(shape[1:], dtype=bool)
         next_value = np.zeros(shape[1:], dtype=np.float32)
-        last_gae = np.zeros(shape[1:], dtype=np.float64)
+        last_gae = np.zeros(reward_shape[1:], dtype=np.float64)
 
         values_upon_arrival = self.get_values_upon_arrival()
 
@@ -368,14 +394,27 @@ class OptionsRolloutBuffer(BaseBuffer):
             policy_continues &= episode_continues
 
             # Sum up rewards during option arc for higher-level SMDP transition
+            #TODO: I guess it trips here
+            # import ipdb; ipdb.set_trace()
+            # self.rewards has shape (buffer_size, n_envs, n_rewards) -> select=(n_envs, n_rewards)
+            # before shape (buffer_size, n_envs) -> select=(n_envs)
+            # reward has shape (n_envs, option_hierarchy_size+1) (2,2)
+            # so we essentially add rewards to each option-level (in this case 2 (meta-policy and option-level 1)) 
+            # TODO: thus, we need to add another dim that tracks per-option rewards
+            # To both reward/return and advantage
+            # reward, return and advantage require additional dim
+            # reward += np.expand_dims(self.rewards[step], axis=1)
             reward += np.expand_dims(self.rewards[step], axis=1)
 
             dtype = np.float64 if step == self.buffer_size - 1 else np.float32
 
             # Compute Generalized Advantage Estimate (GAE)
-            td_0_estimate = reward + (self.gamma * next_value * episode_continues).astype(dtype)
-            delta = td_0_estimate - self.values[step]  # TD error
-            gae = delta + (self.gamma * self.gae_lambda * policy_continues).astype(dtype) * last_gae
+            # td_0_estimate = reward + (self.gamma * next_value * episode_continues, 1).astype(dtype)
+            td_0_estimate = reward + np.expand_dims(self.gamma * next_value * episode_continues, -1).astype(dtype)
+            # delta = td_0_estimate - self.values[step]  # TD error
+            delta = td_0_estimate - np.expand_dims(self.values[step], axis=-1)  # TD error
+            gae = delta + np.expand_dims(self.gamma * self.gae_lambda * policy_continues, axis=-1).astype(dtype) * last_gae
+            # import ipdb; ipdb.set_trace()
             self.advantages[step, decision] = gae[decision]
             last_gae[decision] = gae[decision]
 
@@ -387,4 +426,5 @@ class OptionsRolloutBuffer(BaseBuffer):
 
         # TD(lambda) estimator, see GitHub PR #375 or "Telescoping in TD(lambda)"
         # in David Silver Lecture 4: https://www.youtube.com/watch?v=PnHCvfgC_ZA
-        self.returns = self.advantages + self.values
+        # self.returns = self.advantages + self.values
+        self.returns = self.advantages + np.expand_dims(self.values, axis=-1)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 from pathlib import Path
+import time
 
 import gymnasium as gym
 from ocatari import OCAtari
@@ -26,7 +27,7 @@ def make_ocatari_env(name: str,
                      frameskip: int = 4,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
-        env = OCAtari(name, hud=True, dopamine_pooling=False, **kwargs)
+        env = OCAtari(name, hud=True, **kwargs)
         env = Monitor(env)
         env.reset(seed=seed + rank)
         return env

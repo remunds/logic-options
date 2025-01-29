@@ -65,8 +65,10 @@ class OptionsPPO(PPO):
                  policy_termination_mode: str = "raban",
                  meta_activity_coef: float = 0,
                  options_activity_coef: float = 0,
+                 n_rewards: int = 1,
                  **kwargs):
         kwargs["policy"] = OptionsAgent
+        self.n_rewards = n_rewards
         super().__init__(**kwargs)
         if hasattr(self, "policy"):
             # if not, the model was loaded from a checkpoint (and an option)
@@ -74,6 +76,9 @@ class OptionsPPO(PPO):
             self.policy.policy_terminator = policy_terminator
             self.policy.termination_regularizer = options_termination_reg
             self.policy.termination_mode = policy_termination_mode
+
+        if n_rewards > 1:
+            assert self.policy.hierarchy_shape == [n_rewards-1], "N_rewards needs to be equal to number of options (incl. meta-policy), and only depth=1 supported."
 
         self.meta_learning_rate = meta_learning_rate
         self.meta_pi_ent_coef = meta_policy_ent_coef
@@ -110,6 +115,7 @@ class OptionsPPO(PPO):
                                              self.policy.hierarchy_size,
                                              device=self.device,
                                              dtype=th.long)
+
         self.rollout_buffer = OptionsRolloutBuffer(
             self.n_steps,
             self.observation_space,
@@ -119,6 +125,7 @@ class OptionsPPO(PPO):
             gamma=self.gamma,
             gae_lambda=self.gae_lambda,
             n_envs=self.n_envs,
+            n_rewards=self.n_rewards,
             seed=self.seed,
         )
 
@@ -162,6 +169,8 @@ class OptionsPPO(PPO):
         """
         assert self._last_obs is not None, "No previous observation was provided"
 
+        # Note: self.rollout_buffer is same objects as rollout_buffer param
+
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)
 
@@ -200,6 +209,24 @@ class OptionsPPO(PPO):
             # Perform actions
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
+            # options variable contains the option index for each environment that is active
+            # -> choose the reward for the currently active option
+            # shape: (n_envs, n_options_of_current_level, ...)
+            # reward shape: (n_envs, rewards)
+            # so choose the reward for the currently active option: shape: (n_envs, 1)
+            # rewards =  
+            # for now: implement only one level of options, throw error if more levels are used
+
+            # rewards is either a float or a np array of floats (for each env)
+            # if we use multiple rewards with HackAtari
+            if len(infos) > 1 and 'all_rewards' in infos[0]:
+                    # rewards then have shape (n_envs, n_rewards)
+                    rewards = np.array([info['all_rewards'] for info in infos])
+            elif 'all_rewards' in infos:
+                rewards = np.array([infos['all_rewards']]).reshape(-1, 1)
+            else:
+                rewards = rewards.reshape(-1, 1) 
+
             self.num_timesteps += env.num_envs
             self.progress_total.update(env.num_envs)
 
@@ -226,7 +253,7 @@ class OptionsPPO(PPO):
                     terminal_obs = self.policy.meta_policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                     with th.no_grad():
                         terminal_value = self.policy.meta_policy.predict_values(terminal_obs)[0]
-                    rewards[idx] += self.gamma * terminal_value
+                    rewards[idx] += self.gamma * terminal_value.item()
 
             # When an episode terminates, new_obs is 1st frame of new episode, so we need
             # to replace it and use the most recent obs as a surrogate for termination and
@@ -289,14 +316,14 @@ class OptionsPPO(PPO):
 
         # Log option activity
         for level, n_options in enumerate(self.policy.hierarchy_shape):
-            level_options = self.rollout_buffer.option_traces[:, :, level].astype(int)
-            level_terminations = self.rollout_buffer.option_terminations[:, :, level].astype(bool)
-            dones = self.rollout_buffer.dones.astype(bool)
+            level_options = rollout_buffer.option_traces[:, :, level].astype(int)
+            level_terminations = rollout_buffer.option_terminations[:, :, level].astype(bool)
+            dones = rollout_buffer.dones.astype(bool)
 
             for position in range(n_options):
                 option_active = level_options == position
                 option_count = np.sum(option_active)
-                option_activity_share = option_count / self.rollout_buffer.total_transitions
+                option_activity_share = option_count / rollout_buffer.total_transitions
 
                 if option_count > 0:
                     option_terminates = level_terminations[option_active] | dones[option_active]
@@ -455,10 +482,8 @@ class OptionsPPO(PPO):
                     if not option.value_fn_trainable:
                         value_loss = 0
 
-                # if activity_loss:
-                activity_loss_active = True
                 activity_loss = 0 
-                if activity_loss_active and level < highest_level:
+                if level < highest_level:
                     activity_loss = (log_prob - log_prob_should_be).abs().mean()
                     activity_losses.append(activity_loss.item())
                 else:
