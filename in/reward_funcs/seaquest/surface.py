@@ -1,4 +1,4 @@
-from ocatari.ram.seaquest import Player, Diver, Shark, Submarine, PlayerMissile, EnemyMissile, OxygenBar
+from ocatari.ram.seaquest import Player, Diver, Shark, Submarine, PlayerMissile, EnemyMissile, OxygenBar, CollectedDiver
 
 NO_OXYGEN = False
 ON_SURFACE = False
@@ -52,6 +52,7 @@ def reward_function(self) -> float:
     enemies = []
     player_missiles = []
     enemy_missiles = []
+    collected_divers = []
     oxygen_bar = None
 
     # Classify objects
@@ -68,6 +69,8 @@ def reward_function(self) -> float:
             enemy_missiles.append(obj)
         elif isinstance(obj, OxygenBar):
             oxygen_bar = obj
+        elif isinstance(obj, CollectedDiver):
+            collected_divers.append(obj)
 
     if player:
         for enemy in enemies:
@@ -83,11 +86,14 @@ def reward_function(self) -> float:
         elif COLLISION:
             reward -= 1 # some penalty for colliding
         elif LOW_OXYGEN: 
-            print("NICE")
             reward += 5 # some reward for surfacing with low oxygen
         elif not ON_SURFACE:
             # surfacing although enough oxygen
-            reward -= 0.1
+            if len(collected_divers) == 6:
+                reward += 5
+            else: 
+                reward -= 1
+
 
         # reset flags
         ON_SURFACE = True

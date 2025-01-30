@@ -325,6 +325,12 @@ class OptionsPPO(PPO):
                 option_count = np.sum(option_active)
                 option_activity_share = option_count / rollout_buffer.total_transitions
 
+                # option_rewards = rollout_buffer.rewards[:, :, position+1]
+                # TODO: this may be improved by checking for done 
+                option_rewards = rollout_buffer.rewards[option_active, position+1]
+                option_return = option_rewards.sum()
+                option_return /= self.n_envs
+
                 if option_count > 0:
                     option_terminates = level_terminations[option_active] | dones[option_active]
                     option_length = option_count / (np.sum(option_terminates) + 1)
@@ -335,6 +341,11 @@ class OptionsPPO(PPO):
                 option_name = get_option_name(level, position)
                 self.logger.record(option_name + "/activity_share", option_activity_share)
                 self.logger.record(option_name + "/length", option_length)
+                self.logger.record(option_name + "/reward_sum", option_return)
+
+        meta_rewards = rollout_buffer.rewards[..., 0]
+        meta_rewards = meta_rewards.mean(axis=-1) # mean over envs
+        self.logger.record("meta_policy" + "/reward_sum", np.sum(meta_rewards))
 
         self.sublevel_progress.close()
 

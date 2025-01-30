@@ -81,7 +81,7 @@ def run(config_path: str):
     device = get_torch_device(device)
 
     object_centric = environment.get("object_centric")
-    use_scobi = object_centric and (environment.get("prune_concept") == 'default'
+    reward_shaping = object_centric and (environment.get("prune_concept") == 'default'
                                     or environment.get("reward_mode") in ['human', 'mixed'])
     n_envs = cores
     n_eval_envs = cores
@@ -107,7 +107,7 @@ def run(config_path: str):
 
     cb_list = init_callbacks(exp_name=name,
                              total_timestamps=total_timestamps,
-                             may_use_reward_shaping=use_scobi,
+                             may_use_reward_shaping=reward_shaping,
                              n_envs=n_envs,
                              eval_env=eval_env,
                              n_eval_episodes=n_eval_episodes,
@@ -151,7 +151,7 @@ def run(config_path: str):
     policy_terminator = meta_policy.pop("policy_terminator", False) 
     policy_termination_mode = meta_policy.pop("policy_termination_mode", "raban")
     meta_activity_coef = meta_policy.pop("activity_coef", 0.0)
-
+    n_rewards = len(environment["hack"]["rewardfunc_path"]) if "hack" in environment and "rewardfunc_path" in environment["hack"] else 1
     options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,
@@ -166,6 +166,7 @@ def run(config_path: str):
         policy_terminator=policy_terminator,
         policy_termination_mode=policy_termination_mode,
         meta_activity_coef=meta_activity_coef,
+        n_rewards=n_rewards,
         **general,
         **options_kwargs,
     )
@@ -184,9 +185,11 @@ def run(config_path: str):
     # shutil.copy(src=config_path, dst=model_path / "config.yaml")
     if name != "debug":
         os.remove(config_path)
-    if use_scobi:
-        prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
-        shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
+
+    #TODO: If scobots is wanted, uncomment this.
+    # if reward_shaping:
+    #     prune_file_path = get_focus_file_path(environment.get("prune_concept"), environment["name"])
+    #     shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
     print(f"Starting experiment '{bold(name)}' with {type(options_ppo).__name__} training using {n_envs} actors and {n_eval_envs} evaluators...")
 

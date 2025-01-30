@@ -1,3 +1,4 @@
-opt0_shoot_enemies(X):-oxygen_high_or_med(X).
-opt1_collect_divers(X):-oxygen_high_or_med(X),divers_visible(X).
-opt2_rest(X):-oxygen_low(X).
+opt0_shoot_enemies(X):-oxygen_not_low(X),not_full_divers(X),enemies_visible(X).
+opt1_collect_divers(X):-oxygen_not_low(X),not_full_divers(X),divers_visible(X).
+opt2_surface(X):-oxygen_low(X)
+opt2_surface(X):-full_divers(X)

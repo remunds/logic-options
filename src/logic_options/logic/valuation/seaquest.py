@@ -99,7 +99,7 @@ from nsfr.utils.common import bool_to_probs
 # def false_predicate(agent: th.Tensor) -> th.Tensor:
 #     return bool_to_probs(th.tensor([False]))
 
-def oxygen_high_or_med(obs: th.Tensor) -> th.Tensor:
+def oxygen_not_low(obs: th.Tensor) -> th.Tensor:
     # obs has shape (4, 90) (4 is window size)
     # we have 45 objects (hud), 2 features each
     oxygen_bar_idx = (1+12+12+4+4+1+1) * 2
@@ -107,10 +107,24 @@ def oxygen_high_or_med(obs: th.Tensor) -> th.Tensor:
     return bool_to_probs(oxygen_value >= 16)
 
 def oxygen_low(obs: th.Tensor) -> th.Tensor:
-    return 1 - oxygen_high_or_med(obs)
+    return 1 - oxygen_not_low(obs)
 
 def divers_visible(obs: th.Tensor) -> th.Tensor:
     diver_idx_start = (1+12+12)*2
     diver_idx_end = diver_idx_start + 4*2
     divers = obs[-1][diver_idx_start:diver_idx_end]
     return bool_to_probs(th.any(divers > 0))
+
+def enemies_visible(obs: th.Tensor) -> th.Tensor:
+    enemy_idx_start = 1 * 2
+    enemy_idx_end = enemy_idx_start + (12+12)*2
+    enemies = obs[-1][enemy_idx_start:enemy_idx_end]
+    return bool_to_probs(th.any(enemies > 0))
+
+def full_divers(obs: th.Tensor) -> th.Tensor:
+    collected_diver_idx_start = (1+12+12+4+4+1+1)*2 + 1
+    collected_diver_idx_end = collected_diver_idx_start + 6*2
+    collected_divers = obs[-1][collected_diver_idx_start:collected_diver_idx_end]
+    # NOTE: currently broken
+    #TODO: change ocatari to return values for collected_divers
+    return bool_to_probs(th.all(collected_divers > 0))    
