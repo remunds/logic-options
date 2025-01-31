@@ -21,6 +21,5 @@ build-backend = "hatchling.build"
 [tool.uv.sources]
 scobi = { path = "ScoBots", editable = true }
 nsfr = { path = "NUDGE/nsfr", editable = true }
-hackatari = { git = "https://github.com/k4ntz/HackAtari" }
-#ocatari = { git = "https://github.com/k4ntz/OC_Atari", rev = "develop" }
-ocatari = { git = "https://github.com/k4ntz/OC_Atari", rev = "afc808e11e20a5f109c875c7f3d7a56f05aa7f8c" }
+ocatari = { path = "OC_Atari", editable = true }
+hackatari = { git = "https://github.com/k4ntz/HackAtari", rev = "feat/multiple_rewards" }

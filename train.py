@@ -151,7 +151,9 @@ def run(config_path: str):
     policy_terminator = meta_policy.pop("policy_terminator", False) 
     policy_termination_mode = meta_policy.pop("policy_termination_mode", "raban")
     meta_activity_coef = meta_policy.pop("activity_coef", 0.0)
-    n_rewards = len(environment["hack"]["rewardfunc_path"]) if "hack" in environment and "rewardfunc_path" in environment["hack"] else 1
+    reward_path = environment["hack"]["rewardfunc_path"] if "hack" in environment and "rewardfunc_path" in environment["hack"] else None
+    n_rewards = len(environment["hack"]["rewardfunc_path"]) if reward_path is not None and type(reward_path) is list else 1
+
     options_ppo = OptionsPPO(
         policy_kwargs=policy_kwargs,
         env=train_env,

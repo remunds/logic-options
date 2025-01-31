@@ -99,32 +99,40 @@ from nsfr.utils.common import bool_to_probs
 # def false_predicate(agent: th.Tensor) -> th.Tensor:
 #     return bool_to_probs(th.tensor([False]))
 
-def oxygen_not_low(obs: th.Tensor) -> th.Tensor:
-    # obs has shape (4, 90) (4 is window size)
+def oxygen_low(obs: th.Tensor) -> th.Tensor:
+    # obs has shape (N, 4, 90) (N is batch_size, 4 is window size)
     # we have 45 objects (hud), 2 features each
     oxygen_bar_idx = (1+12+12+4+4+1+1) * 2
-    oxygen_value = obs[-1][oxygen_bar_idx]
-    return bool_to_probs(oxygen_value >= 16)
+    # oxygen_value = obs[:, -1].squeeze()[oxygen_bar_idx]
+    oxygen_value = obs[:, -1, oxygen_bar_idx]
+    return bool_to_probs((oxygen_value <= 16) & (oxygen_value > 0))
 
-def oxygen_low(obs: th.Tensor) -> th.Tensor:
-    return 1 - oxygen_not_low(obs)
+def not_oxygen_low(obs: th.Tensor) -> th.Tensor:
+    return 1 - oxygen_low(obs)
 
 def divers_visible(obs: th.Tensor) -> th.Tensor:
     diver_idx_start = (1+12+12)*2
     diver_idx_end = diver_idx_start + 4*2
-    divers = obs[-1][diver_idx_start:diver_idx_end]
+    divers = obs[:, -1, diver_idx_start:diver_idx_end]
     return bool_to_probs(th.any(divers > 0))
+
+def not_divers_visible(obs: th.Tensor) -> th.Tensor:
+    return 1 - divers_visible(obs)
 
 def enemies_visible(obs: th.Tensor) -> th.Tensor:
     enemy_idx_start = 1 * 2
     enemy_idx_end = enemy_idx_start + (12+12)*2
-    enemies = obs[-1][enemy_idx_start:enemy_idx_end]
+    enemies = obs[:, -1, enemy_idx_start:enemy_idx_end]
     return bool_to_probs(th.any(enemies > 0))
+
+def not_enemies_visible(obs: th.Tensor) -> th.Tensor:
+    return 1 - enemies_visible(obs)
 
 def full_divers(obs: th.Tensor) -> th.Tensor:
     collected_diver_idx_start = (1+12+12+4+4+1+1)*2 + 1
     collected_diver_idx_end = collected_diver_idx_start + 6*2
-    collected_divers = obs[-1][collected_diver_idx_start:collected_diver_idx_end]
-    # NOTE: currently broken
-    #TODO: change ocatari to return values for collected_divers
+    collected_divers = obs[:, -1, collected_diver_idx_start:collected_diver_idx_end]
     return bool_to_probs(th.all(collected_divers > 0))    
+
+def not_full_divers(obs: th.Tensor) -> th.Tensor:
+    return 1 - full_divers(obs)

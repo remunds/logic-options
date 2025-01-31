@@ -1,3 +1,3 @@
 opt0_shoot_enemies:1:image
 opt1_collect_divers:1:image
-opt2_rest:1:image
+opt2_surface:1:image

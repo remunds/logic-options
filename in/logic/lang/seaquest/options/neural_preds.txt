@@ -1,3 +1,6 @@
-oxygen_high_or_med:1:img
-divers_visible:1:img
-oxygen_low:1:img
+enemies_visible:1:image
+divers_visible:1:image
+oxygen_low:1:image
+full_divers:1:image
+not_oxygen_low:1:image
+not_full_divers:1:image
