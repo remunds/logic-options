@@ -1,0 +1,65 @@
+name: "neural_hierarchy_reward_mixing"
+description: ""
+device: cuda:15
+cores: 4
+seed: 0
+
+environment:
+  name: "ALE/Seaquest-v5"
+  object_centric: True
+  reward_mode: env
+  framestack: 4
+  frameskip: 1
+  normalize_observation: True
+  normalize_reward: False
+  hack:
+    rewardfunc_path: ["./in/reward_funcs/seaquest/hackatari_reward.py",
+    "./in/reward_funcs/seaquest/fight_enemies.py",
+    "./in/reward_funcs/seaquest/collect_divers.py",
+    "./in/reward_funcs/seaquest/surface.py"]
+
+general:
+  hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [64, 64]  # try smaller values to decrease possibility of choosing the same option all the time 
+  total_timesteps: 10e6
+  n_steps: 128
+  n_epochs: 4
+  batch_size: 256
+  gamma: 0.99
+  gae_lambda: 0.95
+  normalize_advantage: True
+
+meta_policy:
+  logic: False
+  policy_ent_coef: 0.01
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.5
+  value_fn_clip_range: 0.1
+  learning_rate:  # Adam
+    initial_value: 2.5e-4
+    schedule_type: linear
+  policy_terminator: True # Use new termination by meta-probabilities
+  policy_termination_mode: "raban"
+
+options:
+  policy_ent_coef: 0.01
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.5
+  value_fn_clip_range: 
+  terminator_ent_coef: 0.01
+  terminator_clip_range: 0.1
+  termination_regularizer: -100
+  learning_rate:  # Adam
+    initial_value: 2.5e-4
+    schedule_type: linear
+
+evaluation:
+  frequency: 100000
+  deterministic: True
+  render: False
+  early_stop_on_no_reward: 500
+  n_episodes: 10

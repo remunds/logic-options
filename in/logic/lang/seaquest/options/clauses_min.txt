@@ -1,0 +1,4 @@
+opt0_shoot_enemies(X):-enemies_visible(X).
+opt1_collect_divers(X):-divers_visible(X).
+opt2_surface(X):-oxygen_low(X).
+opt2_surface(X):-full_divers(X).
