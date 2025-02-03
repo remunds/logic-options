@@ -54,7 +54,7 @@ class OptionEvalCallback(EvalCallback):
             # if self.verbose >= 1:
             #     print("\nRunning evaluation... ", end="")
 
-            episode_rewards, episode_lengths, option_rewards = evaluate_policy(
+            episode_rewards, episode_lengths, option_returns = evaluate_policy(
                 self.model,
                 self.eval_env,
                 n_eval_episodes=self.n_eval_episodes,
@@ -102,8 +102,8 @@ class OptionEvalCallback(EvalCallback):
             # Add to current Logger
             self.logger.record("eval/return", float(ret))
             self.logger.record("eval/episode_length", ep_length)
-            if len(option_rewards) > 0:
-                for idx, option_reward in enumerate(option_rewards):
+            if len(option_returns) > 0:
+                for idx, option_reward in enumerate(option_returns):
                     self.logger.record(f"eval/reward_{idx}/return", option_reward)
 
             if len(self._is_success_buffer) > 0:
@@ -240,6 +240,7 @@ def evaluate_policy(
     episode_rewards = []
     episode_lengths = []
     option_episode_rewards = {}
+    option_episode_returns = {}
 
     episode_counts = np.zeros(n_envs, dtype="int")
     # Divides episodes among different sub environments in the vector as evenly as possible
@@ -272,6 +273,12 @@ def evaluate_policy(
                 info = infos[i]
                 episode_starts[i] = done
 
+                if "all_rewards" in info:
+                    for idx, option_reward in enumerate(info["all_rewards"]):
+                        if idx not in option_episode_rewards:
+                            option_episode_rewards[idx] = []
+                        option_episode_rewards[idx].append(option_reward)
+
                 if callback is not None:
                     callback(locals(), globals())
 
@@ -292,6 +299,7 @@ def evaluate_policy(
                             # Do not trust "done" with episode endings.
                             # Monitor wrapper includes "episode" key in info if environment
                             # has been wrapped with it. Use those rewards instead.
+                            # They are actually returns (sum of all rewards of the episode)
                             episode_rewards.append(info["episode"]["r"])
                             episode_lengths.append(info["episode"]["l"])
                             # Only increment at the real end of an episode
@@ -301,10 +309,10 @@ def evaluate_policy(
                         episode_lengths.append(current_lengths[i])
                         episode_counts[i] += 1
                     if "all_rewards" in info:
-                        for idx, option_reward in enumerate(info["all_rewards"]):
-                            if idx not in option_episode_rewards:
-                                option_episode_rewards[idx] = []
-                            option_episode_rewards[idx].append(option_reward)
+                        for k, v in option_episode_rewards.items():
+                            if k not in option_episode_returns:
+                                option_episode_returns[k] = []
+                            option_episode_returns[k].append(sum(v))
 
                     current_rewards[i] = 0
                     current_lengths[i] = 0
@@ -317,14 +325,15 @@ def evaluate_policy(
 
         if render:
             env.render()
-    option_mean_rewards = [np.mean(v) for k, v in option_episode_rewards.items()]
+    option_mean_returns = [np.mean(v) for k, v in option_episode_returns.items()]
     mean_reward = float(np.mean(episode_rewards))
     std_reward = float(np.std(episode_rewards))
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     if return_episode_rewards:
-        return episode_rewards, episode_lengths, option_mean_rewards
-    return mean_reward, std_reward, option_mean_rewards
+        return episode_rewards, episode_lengths, option_mean_returns
+
+    return mean_reward, std_reward, option_mean_returns
 
 
 def init_callbacks(exp_name: str,
