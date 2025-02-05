@@ -127,7 +127,6 @@ class OptionEvalCallback(EvalCallback):
             # Trigger callback after every evaluation, if needed
             if self.callback is not None:
                 continue_training = continue_training and self._on_event()
-
         return continue_training
 
 

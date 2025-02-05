@@ -1,20 +1,35 @@
 from pathlib import Path
-
+import os
 import yaml
 import torch as th
 
 from logic_options.envs.common import init_train_eval_envs
+from logic_options.utils.common import get_torch_device
 from logic_options.envs.util import get_atari_identifier
 from logic_options.utils.callbacks import init_callbacks
 from logic_options.options.ppo import load_agent
+from logic_options.utils.console import bold
 
-ENV_NAME = "ALE/Kangaroo-v5"
-MODEL_NAME = "reward-shaping/v2-2"
+from stable_baselines3.common.logger import configure
+from random import randint
+
+ENV_NAME = "ALE/Seaquest-v5"
+MODEL_NAME = "logic_hierarchy_reward_mixing_hp_change2"
 
 OUT_BASE_PATH = "out/"
+CHECKPOINT_FREQUENCY = 1_000_000
+
+#set allowed threads to 4
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
+os.environ["OPENBLAS_NUM_THREADS"] = "4"
+
+th.set_num_threads(4)
 
 
 def run():
+    #NOTE: currently, logic policies can only be resumed on cpu
+
     game_identifier = get_atari_identifier(ENV_NAME)
 
     model_dir = Path(OUT_BASE_PATH, game_identifier, MODEL_NAME)
@@ -23,35 +38,78 @@ def run():
     config_path = model_dir / "config.yaml"
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.Loader)
+    
+    # Mandatory hyperparams
+    environment = config["environment"].copy()
+    general = config["general"].copy()
+    meta_policy = config["meta_policy"].copy()
+    evaluation = config["evaluation"].copy()
+
+    # Optional hyperparams
+    name = config.get("name")
+    description = config.get("description")
+    seed = config.get("seed")
+    device = config.get("device")
+    cores = config.get("cores")
+
+    print(f"Found configuration, loading experiment '{bold(name)}'")
+    if description is not None and description != '':
+        print(f"Description: {description}")
+
+    if seed is None:
+        seed = randint(0, 10_000_000)
+        config["seed"] = seed
+    th.manual_seed(seed)
+
+    if device is None:
+        device = "cpu"
+        config["device"] = "cpu"
+        device = get_torch_device(device)
+
+    if cores is None:
+        cores = 4
+        config["cores"] = 4
 
     n_envs = config["cores"]
 
-    model = load_agent(model_dir=model_dir, best_model=False, n_envs=n_envs, train=True)
 
-    environment = config["environment"]
-    evaluation = config["evaluation"]
-    training = config["training"]
+    model = load_agent(model_dir=model_dir, best_model=False, n_envs=n_envs, train=True, device=device)
 
-    th.manual_seed(config["seed"])
+    object_centric = environment.get("object_centric")
+    reward_shaping = object_centric and (environment.get("prune_concept") == 'default'
+                                    or environment.get("reward_mode") in ['human', 'mixed'])
+    n_envs = cores
+    n_eval_envs = cores
+    n_eval_episodes = evaluation.pop("n_episodes")
+    if n_eval_episodes is None:
+        n_eval_episodes = 4 * n_eval_envs
+    total_timestamps = int(float(general.pop("total_timesteps")))
 
-    object_centric = environment["object_centric"]
-    n_eval_envs = config["cores"]
-    total_timestamps = int(float(training["total_timesteps"]))
+    logic = meta_policy["logic"]
+    hierarchy_shape = general.pop("hierarchy_shape")
+    uses_options = len(hierarchy_shape) > 0
+    print(f"Hierarchy shape {hierarchy_shape}")
+
+    log_path = model_dir
     ckpt_path = model_dir / "checkpoints"
 
-    _, eval_env = init_train_eval_envs(n_train_envs=0,
-                                       n_eval_envs=n_eval_envs,
-                                       seed=config["seed"],
-                                       **environment)
+    _, eval_env = init_train_eval_envs(n_train_envs=n_envs,
+                                               n_eval_envs=n_eval_envs,
+                                               seed=seed,
+                                               logic=logic,
+                                               render_eval=evaluation["render"],
+                                               accept_predicates=not uses_options,
+                                               **environment)
 
-    cb_list = init_callbacks(exp_name=MODEL_NAME,
+    cb_list = init_callbacks(exp_name=name,
                              total_timestamps=total_timestamps,
-                             may_use_reward_shaping=object_centric,
+                             may_use_reward_shaping=reward_shaping,
                              n_envs=n_envs,
                              eval_env=eval_env,
-                             n_eval_episodes=4 * n_eval_envs,
+                             n_eval_episodes=n_eval_episodes,
                              ckpt_path=ckpt_path,
-                             eval_kwargs=evaluation)
+                             eval_kwargs=evaluation,
+                             checkpoint_frequency=CHECKPOINT_FREQUENCY)
 
     remaining_timesteps = total_timestamps - model.num_timesteps
 
@@ -59,13 +117,17 @@ def run():
         print("No timesteps remain for training, it was already finished.")
         return
 
+    model.tensorboard_log = str(log_path)
+    new_logger = configure(str(log_path), ["tensorboard"])
+    # model.set_env(train_env)
+    model.set_logger(new_logger)
+
     print(f"Continuing experiment {MODEL_NAME}.")
     print(f"Started {type(model).__name__} training for {remaining_timesteps} steps "
           f"with {n_envs} actors and {n_eval_envs} evaluators...")
     model.learn(total_timesteps=remaining_timesteps,
                 callback=cb_list,
-                log_interval=None,
-                reset_num_timesteps=False)
+                reset_num_timesteps=False, tb_log_name=name)
 
 
 if __name__ == "__main__":

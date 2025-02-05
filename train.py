@@ -17,9 +17,9 @@ from logic_options.utils.param_schedule import maybe_make_schedule
 
 OUT_BASE_PATH = "out/"
 QUEUE_PATH = "in/queue/"
-CHECKPOINT_FREQUENCY = 10_000_000
+CHECKPOINT_FREQUENCY = 1_000_000
 
-#set allowed threads to 1
+#set allowed threads to 4
 os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"
 os.environ["OPENBLAS_NUM_THREADS"] = "4"
@@ -36,12 +36,12 @@ def run(config_path: str):
     evaluation = config["evaluation"].copy()
 
     # Optional hyperparams
-    name = config.get("name")
-    description = config.get("description")
-    seed = config.get("seed")
-    options = config.get("options")
-    device = config.get("device")
-    cores = config.get("cores")
+    name = config.get("name").copy()
+    description = config.get("description").copy()
+    seed = config.get("seed").copy()
+    options = config.get("options").copy()
+    device = config.get("device").copy()
+    cores = config.get("cores").copy()
 
     if name is None:
         name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)

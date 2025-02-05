@@ -5,7 +5,7 @@ if __name__ == "__main__":
      #renderer = Renderer(env_name="MeetingRoom",
                         #agent_name="neural_pretrained_maggi_trainable_1",
                         #agent_name="neural_hierarchy_polterm_weak_very_low_ent",
-                        agent_name="neural_flat_surface_4",
+                        agent_name="logic_hierarchy_reward_mixing_hp_change",
                     #     agent_name="debug",
                         #agent_name="neural_hierarchy_polterm_none_1",
                         #agent_name="elevator_option_15",
