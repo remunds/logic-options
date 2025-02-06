@@ -11,7 +11,10 @@ from logic_options.options.ppo import load_agent
 from logic_options.utils.console import bold
 
 from stable_baselines3.common.logger import configure
+
 from random import randint
+
+from logic_options.utils.param_schedule import maybe_make_schedule
 
 ENV_NAME = "ALE/Seaquest-v5"
 MODEL_NAME = "logic_hierarchy_reward_mixing_hp_change2"
@@ -44,6 +47,7 @@ def run():
     general = config["general"].copy()
     meta_policy = config["meta_policy"].copy()
     evaluation = config["evaluation"].copy()
+    options = config.get("options").copy()
 
     # Optional hyperparams
     name = config.get("name")
@@ -121,6 +125,24 @@ def run():
     new_logger = configure(str(log_path), ["tensorboard"])
     # model.set_env(train_env)
     model.set_logger(new_logger)
+
+    meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range"))
+    prev_meta_learning_rate =  model.meta_learning_rate(0.005) # call schedule with 0.0 progress remaining
+    new_meta_lr_args = meta_policy.pop("learning_rate")
+    new_meta_lr_args["initial_value"] = prev_meta_learning_rate
+    meta_learning_rate = maybe_make_schedule(new_meta_lr_args)
+    
+    options_clip_range = maybe_make_schedule(options.pop("policy_clip_range"))
+    prev_options_learning_rate = model.options_learning_rate(0.005) # call schedule with 0.0 progress remaining
+    new_options_lr_args = options.pop("learning_rate")
+    new_options_lr_args["initial_value"] = prev_options_learning_rate
+    options_learning_rate = maybe_make_schedule(new_options_lr_args)
+
+    # set new schedule
+    model.meta_pi_clip_range = meta_policy_clip_range
+    model.meta_learning_rate = meta_learning_rate
+    model.options_pi_clip_range = options_clip_range
+    model.options_learning_rate = options_learning_rate
 
     print(f"Continuing experiment {MODEL_NAME}.")
     print(f"Started {type(model).__name__} training for {remaining_timesteps} steps "

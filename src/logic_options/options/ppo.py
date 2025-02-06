@@ -688,7 +688,15 @@ class OptionsPPO(PPO):
         """
         if isinstance(lr_schedule, float):
             # Constant learning rate
+            if not isinstance(optimizers, list):
+                optimizers = [optimizers]
+            for optimizer in optimizers:
+                update_learning_rate(optimizer, lr_schedule)
+            # Log the current learning rate
+            self.logger.record("hyperparameter_schedule/learning_rate",
+                            lr_schedule)
             return
+
         # Log the current learning rate
         self.logger.record("hyperparameter_schedule/learning_rate",
                            lr_schedule(self._current_progress_remaining))
