@@ -1,6 +1,6 @@
 name: "debug"
 description: "Uses the pre-trained components"
-device: cpu
+device: cuda:8
 cores: 1
 seed: 0
 
@@ -13,7 +13,10 @@ environment:
   normalize_observation: False
   normalize_reward: False
   hack:
-    rewardfunc_path: "./in/reward_funcs/seaquest/hackatari_reward.py"
+    rewardfunc_path: ["./in/reward_funcs/seaquest/hackatari_reward.py",
+      "./in/reward_funcs/seaquest/fight_enemies.py",
+      "./in/reward_funcs/seaquest/collect_divers.py",
+      "./in/reward_funcs/seaquest/surface_dense.py"]
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
@@ -42,35 +45,41 @@ meta_policy:
   policy_termination_mode: "raban"
 
 options:
-  policy_ent_coef: 0.1
+  policy_ent_coef: 0.01
   policy_clip_range:  # PPO clipping epsilon
     initial_value: 0.1
     schedule_type: linear
-  value_fn_coef: 0.05
+  value_fn_coef: 0.5
   value_fn_clip_range:
   terminator_ent_coef: 0.1
   terminator_clip_range: 0.1
-  termination_regularizer: -100
+  termination_regularizer: -100 # directly terminate for better learning
   learning_rate:  # Adam
-    initial_value: 0.002
-    schedule_type: exponential
-    half_life_period: 0.1
+    initial_value: 2.5e-4
+    schedule_type: linear
+  max_grad_norm: 0.5
   pretrained:
     - level: 0
       position: 0
       model_path: in/pretrained/seaquest/fight_enemies
       policy_trainable: False
-      value_fn_trainable: True
-      terminator_trainable: True
+      value_fn_trainable: False
+      terminator_trainable: False
     - level: 0
       position: 1
       model_path: in/pretrained/seaquest/collect_divers
       policy_trainable: False
-      value_fn_trainable: True
-      terminator_trainable: True
+      value_fn_trainable: False
+      terminator_trainable: False
+    - level: 0
+      position: 2
+      model_path: in/pretrained/seaquest/surface_dense
+      policy_trainable: False
+      value_fn_trainable: False
+      terminator_trainable: False
 
 evaluation:
-  frequency: 100000
+  frequency: 50000
   deterministic: True
   n_episodes: 10
   render: False

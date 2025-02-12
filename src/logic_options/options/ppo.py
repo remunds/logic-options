@@ -20,6 +20,7 @@ from logic_options.common import MODELS_BASE_PATH
 from logic_options.envs.common import init_vec_env
 from logic_options.envs.util import get_env_identifier
 from logic_options.options.agent import OptionsAgent
+from logic_options.options.function_meta_policy import FunctionMetaPolicy
 from logic_options.options.option import Terminator
 from logic_options.options.rollout_buffer import OptionsRolloutBuffer
 from logic_options.utils.common import get_option_name, get_most_recent_checkpoint_steps
@@ -250,7 +251,7 @@ class OptionsPPO(PPO):
                         and infos[idx].get("terminal_observation") is not None
                         and infos[idx].get("TimeLimit.truncated", False)
                 ):
-                    terminal_obs = self.policy.meta_policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                    terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                     with th.no_grad():
                         terminal_value = self.policy.meta_policy.predict_values(terminal_obs)[0]
                     rewards[idx] += self.gamma * terminal_value.item()
@@ -399,6 +400,8 @@ class OptionsPPO(PPO):
         if level == -1:  # meta-policy
             option = None
             policy = self.policy.meta_policy
+            if isinstance(policy, FunctionMetaPolicy):
+                return
             self._update_learning_rate(policy.optimizer, self.meta_learning_rate)
             evaluate_fn = policy.evaluate_actions
             pi_ent_coef = self.meta_pi_ent_coef
@@ -495,7 +498,19 @@ class OptionsPPO(PPO):
 
                 activity_loss = 0 
                 if level < highest_level:
-                    activity_loss = (log_prob - log_prob_should_be).abs().mean()
+                    # load balancing loss from https://www.jmlr.org/papers/volume23/21-0998/21-0998.pdf
+                    # pushes towards equal option activations
+                    #NOTE: could instead use deepseeks load balancing (loss free)
+                    option_counts: th.Tensor = th.bincount(options_actions.to(int), minlength=num_options)
+                    option_fractions= option_counts / option_counts.sum()
+                    mean_log_prob_per_option = []
+                    for o in range(num_options):
+                        # get log_prob_per_option over all steps
+                        dist = policy.get_distribution(rollout_data.observations)
+                        log_prob = dist.log_prob(th.tensor(o, device=self.device))
+                        mean_log_prob_per_option.append(log_prob.mean())
+                    mean_log_prob_per_option = th.stack(mean_log_prob_per_option)
+                    activity_loss = th.mean(input=option_fractions * mean_log_prob_per_option.exp())
                     activity_losses.append(activity_loss.item())
                 else:
                     activity_losses.append(activity_loss)

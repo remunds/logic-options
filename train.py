@@ -36,12 +36,12 @@ def run(config_path: str):
     evaluation = config["evaluation"].copy()
 
     # Optional hyperparams
-    name = config.get("name").copy()
-    description = config.get("description").copy()
-    seed = config.get("seed").copy()
+    name = config.get("name")
+    description = config.get("description")
+    seed = config.get("seed")
     options = config.get("options").copy()
-    device = config.get("device").copy()
-    cores = config.get("cores").copy()
+    device = config.get("device")
+    cores = config.get("cores")
 
     if name is None:
         name = hyperparams_to_experiment_name(environment_kwargs=environment, seed=seed)
@@ -93,6 +93,8 @@ def run(config_path: str):
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
     logic = meta_policy["logic"]
+    function = meta_policy.get("function", False)
+    function_path = meta_policy.get("function_path", "")
     hierarchy_shape = general.pop("hierarchy_shape")
     uses_options = len(hierarchy_shape) > 0
     print(f"Hierarchy shape {hierarchy_shape}")
@@ -116,21 +118,24 @@ def run(config_path: str):
                              checkpoint_frequency=CHECKPOINT_FREQUENCY)
 
     policy_kwargs = {"hierarchy_shape": hierarchy_shape,
-                     "normalize_images": not object_centric}
+                     "normalize_images": not object_centric,
+                     "device": device}
 
     if logic:
         policy_kwargs.update({"env_name": game_identifier,
                               "logic_meta_policy": True,
                               "accepts_predicates": uses_options,
-                              "device": device})
+                              })
+    if function:
+        policy_kwargs.update({"function_meta_policy": function_path}) 
 
     net_arch = general.pop("net_arch")
     if net_arch is not None:
         policy_kwargs["net_arch"] = net_arch
 
     # Init all meta policy schedules
-    meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range"))
-    meta_learning_rate = maybe_make_schedule(meta_policy.pop("learning_rate"))
+    meta_policy_clip_range = maybe_make_schedule(meta_policy.pop("policy_clip_range", 0.0))
+    meta_learning_rate = maybe_make_schedule(meta_policy.pop("learning_rate", 0.0))
 
     if options is not None:
         options_activity_coef = options.pop("activity_coef", 0.0)
@@ -161,10 +166,10 @@ def run(config_path: str):
         device=device,
         verbose=1,
         seed=seed,
-        meta_policy_ent_coef=meta_policy["policy_ent_coef"],
+        meta_policy_ent_coef=meta_policy.pop("policy_ent_coef", None),
         meta_policy_clip_range=meta_policy_clip_range,
-        meta_value_fn_coef=meta_policy["value_fn_coef"],
-        meta_value_fn_clip_range=meta_policy["value_fn_clip_range"],
+        meta_value_fn_coef=meta_policy.pop("value_fn_coef", None),
+        meta_value_fn_clip_range=meta_policy.pop("value_fn_clip_range", None),
         policy_terminator=policy_terminator,
         policy_termination_mode=policy_termination_mode,
         meta_activity_coef=meta_activity_coef,
@@ -194,7 +199,6 @@ def run(config_path: str):
     #     shutil.copy(src=prune_file_path, dst=model_path / "prune.yaml")
 
     print(f"Starting experiment '{bold(name)}' with {type(options_ppo).__name__} training using {n_envs} actors and {n_eval_envs} evaluators...")
-
     options_ppo.learn(total_timesteps=total_timestamps, callback=cb_list)
 
 

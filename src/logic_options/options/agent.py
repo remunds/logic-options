@@ -9,6 +9,7 @@ from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
+from logic_options.options.function_meta_policy import FunctionMetaPolicy
 from logic_options.options.option import OptionCollection, Option
 from logic_options.options.hierarchy import OptionsHierarchy
 from logic_options.logic.policy import NudgePolicy
@@ -44,6 +45,7 @@ class OptionsAgent(BasePolicy):
                  lr_schedule,
                  hierarchy_shape: List[int],
                  logic_meta_policy: bool = False,
+                 function_meta_policy: bool = False,
                  net_arch: List[int] = None,
                  env_name: str = None,
                  accepts_predicates: bool = False,
@@ -55,6 +57,7 @@ class OptionsAgent(BasePolicy):
         self.lr_schedule = lr_schedule
         self.hierarchy_shape = hierarchy_shape
         self.logic_meta_policy = logic_meta_policy
+        self.function_meta_policy = function_meta_policy
         self.net_arch = net_arch
         self.env_name = env_name
         self.accepts_predicates = accepts_predicates
@@ -79,6 +82,13 @@ class OptionsAgent(BasePolicy):
                 device=device,
                 **kwargs
             )
+        elif self.function_meta_policy is not None:
+            self.meta_policy = FunctionMetaPolicy(
+                function_path=self.function_meta_policy,
+                num_options=options_hierarchy.shape[0],
+                device=device
+            )
+            print("using function as metapolicy")
         else:
             # self.meta_policy = ActorCriticPolicy(
             self.meta_policy = MetaPolicy(
@@ -289,6 +299,9 @@ class OptionsAgent(BasePolicy):
         n_envs = len(obs)
         option_traces = option_traces.clone().type(th.long)
         if self.hierarchy_size == 0:
+            if isinstance(self.meta_policy, FunctionMetaPolicy):
+                raise NotImplementedError("FunctionMetaPolicy requires lower-level options.")
+
             values, option_distribution = self.meta_policy(obs, deterministic)
             # actions, values, log_probs = self.meta_policy(obs, deterministic)
             actions = option_distribution.get_actions(deterministic)
