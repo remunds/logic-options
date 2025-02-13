@@ -24,6 +24,7 @@ def meta_policy(oc_state) -> int:
             # print("All 6 divers collected!")
             # Manage oxygen
             option_choices[i] = 2
+            break
 
         # Check oxygen level (index 36)
         ox_bar_idx = (1+12+12+4+4+1+1) * 2 
@@ -32,6 +33,7 @@ def meta_policy(oc_state) -> int:
             # print("Oxygen low!")
             # Manage oxygen
             option_choices[i] = 2
+            break
 
         # Idle if player is not present
         player = state[0:2]
@@ -40,6 +42,7 @@ def meta_policy(oc_state) -> int:
             # print("Player not present!")
             # Shoot Enemies
             option_choices[i] = 0
+            break
 
         px, py = player[0], player[1]
         danger_dist_sq = 50 ** 2  # Squared distance threshold
@@ -82,6 +85,5 @@ def meta_policy(oc_state) -> int:
 
         # Default to Shooting Enemies 
         # print("Idling")
-        option_choices[i] = 0
-
+        # option_choices[i] = 0
     return option_choices

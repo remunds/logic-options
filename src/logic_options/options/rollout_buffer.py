@@ -394,16 +394,10 @@ class OptionsRolloutBuffer(BaseBuffer):
             policy_continues &= episode_continues
 
             # Sum up rewards during option arc for higher-level SMDP transition
-            #TODO: I guess it trips here
-            # import ipdb; ipdb.set_trace()
             # self.rewards has shape (buffer_size, n_envs, n_rewards) -> select=(n_envs, n_rewards)
             # before shape (buffer_size, n_envs) -> select=(n_envs)
             # reward has shape (n_envs, option_hierarchy_size+1) (2,2)
-            # so we essentially add rewards to each option-level (in this case 2 (meta-policy and option-level 1)) 
-            # TODO: thus, we need to add another dim that tracks per-option rewards
-            # To both reward/return and advantage
             # reward, return and advantage require additional dim
-            # reward += np.expand_dims(self.rewards[step], axis=1)
             reward += np.expand_dims(self.rewards[step], axis=1)
 
             dtype = np.float64 if step == self.buffer_size - 1 else np.float32
