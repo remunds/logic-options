@@ -328,9 +328,11 @@ class OptionsPPO(PPO):
 
                 # option_rewards = rollout_buffer.rewards[:, :, position+1]
                 # TODO: this may be improved by checking for done 
+                # Problem is that done is only set by the option that was active
+                # but we want to know the rewards of all options once env says done
                 option_rewards = rollout_buffer.rewards[option_active, position+1]
-                option_return = option_rewards.sum()
-                option_return /= self.n_envs
+                option_rewards = option_rewards.sum()
+                option_rewards /= self.n_envs
 
                 if option_count > 0:
                     option_terminates = level_terminations[option_active] | dones[option_active]
@@ -342,11 +344,24 @@ class OptionsPPO(PPO):
                 option_name = get_option_name(level, position)
                 self.logger.record(option_name + "/activity_share", option_activity_share)
                 self.logger.record(option_name + "/length", option_length)
-                self.logger.record(option_name + "/reward_sum", option_return)
+                self.logger.record(option_name + "/reward_sum", option_rewards)
 
         meta_rewards = rollout_buffer.rewards[..., 0]
         meta_rewards = meta_rewards.mean(axis=-1) # mean over envs
         self.logger.record("meta_policy" + "/reward_sum", np.sum(meta_rewards))
+
+        # TODO: log rollout/ep_rewX_mean env.episode_all_returns
+        # shape: (n_envs, n_rewards)
+        if self.n_rewards > 1:
+            env_episode_all_returns = [e.episode_all_returns for e in env.envs] 
+            try:
+                # (n_envs, n_episodes, n_returns)
+                episode_all_returns = np.array(env_episode_all_returns)
+                for reward_idx in range(self.n_rewards):
+                    self.logger.record("rollout/ep_rew" + str(reward_idx) + "_mean", episode_all_returns[:, -1, reward_idx].mean()) 
+            except Exception as e:
+                # probably not all envs have finished an episode
+                pass
 
         self.sublevel_progress.close()
 
@@ -433,7 +448,6 @@ class OptionsPPO(PPO):
         if level < highest_level: 
             # not action level -> encourage uniform option activation
             num_options = self.policy.hierarchy_shape[level + 1]
-            log_prob_should_be = np.log(1 / num_options)
 
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):

@@ -19,6 +19,7 @@ from logic_options.logic.env_wrapper import LogicEnvWrapper
 
 from logic_options.common import FOCUS_FILES_DIR, FOCUS_FILES_DIR_UNPRUNED, REWARD_MODE, MULTIPROCESSING_START_METHOD
 from logic_options.envs.util import get_atari_identifier
+from logic_options.utils.train_monitor import TrainMonitor
 
 
 def make_ocatari_env(name: str,
@@ -42,7 +43,8 @@ def make_hackatari_env(name: str,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
         env = HackAtari(name, hud=True, dopamine_pooling=False, **kwargs)
-        env = Monitor(env)
+        # env = Monitor(env)
+        env = TrainMonitor(env)
         env.reset(seed=seed + rank)
         return env
 

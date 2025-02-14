@@ -102,9 +102,10 @@ class OptionEvalCallback(EvalCallback):
             # Add to current Logger
             self.logger.record("eval/return", float(ret))
             self.logger.record("eval/episode_length", ep_length)
+            # this is more or less a fake return, as if the option's reward was always active  
             if len(option_returns) > 0:
-                for idx, option_reward in enumerate(option_returns):
-                    self.logger.record(f"eval/reward_{idx}/return", option_reward)
+                for idx, option_return in enumerate(option_returns):
+                    self.logger.record(f"eval/reward_{idx}/return", option_return)
 
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
@@ -274,9 +275,12 @@ def evaluate_policy(
 
                 if "all_rewards" in info:
                     for idx, option_reward in enumerate(info["all_rewards"]):
+                        # add reward-idx to rewards 
                         if idx not in option_episode_rewards:
-                            option_episode_rewards[idx] = []
-                        option_episode_rewards[idx].append(option_reward)
+                            option_episode_rewards[idx] = np.zeros(n_envs)
+                        # option_episode_rewards[idx].append(option_reward)
+                        # add reward of current env 
+                        option_episode_rewards[idx][i] += option_reward
 
                 if callback is not None:
                     callback(locals(), globals())
@@ -311,7 +315,10 @@ def evaluate_policy(
                         for k, v in option_episode_rewards.items():
                             if k not in option_episode_returns:
                                 option_episode_returns[k] = []
-                            option_episode_returns[k].append(sum(v))
+                            option_episode_returns[k].append(v[i])
+                            # reset option rewards of current env
+                            v[i] = 0
+
 
                     current_rewards[i] = 0
                     current_lengths[i] = 0
