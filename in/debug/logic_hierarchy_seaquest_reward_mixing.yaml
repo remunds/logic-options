@@ -19,7 +19,7 @@ environment:
     rewardfunc_path: ["./in/reward_funcs/seaquest/hackatari_reward.py",
       "./in/reward_funcs/seaquest/fight_enemies.py",
       "./in/reward_funcs/seaquest/collect_divers.py",
-      "./in/reward_funcs/seaquest/surface_ds.py"]
+      "./in/reward_funcs/seaquest/surface.py"]
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
