@@ -54,3 +54,6 @@ class FunctionMetaPolicy:
 
     def state_dict(self):
         return {}
+    
+    def load_state_dict(self, state_dict):
+        pass
