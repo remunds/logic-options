@@ -322,6 +322,8 @@ class OptionsPPO(PPO):
             dones = rollout_buffer.dones.astype(bool)
 
             for position in range(n_options):
+                option_name = get_option_name(level, position)
+
                 option_active = level_options == position
                 option_count = np.sum(option_active)
                 option_activity_share = option_count / rollout_buffer.total_transitions
@@ -330,9 +332,11 @@ class OptionsPPO(PPO):
                 # TODO: this may be improved by checking for done 
                 # Problem is that done is only set by the option that was active
                 # but we want to know the rewards of all options once env says done
-                option_rewards = rollout_buffer.rewards[option_active, position+1]
-                option_rewards = option_rewards.sum()
-                option_rewards /= self.n_envs
+                if self.n_rewards > 1:
+                    option_rewards = rollout_buffer.rewards[option_active, position+1]
+                    option_rewards = option_rewards.sum()
+                    option_rewards /= self.n_envs
+                    self.logger.record(option_name + "/reward_sum", option_rewards)
 
                 if option_count > 0:
                     option_terminates = level_terminations[option_active] | dones[option_active]
@@ -341,10 +345,8 @@ class OptionsPPO(PPO):
                 else:
                     option_length = np.nan
 
-                option_name = get_option_name(level, position)
                 self.logger.record(option_name + "/activity_share", option_activity_share)
                 self.logger.record(option_name + "/length", option_length)
-                self.logger.record(option_name + "/reward_sum", option_rewards)
 
         meta_rewards = rollout_buffer.rewards[..., 0]
         meta_rewards = meta_rewards.mean(axis=-1) # mean over envs
@@ -353,12 +355,16 @@ class OptionsPPO(PPO):
         # TODO: log rollout/ep_rewX_mean env.episode_all_returns
         # shape: (n_envs, n_rewards)
         if self.n_rewards > 1:
-            env_episode_all_returns = [e.episode_all_returns for e in env.envs] 
+            # import ipdb; ipdb.set_trace()
+            # env_episode_all_returns = [e.episode_all_returns for e in env.envs] 
+            env_episode_all_returns = env.get_attr("episode_all_returns")
+            # select only the last episode
+            env_episode_all_returns = [e[-1] for e in env_episode_all_returns if len(e) > 0]
             try:
                 # (n_envs, n_episodes, n_returns)
                 episode_all_returns = np.array(env_episode_all_returns)
                 for reward_idx in range(self.n_rewards):
-                    self.logger.record("rollout/ep_rew" + str(reward_idx) + "_mean", episode_all_returns[:, -1, reward_idx].mean()) 
+                    self.logger.record("rollout/ep_rew" + str(reward_idx) + "_mean", episode_all_returns[:, reward_idx].mean()) 
             except Exception as e:
                 # probably not all envs have finished an episode
                 pass

@@ -60,6 +60,7 @@ def meta_policy(oc_state) -> int:
         y_vals = y_shark + y_sub
 
         # check both
+        break_flag = False
         for x, y in zip(x_vals, y_vals):
             if x != 0 or y != 0:
                 dx = x - px
@@ -67,6 +68,12 @@ def meta_policy(oc_state) -> int:
                 if (dx ** 2 + dy ** 2) < danger_dist_sq:
                     # Shoot Enemies
                     option_choices[i] = 0
+                    break_flag = True
+                    break
+
+        if break_flag:
+            # we prefer shooting enemies over collecting divers
+            break
 
         # Check for any available divers (indices 25-28)
         # this will run whenever no enemy is nearby

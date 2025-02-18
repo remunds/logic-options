@@ -1,0 +1,55 @@
+name: "debug"
+description: ""
+device: cuda:14
+cores: 1
+seed: 0
+environment:
+  name: "MeetingRoom"
+  settings:
+    n_buildings: 1
+    n_floors: 4
+    floor_shape: [11, 11]
+    max_steps: 100
+    walls_fixed: False
+  framestack: 1
+  normalize_observation: False
+  normalize_reward: True
+general:
+  hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
+  net_arch: [16, 16]  # the network architecture of each individual policy and value function
+  total_timesteps: 10e6
+  n_steps: 512
+  n_epochs: 6
+  batch_size: 256  # decrease if out-of-memory error is observed
+  gamma: 0.99
+  gae_lambda: 0.0
+  normalize_advantage: True
+
+meta_policy:
+  logic: False
+  function: True
+  function_path: "./in/logic/llm/meetingroom-meta-policy.py"
+  policy_terminator: True
+  policy_termination_mode: "raban"
+  
+options:
+  policy_ent_coef: 0.1
+  policy_clip_range:  # PPO clipping epsilon
+    initial_value: 0.1
+    schedule_type: linear
+  value_fn_coef: 0.05
+  value_fn_clip_range: 0.1
+  terminator_ent_coef: 0.1
+  terminator_clip_range: 0.1
+  termination_regularizer: -100
+  # termination_regularizer: 0.01 #bacon et al.
+  learning_rate:  # Adam
+    initial_value: 0.002
+    schedule_type: exponential
+    half_life_period: 0.1
+
+evaluation:
+  frequency: 10000
+  deterministic: True
+  n_episodes: 10
+  render: False

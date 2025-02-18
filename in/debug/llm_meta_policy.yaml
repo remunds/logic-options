@@ -1,7 +1,6 @@
-# name: "llm_meta_policy"
-name: "debug"
+name: "llm_meta_policy"
 description: ""
-device: cuda:15
+device: cuda:14
 cores: 4
 seed: 0
 
@@ -17,15 +16,15 @@ environment:
   freeze_invisible_obj: False
   hack:
     # modifs: 
-    rewardfunc_path: ["./in/reward_funcs/seaquest/hackatari_reward.py",
-      "./in/reward_funcs/seaquest/fight_enemies.py",
-      "./in/reward_funcs/seaquest/collect_divers.py",
-      "./in/reward_funcs/seaquest/surface.py"]
+    rewardfunc_path: ["./in/reward_funcs/seaquest/normalized/hackatari_reward.py",
+      "./in/reward_funcs/seaquest/normalized/fight_enemies.py",
+      "./in/reward_funcs/seaquest/normalized/collect_divers.py",
+      "./in/reward_funcs/seaquest/normalized/surface.py"]
 
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
-  net_arch: [64, 64]  # the network architecture of each individual policy and value function
-  total_timesteps: 10e6
+  net_arch: [128, 64]  # the network architecture of each individual policy and value function
+  total_timesteps: 20e6
   n_steps: 128
   n_epochs: 4
   batch_size: 256  # decrease if out-of-memory error is observed
@@ -36,7 +35,7 @@ general:
 meta_policy:
   logic: False
   function: True
-  function_path: "./in/logic/llm/meta-policy.py"
+  function_path: "./in/logic/llm/seaquest-meta-policy.py"
   # logic: True
   policy_terminator: True
   policy_termination_mode: "raban"
@@ -58,7 +57,7 @@ options:
   max_grad_norm: 0.5
 
 evaluation:
-  frequency: 10000
+  frequency: 50000
   deterministic: True
   n_episodes: 10
   render: False

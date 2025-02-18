@@ -62,7 +62,7 @@ class TrainMonitor(Monitor):
             # shape: (n_steps, n_rewards)
             all_rewards = np.array(self.all_rewards)
             a_r = all_rewards.sum(axis=0)
-            self.episode_all_returns.append(a_r)
+            self.episode_all_returns.append(a_r.tolist())
 
             ep_len = len(self.rewards)
             ep_info = {"r": round(ep_rew, 6), "l": ep_len, "t": round(time.time() - self.t_start, 6)}
