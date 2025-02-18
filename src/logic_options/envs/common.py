@@ -103,7 +103,8 @@ def make_logic_env(name: str,
         else:
             raise NotImplementedError()
         raw_env.reset(seed=seed)
-        return Monitor(LogicEnvWrapper(raw_env, accept_predicates))
+        # return Monitor(LogicEnvWrapper(raw_env, accept_predicates))
+        return TrainMonitor(LogicEnvWrapper(raw_env, accept_predicates)) 
 
     return _init
 
