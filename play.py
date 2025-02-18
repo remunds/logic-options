@@ -15,5 +15,6 @@ if __name__ == "__main__":
                         shadow_mode=False,
                         wait_for_input=False,
                         render_oc_overlay=False,
-                        render_predicate_probs=False)
+                        render_predicate_probs=False,
+                        best_model=False)
      renderer.run()

@@ -34,7 +34,8 @@ class Renderer:
                  deterministic=True,
                  wait_for_input=False,
                  render_oc_overlay=True,
-                 render_predicate_probs=False):
+                 render_predicate_probs=False,
+                 best_model=True):
 
         self.fps = fps
         self.shadow_mode = shadow_mode
@@ -47,7 +48,8 @@ class Renderer:
         self.model = load_agent(agent_name, env_name,
                                 render_mode="rgb_array",
                                 render_oc_overlay=render_oc_overlay,
-                                reward_mode="human")
+                                reward_mode="human",
+                                best_model=best_model)
         self.uses_options = self.model.hierarchy_size > 0
         self.logic = self.model.policy.logic_meta_policy
         if render_predicate_probs:
