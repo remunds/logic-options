@@ -21,7 +21,7 @@ class FunctionMetaPolicy:
     def __call__(self, *args, **kwds):
         return self.forward(*args, **kwds)
 
-    def forward(self, obs, deterministic): 
+    def forward(self, obs, deterministic=False): 
         """
         Forward pass in all the networks (actor and critic)
 
