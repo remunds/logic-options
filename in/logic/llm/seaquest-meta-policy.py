@@ -45,7 +45,7 @@ def meta_policy(oc_state) -> int:
             break
 
         px, py = player[0], player[1]
-        danger_dist_sq = 50 ** 2  # Squared distance threshold
+        danger_dist_sq = 40 ** 2  # Squared distance threshold
 
         # Check Sharks (indices 1-12) and Submarines (indices 13-24)
         shark_idx_start = 1 * 2
