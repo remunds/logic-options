@@ -15,7 +15,8 @@ class OptionsHierarchy(nn.Module):
                  observation_space: Space,
                  action_space: Space,
                  lr_schedule,
-                 net_arch=None):
+                 net_arch=None,
+                 device="cpu"):
         super().__init__()
 
         if shape is None:
@@ -34,7 +35,8 @@ class OptionsHierarchy(nn.Module):
             return Option(observation_space=observation_space,
                           action_space=local_action_space,
                           lr_schedule=lr_schedule,
-                          net_arch=net_arch)
+                          net_arch=net_arch,
+                          device=device)
 
         self.options = []  # higher-level options first, lower-level options last
         for h, n_options in enumerate(self.shape):

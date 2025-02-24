@@ -67,7 +67,8 @@ class OptionsAgent(BasePolicy):
                                              observation_space,
                                              action_space,
                                              lr_schedule,
-                                             net_arch)
+                                             net_arch,
+                                             device=device)
 
         if self.logic_meta_policy:
             if len(self.hierarchy_shape) > 0:

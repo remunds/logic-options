@@ -16,6 +16,9 @@ from torch import nn
 from logic_options.utils.common import get_net_from_layer_dims
 from logic_options.options.meta_policy import MetaPolicy
 
+# from gymnasium.wrappers.normalize import RunningMeanStd
+from logic_options.utils.normalize_obs_torch import RunningMeanStd
+
 
 class Option(nn.Module):
     """Hosts an actor-critic module (policy and value function) and a terminator module.
@@ -46,6 +49,8 @@ class Option(nn.Module):
                  vec_norm: VecNormalize = None,
                  terminator: Terminator = None,
                  net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
+                 normalize_default: bool = True,
+                 device: Union[th.device, str] = "cpu",
                  **kwargs):
         assert (policy is not None
                 or observation_space is not None
@@ -72,7 +77,10 @@ class Option(nn.Module):
                   "lead to suboptimal results. It is recommended to train both together.")
 
         self.vec_norm = vec_norm
-        self.normalize_input = self.vec_norm is not None
+
+        # self.normalize_input = self.vec_norm is not None
+        self.normalize_vec = self.vec_norm is not None
+        self.normalize_default = normalize_default if not self.normalize_vec else False
         self.observation_space = self._policy.observation_space
         self.action_space = self._policy.action_space
         self.policy_trainable = policy_trainable
@@ -100,6 +108,16 @@ class Option(nn.Module):
                 optimizer_kwargs=self._policy.optimizer_kwargs,
                 normalize_images=self._policy.normalize_images,
             )
+        if self.normalize_default:
+            # problem: normalization should use observation_space_single
+            # normalize across flattened observations
+            # if self.observation_space.shape[0] == 1:
+            #     shape = (np.prod(self.observation_space.shape),)
+            #     self.obs_rms = RunningMeanStd(shape=self.observation_space.shape, device=device)
+            # else:
+            shape = (np.prod(self.observation_space.shape),)
+            self.obs_rms = RunningMeanStd(shape=shape, device=device)
+            self.epsilon = 1e-8
 
     def get_policy(self):
         return self._policy
@@ -109,15 +127,30 @@ class Option(nn.Module):
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         return self.forward_actor(obs, deterministic)
+    
+    def _rms_normalize(self, obs):
+        """Normalises the observation using the running mean and variance of the observations."""
+        # only update if batch size is > 1
+        if obs.shape[0] > 1:
+            self.obs_rms.update(obs)
+        return (obs - self.obs_rms.mean) / th.sqrt(self.obs_rms.var + self.epsilon)
 
     def _normalize(self, obs: th.Tensor):
-        if self.normalize_input:
+        if self.normalize_vec:
             return th.tensor(self.vec_norm.normalize_obs(np.array(obs.cpu())), device=obs.device)
+        elif self.normalize_default:
+            prev_shape = obs.shape
+            # prev_obs = obs.view(self.observation_space.shape).to(th.float32)
+            # flatten all but the first dimension
+            prev_obs = obs.view(prev_shape[0], -1).to(th.float32)
+            with th.no_grad():
+                new_obs = self._rms_normalize(prev_obs)
+            return new_obs.view(prev_shape)
         return obs
 
     def forward_actor(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         obs = self._normalize(obs)
-        return self._policy.forward(obs, deterministic)
+        return self._policy.forward(obs, deterministic=deterministic)
 
     def predict_values(self, obs: th.Tensor) -> th.Tensor:
         obs = self._normalize(obs)
