@@ -90,7 +90,7 @@ def reward_function(self) -> float:
                 reward += 0.001 # small reward for being alive underwater
         elif player.y == 46 and not ON_SURFACE:
             if len(divers) == 6:
-                reward += 1 # reward for surfacing with all divers
+                reward += 10 # reward for surfacing with all divers
                 print("All 6 divers collected and surfaced!")
             elif len(divers) > 0:
                 reward = 0.0
