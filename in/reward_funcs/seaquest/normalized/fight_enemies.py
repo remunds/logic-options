@@ -68,7 +68,8 @@ def reward_function(self) -> float:
     if player:
         if player.y > 46:
             ON_SURFACE = False
-            if reward != 1.0:
+            # between 46 and 52 is between the surface and the water
+            if reward != 1.0 and player.y > 52:
                 reward = 0.01 # small reward for being alive underwater
         elif player.y == 46 and not ON_SURFACE: # Player surfaces
             # punish dying 

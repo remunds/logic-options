@@ -82,10 +82,11 @@ class OptionsAgent(BasePolicy):
                 device=device,
                 **kwargs
             )
-        elif self.function_meta_policy is not None:
+        elif self.function_meta_policy:
             self.meta_policy = FunctionMetaPolicy(
                 function_path=self.function_meta_policy,
-                num_options=options_hierarchy.shape[0],
+                # num_options=1 if options_hierarchy) == 0 else options_hierarchy.shape[0],
+                num_options=1 if options_hierarchy.shape[0] == 0 else options_hierarchy.shape[0],
                 device=device
             )
             print("using function as metapolicy")

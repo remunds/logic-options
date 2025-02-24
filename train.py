@@ -39,7 +39,9 @@ def run(config_path: str):
     name = config.get("name")
     description = config.get("description")
     seed = config.get("seed")
-    options = config.get("options").copy()
+    options = config.get("options")
+    if options is not None:
+        options = options.copy()
     device = config.get("device")
     cores = config.get("cores")
 

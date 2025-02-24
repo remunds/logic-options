@@ -36,7 +36,7 @@ meta_policy:
   value_fn_coef: 0.5
   value_fn_clip_range:
   learning_rate:  # Adam
-    initial_value: 2.5e=4
+    initial_value: 2.5e-4
     schedule_type: exponential
     half_life_period: 0.25
 
