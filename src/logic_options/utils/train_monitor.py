@@ -68,7 +68,7 @@ class TrainMonitor(Monitor):
             ep_info = {"r": round(ep_rew, 6), "l": ep_len, "t": round(time.time() - self.t_start, 6)}
             for key in self.info_keywords:
                 ep_info[key] = info[key]
-            # ep_info["all_rewards"] = a_r.tolist()
+            ep_info["all_rewards"] = a_r.tolist()
             self.episode_returns.append(ep_rew)
             self.episode_lengths.append(ep_len)
             self.episode_times.append(time.time() - self.t_start)

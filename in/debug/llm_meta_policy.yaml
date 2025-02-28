@@ -1,6 +1,6 @@
-name: "llm_meta_policy_option_obs_norm"
+name: "llm_meta_policy_hud"
 description: ""
-device: cuda:14
+device: cuda:15
 cores: 4
 seed: 0
 
@@ -24,7 +24,7 @@ environment:
 general:
   hierarchy_shape: [3]  # e.g., [2, 4, 8] means 2 high-level, 4 mid-level, and 8 low-level options
   net_arch: [128, 64]  # the network architecture of each individual policy and value function
-  total_timesteps: 20e6
+  total_timesteps: 100e6
   n_steps: 128
   n_epochs: 4
   batch_size: 256  # decrease if out-of-memory error is observed
@@ -57,7 +57,7 @@ options:
   max_grad_norm: 0.5
 
 evaluation:
-  frequency: 50000
+  frequency: 500000
   deterministic: True
   n_episodes: 10
   render: False

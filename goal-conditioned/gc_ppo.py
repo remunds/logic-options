@@ -1,0 +1,458 @@
+# CleanRL - PPO
+# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppopy
+import os
+import random
+import time
+from dataclasses import dataclass
+
+import gymnasium as gym
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import tyro
+from torch.distributions.categorical import Categorical
+from torch.utils.tensorboard import SummaryWriter
+
+from logic_options.envs.common import make_hackatari_env
+from logic_options.utils.normalize_obs_torch import RunningMeanStd
+from rtpt import RTPT
+
+import importlib
+import sys
+
+@dataclass
+class Args:
+    exp_name: str = os.path.basename(__file__)[: -len(".py")]
+    """the name of this experiment"""
+    seed: int = 1
+    """seed of the experiment"""
+    torch_deterministic: bool = True
+    """if toggled, `torch.backends.cudnn.deterministic=False`"""
+    cuda: bool = True
+    """if toggled, cuda will be enabled by default"""
+    track: bool = False
+    """if toggled, this experiment will be tracked with Weights and Biases"""
+    wandb_project_name: str = "cleanRL"
+    """the wandb's project name"""
+    wandb_entity: str = None
+    """the entity (team) of wandb's project"""
+    capture_video: bool = False
+    """whether to capture videos of the agent performances (check out `videos` folder)"""
+
+    # Algorithm specific arguments
+    env_id: str = "ALE/Seaquest-v5"
+    """the id of the environment"""
+    total_timesteps: int = 20_000_000
+    """total timesteps of the experiments"""
+    learning_rate: float = 2.5e-4
+    """the learning rate of the optimizer"""
+    num_envs: int = 8
+    """the number of parallel game environments"""
+    num_steps: int = 128
+    """the number of steps to run in each environment per policy rollout"""
+    anneal_lr: bool = True
+    """Toggle learning rate annealing for policy and value networks"""
+    gamma: float = 0.99
+    """the discount factor gamma"""
+    gae_lambda: float = 0.95
+    """the lambda for the general advantage estimation"""
+    num_minibatches: int = 4
+    """the number of mini-batches"""
+    update_epochs: int = 4
+    """the K epochs to update the policy"""
+    norm_adv: bool = True
+    """Toggles advantages normalization"""
+    norm_obs: bool = True
+    """Toggles observation normalization, my implementation"""
+    clip_coef: float = 0.1
+    """the surrogate clipping coefficient"""
+    clip_vloss: bool = True
+    """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
+    ent_coef: float = 0.01
+    """coefficient of the entropy"""
+    vf_coef: float = 0.5
+    """coefficient of the value function"""
+    max_grad_norm: float = 0.5
+    """the maximum norm for the gradient clipping"""
+    target_kl: float = None
+    """the target KL divergence threshold"""
+
+    # to be filled in runtime
+    batch_size: int = 0
+    """the batch size (computed in runtime)"""
+    minibatch_size: int = 0
+    """the mini-batch size (computed in runtime)"""
+    num_iterations: int = 0
+    """the number of iterations (computed in runtime)"""
+
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
+class Agent(nn.Module):
+    def __init__(self, envs, norm_obs=False, meta=False, num_subpolicies=None):
+        super().__init__()
+        self.meta = meta
+        if meta and num_subpolicies is None:
+            raise ValueError("num_subpolicies must be specified if meta=True")
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, num_subpolicies if meta else envs.single_action_space.n), std=0.01),
+        )
+        self.norm_obs = norm_obs
+        if norm_obs:
+            shape = (np.prod(envs.single_observation_space.shape),)
+            self.obs_rms = RunningMeanStd(shape=shape, device=device)
+            self.epsilon = 1e-8
+
+    def _rms_normalize(self, obs):
+        """Normalises the observation using the running mean and variance of the observations."""
+        # only update if batch size is > 1
+        # prev_shape = obs.shape
+        # flatten all but the first dimension
+        # prev_obs = obs.view(prev_shape[0], -1).to(torch.float32)
+        with torch.no_grad():
+            if obs.shape[0] > 1:
+                self.obs_rms.update(obs)
+            new_obs = (obs - self.obs_rms.mean) / torch.sqrt(self.obs_rms.var + self.epsilon)
+        return new_obs.to(torch.float32)#.view(prev_shape)
+
+
+    def get_value(self, x):
+        if self.norm_obs:
+            x = self._rms_normalize(x)
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        if self.norm_obs:
+            x = self._rms_normalize(x)
+        # check if any nan
+        logits = self.actor(x)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+
+
+
+if __name__ == "__main__":
+    args = tyro.cli(Args)
+    args.batch_size = int(args.num_envs * args.num_steps)
+    args.minibatch_size = int(args.batch_size // args.num_minibatches)
+    args.num_iterations = args.total_timesteps // args.batch_size
+    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    if args.track:
+        import wandb
+
+        wandb.init(
+            project=args.wandb_project_name,
+            entity=args.wandb_entity,
+            sync_tensorboard=True,
+            config=vars(args),
+            name=run_name,
+            monitor_gym=True,
+            save_code=True,
+        )
+    writer = SummaryWriter(f"runs/{run_name}")
+    writer.add_text(
+        "hyperparameters",
+        "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
+    )
+
+    # TRY NOT TO MODIFY: seeding
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = args.torch_deterministic
+
+    device = torch.device("cuda:15")
+    #TODO: can remove first reward function
+    hackatari_args = {
+        # "rewardfunc_path": ["in/reward_funcs/seaquest/hud/fight_enemies.py",
+        #                     "in/reward_funcs/seaquest/hud/collect_divers.py",
+        #                     "in/reward_funcs/seaquest/hud/surface.py",
+        #                     ],
+        # "rewardfunc_path": "in/reward_funcs/seaquest/hud/hackatari_reward.py"
+    }
+    n_rewards = len(hackatari_args["rewardfunc_path"]) if "rewardfunc_path" in hackatari_args else 0
+
+    # env setup
+    envs = gym.vector.AsyncVectorEnv(
+        [make_hackatari_env(args.env_id, i, **hackatari_args) for i in range(args.num_envs)],
+    )
+    assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+
+    # agent = Agent(envs).to(device)
+    # meta_policy = Agent(envs, norm_obs=False, meta=True, num_subpolicies=3).to(device)
+    meta_policy = None
+    num_subpols = 3
+    agents = [Agent(envs, args.norm_obs).to(device) for _ in range(num_subpols)]
+    # agents.append(meta_policy)
+
+    # load meta-policy function
+    meta_function_path = "in/logic/llm/seaquest-meta-policy.py"
+    spec = importlib.util.spec_from_file_location("meta_policy", meta_function_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["meta_policy"] = module
+    spec.loader.exec_module(module)
+    meta_policy_func = module.meta_policy
+
+    optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
+    # optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    # ALGO Logic: Storage setup
+    flat_obs_shape = np.array(envs.single_observation_space.shape).prod().item()
+    # obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    obs = torch.zeros((args.num_steps, args.num_envs, flat_obs_shape)).to(device)
+    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    meta_logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    subpolicies = torch.zeros((args.num_steps, args.num_envs)).to(device)
+
+    # TRY NOT TO MODIFY: start the game
+    global_step = 0
+    start_time = time.time()
+    next_obs, _ = envs.reset(seed=args.seed)
+    next_obs = torch.Tensor(next_obs).to(device)
+    next_done = torch.zeros(args.num_envs).to(device)
+
+    rtpt = RTPT(name_initials='RE', experiment_name='goal_cond_ppo', max_iterations=args.num_iterations)
+    rtpt.start()
+
+    for iteration in range(1, args.num_iterations + 1):
+        rtpt.step()
+        # Annealing the rate if instructed to do so.
+        if args.anneal_lr:
+            frac = 1.0 - (iteration - 1.0) / args.num_iterations
+            lrnow = frac * args.learning_rate
+            optimizers[0].param_groups[0]["lr"] = lrnow # can use any optimizer
+
+        for step in range(0, args.num_steps):
+            global_step += args.num_envs
+            obs[step] = next_obs.view(args.num_envs, -1)
+            dones[step] = next_done
+
+            # ALGO LOGIC: action logic
+            with torch.no_grad():
+                if meta_policy is not None:
+                    meta_obs = next_obs.view(args.num_envs, -1)
+                    option_choices, _ , _, _= meta_policy.get_action_and_value(meta_obs)
+                elif meta_policy_func is not None:
+                    option_choices = torch.tensor(meta_policy_func(next_obs)).to(device)
+                else:
+                    raise ValueError("meta_policy or meta_policy_func must be specified")
+
+                subpolicies[step] = option_choices
+                # next_obs = next_obs.view(envs.num_envs, -1)
+                # we have 8 envs, but only 3 subpolicies
+                # split next_obs according to the subpolicies
+                action = torch.zeros(args.num_envs).to(device, dtype=torch.long)
+                logprob = torch.zeros(args.num_envs).to(device)
+                meta_logprob = torch.zeros(args.num_envs).to(device)
+                value = torch.zeros((args.num_envs, 1)).to(device)
+                for i, agent in enumerate(agents):
+                    # for meta-policy, we only collect logprob for building the ratio during optimization 
+                    if agent.meta:
+                        meta_obs = next_obs.view(args.num_envs, -1)
+                        _, meta_logprob_l, _, _ = agent.get_action_and_value(meta_obs)
+                        meta_logprob = meta_logprob_l.to(torch.float32)
+                        continue
+
+                    # get the correct subpolicy
+                    env_idxs = torch.where(option_choices == i)[0]
+                    if len(env_idxs) == 0:
+                        continue
+                    subpolicy_obs = next_obs[env_idxs] 
+                    if len(subpolicy_obs) == 0:
+                        continue
+                    subpolicy_obs = subpolicy_obs.view(len(env_idxs), -1)
+                    action_l, logprob_l, _, value_l = agent.get_action_and_value(subpolicy_obs)
+                    action[env_idxs] = action_l
+                    logprob[env_idxs] = logprob_l.to(torch.float32)
+                    value[env_idxs] = value_l.to(torch.float32)
+                
+                # import ipdb; ipdb.set_trace()
+                # exit()
+                # then get the actions according to the correct subpolicy 
+                # concatenate the actions, logprobs, rewards, dones, values in correct order
+                # action, logprob, _, value = agent.get_action_and_value(next_obs)
+                values[step] = value.flatten()
+            actions[step] = action.to(torch.float32)
+            logprobs[step] = logprob
+            meta_logprobs[step] = meta_logprob
+
+            # TRY NOT TO MODIFY: execute the game and log data.
+            next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+            next_done = np.logical_or(terminations, truncations)
+            if "all_rewards" in infos:
+                all_rewards = np.array([np.array(object=a_r) if a_r is not None else np.array([0.0 for _ in range(n_rewards)]) for a_r in infos["all_rewards"]])
+                # (n_envs, n_rewards)
+                reward = all_rewards[torch.arange(all_rewards.shape[0]),subpolicies[step].to(int).cpu()] 
+            rewards[step] = torch.tensor(reward).to(device).view(-1)
+            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+
+            if "final_info" in infos:
+                for info in infos["final_info"]:
+                    if info and "episode" in info:
+                        print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
+                        writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
+                        writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                        if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
+                            all_rewards = info["episode"]["all_rewards"]
+                            for i, r in enumerate(all_rewards):
+                                writer.add_scalar(f"charts/episodic_return_{i}", r, global_step)
+
+        # next_obs = next_obs.view(envs.num_envs, -1)
+        # bootstrap value if not done
+        with torch.no_grad():
+            next_value = agent.get_value(next_obs.view(args.num_envs, -1)).reshape(1, -1)
+            advantages = torch.zeros_like(rewards).to(device)
+            lastgaelam = 0
+            for t in reversed(range(args.num_steps)):
+                if t == args.num_steps - 1:
+                    nextnonterminal = 1.0 - next_done
+                    nextvalues = next_value
+                else:
+                    nextnonterminal = 1.0 - dones[t + 1]
+                    nextvalues = values[t + 1]
+                delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
+                advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+            returns = advantages + values
+
+        for i, agent in enumerate(agents):
+
+            # meta policy learns from all envs
+            if agent.meta:
+                env_idxs = torch.where(torch.ones_like(subpolicies))
+            else:
+            # select the envs where current subpolicy is used 
+                env_idxs = torch.where(subpolicies == i)
+
+            if len(env_idxs[0]) == 0:
+                continue
+            a_obs = obs[env_idxs]
+            a_actions = actions[env_idxs]
+            a_logprobs = logprobs[env_idxs]
+            a_advantages = advantages[env_idxs]
+            a_returns = returns[env_idxs]
+            a_values = values[env_idxs]
+
+            # flatten the batch
+            b_obs = a_obs.reshape((-1,) + envs.single_observation_space.shape)
+            b_logprobs = a_logprobs.reshape(-1)
+            b_meta_logprobs = meta_logprobs.reshape(-1)
+            b_actions = a_actions.reshape((-1,) + envs.single_action_space.shape)
+            b_advantages = a_advantages.reshape(-1)
+            b_returns = a_returns.reshape(-1)
+            b_values = a_values.reshape(-1)
+            if agent.meta:
+                b_subpolicies = subpolicies[env_idxs].reshape(-1)
+
+            batch_size = b_obs.shape[0]
+            minibatch_size = batch_size // args.num_minibatches
+            if batch_size == 0 or minibatch_size == 0:
+                print(f"Skipping subpolicy {i}, batch_size={batch_size}, minibatch_size={minibatch_size}") 
+                continue
+
+            # Optimizing the policy and value network
+            b_inds = np.arange(batch_size)
+            clipfracs = []
+            for epoch in range(args.update_epochs):
+                np.random.shuffle(b_inds)
+                for start in range(0, batch_size, minibatch_size):
+                    end = start + minibatch_size
+                    mb_inds = b_inds[start:end]
+                    # print(b_obs[mb_inds].shape, batch_size, minibatch_size)
+                    # b_obs2 = b_obs[mb_inds].view(minibatch_size, -1)
+                    mb_obs = b_obs[mb_inds].view(b_obs[mb_inds].shape[0], -1)
+                    if agent.meta:
+                        # actions for meta are subpolicies
+                        mb_actions = b_subpolicies[mb_inds].long()
+                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
+                        logratio = newlogprob - b_meta_logprobs[mb_inds]
+                    else:
+                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, b_actions.long()[mb_inds])
+                        logratio = newlogprob - b_logprobs[mb_inds]
+                    ratio = logratio.exp()
+
+                    with torch.no_grad():
+                        # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                        old_approx_kl = (-logratio).mean()
+                        approx_kl = ((ratio - 1) - logratio).mean()
+                        clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
+
+                    mb_advantages = b_advantages[mb_inds]
+                    if args.norm_adv:
+                        std = 1 if mb_advantages.shape[0] == 1 else mb_advantages.std()
+                        mb_advantages = (mb_advantages - mb_advantages.mean()) / (std + 1e-8)
+
+                    # Policy loss
+                    pg_loss1 = -mb_advantages * ratio
+                    pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                    if torch.isnan(pg_loss):
+                        # import ipdb; ipdb.set_trace()
+                        print("Nan in pg_loss")
+                        continue
+
+                    # Value loss
+                    newvalue = newvalue.view(-1)
+                    if args.clip_vloss:
+                        v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
+                        v_clipped = b_values[mb_inds] + torch.clamp(
+                            newvalue - b_values[mb_inds],
+                            -args.clip_coef,
+                            args.clip_coef,
+                        )
+                        v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+                        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                        v_loss = 0.5 * v_loss_max.mean()
+                    else:
+                        v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
+
+                    entropy_loss = entropy.mean()
+                    loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
+                    # print(i, loss.item(), pg_loss.item(), entropy_loss.item(), v_loss.item(), approx_kl.item(), old_approx_kl.item())
+
+                    optimizers[i].zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                    optimizers[i].step()
+
+                if args.target_kl is not None and approx_kl > args.target_kl:
+                    break
+
+            y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
+            var_y = np.var(y_true)
+            explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+
+            # TRY NOT TO MODIFY: record rewards for plotting purposes
+            writer.add_scalar("charts/learning_rate", optimizers[0].param_groups[0]["lr"], global_step)
+            writer.add_scalar(f"losses/value_loss_{i}", v_loss.item(), global_step)
+            writer.add_scalar(f"losses/policy_loss_{i}", pg_loss.item(), global_step)
+            writer.add_scalar(f"losses/entropy_{i}", entropy_loss.item(), global_step)
+            writer.add_scalar(f"losses/old_approx_kl_{i}", old_approx_kl.item(), global_step)
+            writer.add_scalar(f"losses/approx_kl_{i}", approx_kl.item(), global_step)
+            writer.add_scalar(f"losses/clipfrac_{i}", np.mean(clipfracs), global_step)
+            writer.add_scalar(f"losses/explained_variance_{i}", explained_var, global_step)
+            print("SPS:", int(global_step / (time.time() - start_time)))
+            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+    envs.close()
+    writer.close()

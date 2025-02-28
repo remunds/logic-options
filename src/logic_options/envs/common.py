@@ -13,6 +13,13 @@ from stable_baselines3.common.env_util import make_atari_env, make_vec_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, SubprocVecEnv, VecFrameStack, VecNormalize, DummyVecEnv
+from stable_baselines3.common.atari_wrappers import (  # isort:skip
+    ClipRewardEnv,
+    EpisodicLifeEnv,
+    FireResetEnv,
+    MaxAndSkipEnv,
+    NoopResetEnv,
+)
 
 from logic_options.envs.meeting_room import MeetingRoom
 from logic_options.logic.env_wrapper import LogicEnvWrapper
@@ -45,6 +52,13 @@ def make_hackatari_env(name: str,
         env = HackAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         # env = Monitor(env)
         env = TrainMonitor(env)
+        env = NoopResetEnv(env, noop_max=30)
+        # env = MaxAndSkipEnv(env, skip=4)
+        env = EpisodicLifeEnv(env)
+        if "FIRE" in env.unwrapped.get_action_meanings():
+            env = FireResetEnv(env)
+        env = ClipRewardEnv(env)
+
         env.reset(seed=seed + rank)
         return env
 

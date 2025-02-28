@@ -17,7 +17,7 @@ from random import randint
 from logic_options.utils.param_schedule import maybe_make_schedule
 
 ENV_NAME = "ALE/Seaquest-v5"
-MODEL_NAME = "pretrain_divers_best"
+MODEL_NAME = "pretrain_enemies_best"
 
 OUT_BASE_PATH = "out/"
 CHECKPOINT_FREQUENCY = 1_000_000

@@ -12,6 +12,7 @@ dependencies = [
     "stable-baselines3[extra]>=2.0.0",
     "sty>=1.0.6",
     "torch-utils>=0.1.2",
+    "tyro>=0.9.16",
 ]
 
 [build-system]
