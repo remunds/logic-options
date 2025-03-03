@@ -8,6 +8,7 @@ from typing import Union
 from nsfr.nsfr import NSFReasoner
 
 from logic_options.options.ppo import load_agent
+from logic_options.goal-conditioned.gc_ppo import load_gc_agent
 from logic_options.logic.env_wrapper import LogicEnvWrapper
 from logic_options.utils.render import render_options_overlay
 from eval_dist_to_joey import get_distance_to_joey
@@ -45,7 +46,7 @@ class Renderer:
 
         print(f"Playing '{env_name}' with {'' if deterministic else 'non-'}deterministic policy.")
         
-        self.model = load_agent(agent_name, env_name,
+        self.model = load_gc_agent(agent_name, env_name,
                                     render_mode="rgb_array",
                                     render_oc_overlay=render_oc_overlay,
                                     reward_mode="human",

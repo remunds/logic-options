@@ -20,6 +20,7 @@ from rtpt import RTPT
 
 import importlib
 import sys
+import yaml
 
 @dataclass
 class Args:
@@ -77,6 +78,24 @@ class Args:
     """the maximum norm for the gradient clipping"""
     target_kl: float = None
     """the target KL divergence threshold"""
+    save_model_steps: int = 1_000_000
+    """number of steps between saving the model"""
+    checkpoint_path: str = None #"models/ALE/Seaquest-v5__gc_ppo__1__1741001110_step_10000.pt" 
+    """path to the checkpoint file to resume training from"""
+    neural_meta_policy: bool = True
+    """if toggled, a neural meta policy will be used, otherwise a function will be used"""
+    # meta_policy_path: str = None
+    # meta_policy_path = "in/logic/llm/seaquest-meta-policy.py"
+    """path to the meta policy function"""
+    # rewardfunc_path: str = None 
+    rewardfunc_path = ["in/reward_funcs/seaquest/hud/fight_enemies.py",
+                        "in/reward_funcs/seaquest/hud/collect_divers.py",
+                        "in/reward_funcs/seaquest/hud/surface.py",
+                       ]
+    # rewardfunc_path = "in/reward_funcs/seaquest/hud/hackatari_reward.py"
+    """path to the reward function(s)"""
+    args_file: str = "runs/ALE/Seaquest-v5__gc_ppo__1__1741019777/args.yaml"#None
+    """path to the args file to load arguments from"""
 
     # to be filled in runtime
     batch_size: int = 0
@@ -93,7 +112,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class Agent(nn.Module):
-    def __init__(self, envs, norm_obs=False, meta=False, num_subpolicies=None):
+    def __init__(self, envs, device, norm_obs=False, meta=False, num_subpolicies=None):
         super().__init__()
         self.meta = meta
         if meta and num_subpolicies is None:
@@ -146,10 +165,54 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
+def save(save_path, agents, optimizers, iteration, args):
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)  # Ensure the directory exists
+    torch.save({
+        'iteration': iteration,
+        'model_state_dict': [agent.state_dict() for agent in agents],
+        'optimizer_state_dict': [optimizer.state_dict() for optimizer in optimizers],
+        'args': args,
+    }, save_path)
 
+def load_gc_agent(env_name, run_id, num_subpolicies, device, best_model=True):
+    model_name = "best_return"
+    if not best_model:
+        # find latest model(highest number)
+        model_name = max([f for f in os.listdir(f"runs/{env_name}__{run_id}/models") if f.endswith(".pt")])
+        # remove .pt
+        model_name = model_name[:-3]
+
+    save_path = f"runs/{env_name}__{run_id}/models/best_model.pt"
+    checkpoint = torch.load(save_path)
+    args = checkpoint['args']
+
+    # Create the environment
+    hackatari_args = {
+        "rewardfunc_path": args.rewardfunc_path 
+    }
+    env = make_hackatari_env(args.env_id, 0, **hackatari_args)()
+
+    # Initialize the agents
+    agents = [Agent(env, args.norm_obs).to(device) for _ in range(num_subpolicies)]
+    for i, agent in enumerate(agents):
+        agent.load_state_dict(checkpoint['model_state_dict'][i])
+
+    return agents, env
+
+def save_args(args, save_path):
+    with open(save_path, 'w') as f:
+        yaml.dump(vars(args), f, default_flow_style=False)
+
+def load_args(args_file):
+    with open(args_file, 'r') as f:
+        args_dict = yaml.safe_load(f)
+    return Args(**args_dict)
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
+    if args.args_file:
+        print(f"Loading arguments from {args.args_file}")
+        args = load_args(args.args_file)
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
@@ -167,10 +230,13 @@ if __name__ == "__main__":
             save_code=True,
         )
     writer = SummaryWriter(f"runs/{run_name}")
+    model_save_dir = f"runs/{run_name}/models"
+    os.makedirs(model_save_dir, exist_ok=True)
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
+    save_args(args, f"runs/{run_name}/args.yaml")
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -179,15 +245,10 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda:15")
-    #TODO: can remove first reward function
     hackatari_args = {
-        # "rewardfunc_path": ["in/reward_funcs/seaquest/hud/fight_enemies.py",
-        #                     "in/reward_funcs/seaquest/hud/collect_divers.py",
-        #                     "in/reward_funcs/seaquest/hud/surface.py",
-        #                     ],
-        # "rewardfunc_path": "in/reward_funcs/seaquest/hud/hackatari_reward.py"
+        "rewardfunc_path": args.rewardfunc_path 
     }
-    n_rewards = len(hackatari_args["rewardfunc_path"]) if "rewardfunc_path" in hackatari_args else 0
+    n_rewards = len(hackatari_args["rewardfunc_path"]) if hackatari_args["rewardfunc_path"] is not None else 0
 
     # env setup
     envs = gym.vector.AsyncVectorEnv(
@@ -196,22 +257,43 @@ if __name__ == "__main__":
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
     # agent = Agent(envs).to(device)
-    # meta_policy = Agent(envs, norm_obs=False, meta=True, num_subpolicies=3).to(device)
-    meta_policy = None
     num_subpols = 3
-    agents = [Agent(envs, args.norm_obs).to(device) for _ in range(num_subpols)]
-    # agents.append(meta_policy)
+    agents = [Agent(envs, device, args.norm_obs).to(device) for _ in range(num_subpols)]
+
+    # neural meta policy
+    if args.neural_meta_policy:
+        meta_policy = Agent(envs, device, norm_obs=False, meta=True, num_subpolicies=3).to(device)
+        agents.append(meta_policy)
+        meta_policy_func = None
 
     # load meta-policy function
-    meta_function_path = "in/logic/llm/seaquest-meta-policy.py"
-    spec = importlib.util.spec_from_file_location("meta_policy", meta_function_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["meta_policy"] = module
-    spec.loader.exec_module(module)
-    meta_policy_func = module.meta_policy
+    elif args.meta_policy_path is not None:
+        spec = importlib.util.spec_from_file_location("meta_policy", args.meta_policy_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["meta_policy"] = module
+        spec.loader.exec_module(module)
+        meta_policy_func = module.meta_policy
+        meta_policy = None
+    
+    else:
+        raise ValueError("Either neural_meta_policy or meta_policy_path must be specified")
 
     optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
     # optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    # Load checkpoint if provided
+    if args.checkpoint_path is not None:
+        checkpoint = torch.load(args.checkpoint_path)
+        for i, agent in enumerate(agents):
+            agent.load_state_dict(checkpoint['model_state_dict'][i])
+        for i, optimizer in enumerate(optimizers):
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'][i])
+        iteration = checkpoint['iteration']
+        print(f"Resumed training from checkpoint {args.checkpoint_path} at iteration {iteration}")
+    else:
+        iteration = 1
+
+    highest_episodic_return = float('-inf')
 
     # ALGO Logic: Storage setup
     flat_obs_shape = np.array(envs.single_observation_space.shape).prod().item()
@@ -225,6 +307,8 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
     subpolicies = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
+    subpolicy_activity = torch.zeros((args.num_iterations, num_subpols)).to(device)
+
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
@@ -235,7 +319,7 @@ if __name__ == "__main__":
     rtpt = RTPT(name_initials='RE', experiment_name='goal_cond_ppo', max_iterations=args.num_iterations)
     rtpt.start()
 
-    for iteration in range(1, args.num_iterations + 1):
+    for iteration in range(iteration, args.num_iterations + 1):
         rtpt.step()
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -297,6 +381,8 @@ if __name__ == "__main__":
             logprobs[step] = logprob
             meta_logprobs[step] = meta_logprob
 
+            subpolicy_activity[iteration - 1] += torch.bincount(subpolicies[step].to(int), minlength=num_subpols)
+
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
             next_done = np.logical_or(terminations, truncations)
@@ -310,13 +396,29 @@ if __name__ == "__main__":
             if "final_info" in infos:
                 for info in infos["final_info"]:
                     if info and "episode" in info:
-                        print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                        writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
+                        episodic_return = info['episode']['r']
+                        print(f"global_step={global_step}, episodic_return={episodic_return}")
+                        writer.add_scalar("charts/episodic_return", episodic_return, global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                        if episodic_return > highest_episodic_return:
+                            highest_episodic_return = episodic_return
+                            save_path = f"{model_save_dir}/best_return.pt"
+                            save(save_path, agents, optimizers, iteration, args)
+                            print(f"New highest episodic return: {episodic_return}. Model saved to {save_path}")
                         if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
                             all_rewards = info["episode"]["all_rewards"]
                             for i, r in enumerate(all_rewards):
                                 writer.add_scalar(f"charts/episodic_return_{i}", r, global_step)
+
+            if global_step % args.save_model_steps == 0:
+                save_path = f"{model_save_dir}/step_{global_step}.pt"
+                save(save_path, agents, optimizers, iteration, args)
+                print(f"Model saved at step {global_step} to {save_path}")
+
+        subpolicy_activity[iteration - 1] /= args.num_steps * args.num_envs
+
+        for i in range(num_subpols):
+            writer.add_scalar(f"charts/activity_{i}", subpolicy_activity[iteration - 1, i].item(), global_step)
 
         # next_obs = next_obs.view(envs.num_envs, -1)
         # bootstrap value if not done

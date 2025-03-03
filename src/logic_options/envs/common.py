@@ -47,17 +47,19 @@ def make_hackatari_env(name: str,
                      rank: int = 0,
                      seed: int = 0,
                      frameskip: int = 4,
+                     atari_wrappers: bool = True,
                      **kwargs) -> Callable:
     def _init() -> gym.Env:
         env = HackAtari(name, hud=True, dopamine_pooling=False, **kwargs)
         # env = Monitor(env)
         env = TrainMonitor(env)
-        env = NoopResetEnv(env, noop_max=30)
-        # env = MaxAndSkipEnv(env, skip=4)
-        env = EpisodicLifeEnv(env)
-        if "FIRE" in env.unwrapped.get_action_meanings():
-            env = FireResetEnv(env)
-        env = ClipRewardEnv(env)
+        if atari_wrappers:
+            env = NoopResetEnv(env, noop_max=30)
+            # env = MaxAndSkipEnv(env, skip=4)
+            env = EpisodicLifeEnv(env)
+            if "FIRE" in env.unwrapped.get_action_meanings():
+                env = FireResetEnv(env)
+            env = ClipRewardEnv(env)
 
         env.reset(seed=seed + rank)
         return env

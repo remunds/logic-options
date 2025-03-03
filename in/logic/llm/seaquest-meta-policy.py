@@ -21,7 +21,6 @@ def meta_policy(oc_state) -> int:
                 divers_count += 1
         divers_count /= 2
         if divers_count >= 6:
-            # print("All 6 divers collected!")
             # Manage oxygen
             option_choices[i] = 2
             break
@@ -30,7 +29,6 @@ def meta_policy(oc_state) -> int:
         ox_bar_idx = (1+12+12+4+4+1+1) * 2 
         oxygen_bar = state[ox_bar_idx]
         if oxygen_bar < 20:
-            # print("Oxygen low!")
             # Manage oxygen
             option_choices[i] = 2
             break
