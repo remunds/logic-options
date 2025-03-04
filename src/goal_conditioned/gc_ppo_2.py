@@ -259,7 +259,6 @@ if __name__ == "__main__":
     )
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
-    # agent = Agent(envs).to(device)
     agents = [Agent(envs, device, args.norm_obs).to(device) for _ in range(args.num_subpolicies)]
 
     # neural meta policy
@@ -298,7 +297,6 @@ if __name__ == "__main__":
 
     # ALGO Logic: Storage setup
     flat_obs_shape = np.array(envs.single_observation_space.shape).prod().item()
-    # obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     obs = torch.zeros((args.num_steps, args.num_envs, flat_obs_shape)).to(device)
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs, args.num_subpolicies)).to(device)
@@ -362,15 +360,13 @@ if __name__ == "__main__":
                         meta_logprob = meta_logprob_l.to(torch.float32)
                         meta_value = meta_value_l.to(torch.float32).view(-1)
                         continue
-                    
+
+                    # Note: could filter here 
                     action_l, _ , _, value_l = agent.get_action_and_value(obs[step])
                     # set action only if current subpolicy is the active one
                     env_idxs = torch.where(option_choices == i)[0]
 
-                    # if len(env_idxs) > 0: # not sure if necessary
                     action[env_idxs] = action_l[env_idxs]
-                    # # only store logprob if action is the one that was actually taken
-                    #     logprob[env_idxs, i] = logprob_l.to(torch.float32)
                     # logprobs are computed below
                     # always store value from critic (all subpolicies)
                     value[:, i] = value_l.to(torch.float32).view(-1)
@@ -382,11 +378,7 @@ if __name__ == "__main__":
                     _, logprob_actual, _, _ = agent.get_action_and_value(obs[step], action)
                     logprob[:, i] = logprob_actual.to(torch.float32)
                 
-                # import ipdb; ipdb.set_trace()
-                # exit()
-                # then get the actions according to the correct subpolicy 
-                # concatenate the actions, logprobs, rewards, dones, values in correct order
-                # action, logprob, _, value = agent.get_action_and_value(next_obs)
+                # get actions according to the correct subpolicy 
                 values[step] = value #(args.num_envs, args.num_subpolicies)
                 actions[step] = action.to(torch.float32) # (args.num_envs)
                 logprobs[step] = logprob # (args.num_envs, args.num_subpolicies)
@@ -401,10 +393,6 @@ if __name__ == "__main__":
             if "all_rewards" in infos:
                 all_rewards = np.array([np.array(object=a_r) if a_r is not None else np.array([0.0 for _ in range(n_rewards)]) for a_r in infos["all_rewards"]])
                 # (n_envs, n_rewards)
-                # earlier: choose correct reward for each subpolicy
-                # reward = all_rewards[torch.arange(all_rewards.shape[0]),subpolicies[step].to(int).cpu()] 
-                # now: store all rewards
-                # (n_steps, n_envs, n_rewards)
                 reward = all_rewards
             else:
                 raise ValueError("all_rewards not in infos")
@@ -442,7 +430,7 @@ if __name__ == "__main__":
         # Compute GAE
         for i, agent in enumerate(agents):
             with torch.no_grad():
-                #meta: select rewards of actual selected subpolicy
+                # meta: select rewards of actual selected subpolicy
                 # Alternatively, could use seperate reward for meta-policy (e.g. game reward)
                 if agent.meta:
                     agent_rewards = torch.gather(rewards, dim=-1, index=subpolicies.long().unsqueeze(-1)).squeeze(-1)  # Shape (128, 8)
@@ -464,24 +452,9 @@ if __name__ == "__main__":
                     advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
                 returns = advantages + agent_values
 
-        # for i, agent in enumerate(agents):
-
-            # # meta policy learns from all envs
-            # if agent.meta:
-            #     env_idxs = torch.where(torch.ones_like(subpolicies))
-            # else:
-            # # select the envs where current subpolicy is used 
-            #     env_idxs = torch.where(subpolicies == i)
-            #     if len(env_idxs[0]) == 0:
-            #         continue
-
-            # a_obs = obs[env_idxs]
-            # a_actions = actions[env_idxs]
             if not agent.meta:
                 a_logprobs = logprobs[..., i]
                 b_logprobs = a_logprobs.reshape(-1)
-            # a_advantages = advantages[..., i]
-            # a_returns = returns[env_idxs]
                 a_values = values[..., i]
                 b_values = a_values.reshape(-1)
             else:
@@ -510,8 +483,6 @@ if __name__ == "__main__":
                 for start in range(0, batch_size, minibatch_size):
                     end = start + minibatch_size
                     mb_inds = b_inds[start:end]
-                    # print(b_obs[mb_inds].shape, batch_size, minibatch_size)
-                    # b_obs2 = b_obs[mb_inds].view(minibatch_size, -1)
                     mb_obs = b_obs[mb_inds].view(b_obs[mb_inds].shape[0], -1)
                     if agent.meta:
                         # actions for meta are subpolicies
@@ -519,7 +490,7 @@ if __name__ == "__main__":
                         _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
                         logratio = newlogprob - b_meta_logprobs[mb_inds]
                     else:
-                        #TODO: should we compute the ratio with the actually used action
+                        # Should we compute the ratio with the actually used action
                         # or with the action that the subpolicy would have taken?
                         # Note that the ratio is later multiplied with the advantage
                         # which is computed with the actual action
