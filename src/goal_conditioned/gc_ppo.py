@@ -87,6 +87,8 @@ class Args:
     # meta_policy_path: str = None
     # meta_policy_path = "in/logic/llm/seaquest-meta-policy.py"
     """path to the meta policy function"""
+    num_subpolicies: int = 3
+    """number of subpolicies"""
     # rewardfunc_path: str = None 
     rewardfunc_path = ["in/reward_funcs/seaquest/hud/fight_enemies.py",
                         "in/reward_funcs/seaquest/hud/collect_divers.py",
@@ -94,7 +96,7 @@ class Args:
                        ]
     # rewardfunc_path = "in/reward_funcs/seaquest/hud/hackatari_reward.py"
     """path to the reward function(s)"""
-    args_file: str = "runs/ALE/Seaquest-v5__gc_ppo__1__1741019777/args.yaml"#None
+    args_file: str = None #"runs/ALE/Seaquest-v5__gc_ppo__1__1741019777/args.yaml"#None
     """path to the args file to load arguments from"""
 
     # to be filled in runtime
@@ -165,16 +167,18 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
-def save(save_path, agents, optimizers, iteration, args):
+def save(save_path, agents, optimizers, iteration, args, hackatari_args, num_subpols):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)  # Ensure the directory exists
     torch.save({
         'iteration': iteration,
         'model_state_dict': [agent.state_dict() for agent in agents],
         'optimizer_state_dict': [optimizer.state_dict() for optimizer in optimizers],
         'args': args,
+        'hackatari_args': hackatari_args,
+        'num_subpols': num_subpols,
     }, save_path)
 
-def load_gc_agent(env_name, run_id, num_subpolicies, device, best_model=True):
+def load_gc_agent(env_name, run_id, device, best_model=True):
     model_name = "best_return"
     if not best_model:
         # find latest model(highest number)
@@ -185,15 +189,14 @@ def load_gc_agent(env_name, run_id, num_subpolicies, device, best_model=True):
     save_path = f"runs/{env_name}__{run_id}/models/best_model.pt"
     checkpoint = torch.load(save_path)
     args = checkpoint['args']
+    hackatari_args = checkpoint['hackatari_args']
+    num_subpols = checkpoint['num_subpols']
 
     # Create the environment
-    hackatari_args = {
-        "rewardfunc_path": args.rewardfunc_path 
-    }
     env = make_hackatari_env(args.env_id, 0, **hackatari_args)()
 
     # Initialize the agents
-    agents = [Agent(env, args.norm_obs).to(device) for _ in range(num_subpolicies)]
+    agents = [Agent(env, args.norm_obs).to(device) for _ in range(num_subpols)]
     for i, agent in enumerate(agents):
         agent.load_state_dict(checkpoint['model_state_dict'][i])
 
@@ -257,8 +260,7 @@ if __name__ == "__main__":
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
     # agent = Agent(envs).to(device)
-    num_subpols = 3
-    agents = [Agent(envs, device, args.norm_obs).to(device) for _ in range(num_subpols)]
+    agents = [Agent(envs, device, args.norm_obs).to(device) for _ in range(args.num_subpolicies)]
 
     # neural meta policy
     if args.neural_meta_policy:
@@ -279,7 +281,6 @@ if __name__ == "__main__":
         raise ValueError("Either neural_meta_policy or meta_policy_path must be specified")
 
     optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
-    # optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # Load checkpoint if provided
     if args.checkpoint_path is not None:
@@ -307,7 +308,7 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
     subpolicies = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
-    subpolicy_activity = torch.zeros((args.num_iterations, num_subpols)).to(device)
+    subpolicy_activity = torch.zeros((args.num_iterations, args.num_subpolicies)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -381,7 +382,7 @@ if __name__ == "__main__":
             logprobs[step] = logprob
             meta_logprobs[step] = meta_logprob
 
-            subpolicy_activity[iteration - 1] += torch.bincount(subpolicies[step].to(int), minlength=num_subpols)
+            subpolicy_activity[iteration - 1] += torch.bincount(subpolicies[step].to(int), minlength=args.num_subpolicies)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
@@ -403,7 +404,7 @@ if __name__ == "__main__":
                         if episodic_return > highest_episodic_return:
                             highest_episodic_return = episodic_return
                             save_path = f"{model_save_dir}/best_return.pt"
-                            save(save_path, agents, optimizers, iteration, args)
+                            save(save_path, agents, optimizers, iteration, args, hackatari_args, args.num_subpolicies)
                             print(f"New highest episodic return: {episodic_return}. Model saved to {save_path}")
                         if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
                             all_rewards = info["episode"]["all_rewards"]
@@ -412,12 +413,12 @@ if __name__ == "__main__":
 
             if global_step % args.save_model_steps == 0:
                 save_path = f"{model_save_dir}/step_{global_step}.pt"
-                save(save_path, agents, optimizers, iteration, args)
+                save(save_path, agents, optimizers, iteration, args, hackatari_args, args.num_subpolicies)
                 print(f"Model saved at step {global_step} to {save_path}")
 
         subpolicy_activity[iteration - 1] /= args.num_steps * args.num_envs
 
-        for i in range(num_subpols):
+        for i in range(args.num_subpolicies):
             writer.add_scalar(f"charts/activity_{i}", subpolicy_activity[iteration - 1, i].item(), global_step)
 
         # next_obs = next_obs.view(envs.num_envs, -1)
