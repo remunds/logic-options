@@ -22,6 +22,7 @@ def meta_policy(oc_state) -> int:
         divers_count /= 2
         if divers_count >= 6:
             # Manage oxygen
+            print("Collected 6 divers!")
             option_choices[i] = 2
             break
 

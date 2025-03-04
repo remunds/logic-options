@@ -24,13 +24,14 @@ import yaml
 
 @dataclass
 class Args:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
+    # exp_name: str = os.path.basename(__file__)[: -len(".py")]
+    exp_name: str = "new_algorithm" 
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
+    device: str = "cuda:15"
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
@@ -44,7 +45,7 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "ALE/Seaquest-v5"
     """the id of the environment"""
-    total_timesteps: int = 20_000_000
+    total_timesteps: int = 50_000_000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
@@ -84,6 +85,8 @@ class Args:
     """path to the checkpoint file to resume training from"""
     neural_meta_policy: bool = False
     """if toggled, a neural meta policy will be used, otherwise a function will be used"""
+    atari_wrappers: bool = False
+    """if toggled, the atari wrappers will be used"""
     # meta_policy_path: str = None
     meta_policy_path = "in/logic/llm/seaquest-meta-policy.py"
     """path to the meta policy function"""
@@ -247,9 +250,10 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    device = torch.device("cuda:15")
+    device = torch.device(args.device)
     hackatari_args = {
-        "rewardfunc_path": args.rewardfunc_path 
+        "rewardfunc_path": args.rewardfunc_path,
+        "atari_wrappers": args.atari_wrappers,
     }
     n_rewards = len(hackatari_args["rewardfunc_path"]) if hackatari_args["rewardfunc_path"] is not None else 0
 
