@@ -164,13 +164,14 @@ class Agent(nn.Module):
         if self.norm_obs:
             x = self._rms_normalize(x)
         # check if any nan
+        #TODO: sometimes logits are nan
         logits = self.actor(x)
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
-def save(save_path, agents, optimizers, iteration, args, hackatari_args, num_subpols):
+def save(save_path, agents, optimizers, iteration, args, hackatari_args):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)  # Ensure the directory exists
     torch.save({
         'iteration': iteration,
@@ -178,7 +179,6 @@ def save(save_path, agents, optimizers, iteration, args, hackatari_args, num_sub
         'optimizer_state_dict': [optimizer.state_dict() for optimizer in optimizers],
         'args': args,
         'hackatari_args': hackatari_args,
-        'num_subpols': num_subpols,
     }, save_path)
 
 def load_gc_agent(env_name, run_id, device, best_model=True):
@@ -193,13 +193,12 @@ def load_gc_agent(env_name, run_id, device, best_model=True):
     checkpoint = torch.load(save_path)
     args = checkpoint['args']
     hackatari_args = checkpoint['hackatari_args']
-    num_subpols = checkpoint['num_subpols']
 
     # Create the environment
     env = make_hackatari_env(args.env_id, 0, **hackatari_args)()
 
     # Initialize the agents
-    agents = [Agent(env, args.norm_obs).to(device) for _ in range(num_subpols)]
+    agents = [Agent(env, args.norm_obs).to(device) for _ in range(args.num_subpolicies)]
     for i, agent in enumerate(agents):
         agent.load_state_dict(checkpoint['model_state_dict'][i])
 
@@ -413,7 +412,7 @@ if __name__ == "__main__":
                         if episodic_return > highest_episodic_return:
                             highest_episodic_return = episodic_return
                             save_path = f"{model_save_dir}/best_return.pt"
-                            save(save_path, agents, optimizers, iteration, args, hackatari_args, args.num_subpolicies)
+                            save(save_path, agents, optimizers, iteration, args, hackatari_args)
                             print(f"New highest episodic return: {episodic_return}. Model saved to {save_path}")
                         if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
                             all_rewards = info["episode"]["all_rewards"]
@@ -422,7 +421,7 @@ if __name__ == "__main__":
 
             if global_step % args.save_model_steps == 0:
                 save_path = f"{model_save_dir}/step_{global_step}.pt"
-                save(save_path, agents, optimizers, iteration, args, hackatari_args, args.num_subpolicies)
+                save(save_path, agents, optimizers, iteration, args, hackatari_args)
                 print(f"Model saved at step {global_step} to {save_path}")
 
         subpolicy_activity[iteration - 1] /= args.num_steps * args.num_envs
