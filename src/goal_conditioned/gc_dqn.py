@@ -11,11 +11,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
+from stable_baselines3.common.atari_wrappers import (  # isort:skip
+    EpisodicLifeEnv,
+    FireResetEnv,
+    NoopResetEnv,
+)
 # from stable_baselines3.common.buffers import ReplayBuffer
 from buffer import MultiRewardReplayBuffer 
 from torch.utils.tensorboard import SummaryWriter
 
-from logic_options.envs.common import make_hackatari_env
+from logic_options.utils.train_monitor import TrainMonitor
 from logic_options.utils.normalize_obs_torch import RunningMeanStd
 from rtpt import RTPT
 
@@ -32,7 +37,7 @@ class Args:
     """seed of the experiment"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    device: str = "cuda:15"
+    device: str = "cuda:13"
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
@@ -52,31 +57,31 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "ALE/Seaquest-v5"
     """the id of the environment"""
-    total_timesteps: int = 5_000_000
+    total_timesteps: int = 20_000_000
     """total timesteps of the experiments"""
-    learning_rate: float = 2.5e-4
+    learning_rate: float = 1e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 8
+    num_envs: int = 1
     """the number of parallel game environments"""
-    buffer_size: int = 10000
+    buffer_size: int = 1_000_000
     """the replay memory buffer size"""
     gamma: float = 0.99
     """the discount factor gamma"""
     tau: float = 1.0
     """the target network update rate"""
-    target_network_frequency: int = 500
+    target_network_frequency: int = 1000
     """the timesteps it takes to update the target network"""
-    batch_size: int = 128
+    batch_size: int = 32
     """the batch size of sample from the reply memory"""
     start_e: float = 1
     """the starting epsilon for exploration"""
-    end_e: float = 0.05
+    end_e: float = 0.01
     """the ending epsilon for exploration"""
-    exploration_fraction: float = 0.5
+    exploration_fraction: float = 0.1
     """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 10000
+    learning_starts: int = 80_000
     """timestep to start learning"""
-    train_frequency: int = 10
+    train_frequency: int = 4
     """the frequency of training"""
 
     norm_obs: bool = True
@@ -96,6 +101,18 @@ class Args:
     num_subpolicies: int = 3
     """number of subpolicies"""
     # rewardfunc_path: str = None 
+    backend: str = "HackAtari"
+    """the backend to use (HackAtari, OCAtari, Gym)"""
+    modifs: str = ""
+    """the modifications to apply to the environment"""
+    buffer_window_size: int = 4
+    """the buffer window size"""
+    obs_mode: str = "obj"
+    """the observation mode"""
+    frameskip: int = 4
+    """the number of frames to skip"""
+    hud: bool = True
+    """if toggled, the HUD will be used"""
     rewardfunc_path = ["in/reward_funcs/seaquest/hud/fight_enemies.py",
                         "in/reward_funcs/seaquest/hud/collect_divers.py",
                         "in/reward_funcs/seaquest/hud/surface.py",
@@ -104,6 +121,59 @@ class Args:
     """path to the reward function(s)"""
     args_file: str = None #
     """path to the args file to load arguments from"""
+
+# Function to create a gym environment with the specified settings
+def make_env(env_id, idx, capture_video, run_dir):
+    """
+    Creates a gym environment with the specified settings.
+    """
+    def thunk():
+        # Setup environment based on backend type (HackAtari, OCAtari, Gym)
+        if args.backend == "HackAtari":
+            from hackatari.core import HackAtari
+            modifs = [i for i in args.modifs.split(" ") if i]
+            env = HackAtari(
+                env_id,
+                modifs=modifs,
+                rewardfunc_path=args.rewardfunc_path,
+                obs_mode=args.obs_mode,
+                hud=args.hud,
+                render_mode="rgb_array",
+                frameskip=args.frameskip
+            )
+        elif args.backend == "OCAtari":
+            from ocatari.core import OCAtari
+            env = OCAtari(
+                env_id,
+                hud=args.hud,
+                render_mode="rgb_array",
+                obs_mode=args.obs_mode,
+                frameskip=args.frameskip
+            )
+        elif args.backend == "Gym":
+            # Use Gym backend with image preprocessing wrappers
+            env = gym.make(env_id, render_mode="rgb_array", frameskip=args.frameskip)
+            env = gym.wrappers.ResizeObservation(env, (84, 84))
+            env = gym.wrappers.GrayScaleObservation(env)
+            env = gym.wrappers.FrameStack(env, args.buffer_window_size)
+        else:
+            raise ValueError("Unknown Backend")
+
+        # Capture video if required
+        if capture_video and idx == 0:
+            env = gym.wrappers.RecordVideo(env,
+                                           f"{run_dir}/media/videos",
+                                           disable_logger=True)
+
+        # Apply standard Atari environment wrappers
+        env = TrainMonitor(env)
+        env = NoopResetEnv(env, noop_max=30)
+        env = EpisodicLifeEnv(env)
+        if "FIRE" in env.unwrapped.get_action_meanings():
+            env = FireResetEnv(env)
+        return env
+
+    return thunk
 
 # ALGO LOGIC: initialize agent here:
 class QNetwork(nn.Module):
@@ -139,14 +209,13 @@ class QNetwork(nn.Module):
             x = self._rms_normalize(x)
         return self.network(x)
     
-def save(save_path, q_nets, optimizers, global_step, args, hackatari_args):
+def save(save_path, q_nets, optimizers, global_step, args):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)  # Ensure the directory exists
     torch.save({
         'global_step': global_step,
         'model_state_dict': [q_net.state_dict() for q_net in q_nets],
         'optimizer_state_dict': [optimizer.state_dict() for optimizer in optimizers],
         'args': args.__dict__,
-        'hackatari_args': hackatari_args,
     }, save_path)
 
 def save_args(args, save_path):
@@ -208,15 +277,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device(args.device)
-    hackatari_args = {
-        "rewardfunc_path": args.rewardfunc_path,
-        "atari_wrappers": args.atari_wrappers,
-    }
-    n_rewards = len(hackatari_args["rewardfunc_path"]) if hackatari_args["rewardfunc_path"] is not None else 1
+    n_rewards = len(args.rewardfunc_path) if args.rewardfunc_path is not None else 1
 
     # env setup
     envs = gym.vector.AsyncVectorEnv(
-        [make_hackatari_env(args.env_id, i, **hackatari_args) for i in range(args.num_envs)],
+        # [make_hackatari_env(args.env_id, i, **hackatari_args) for i in range(args.num_envs)],
+        [make_env(args.env_id, i, args.capture_video, f"runs/{run_name}") for i in range(args.num_envs)],
     )
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
@@ -301,8 +367,13 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions.astype(np.int32))
         if "all_rewards" in infos:
-            all_rewards = np.array([np.array(a_r) if a_r is not None else np.array([0.0 for _ in range(n_rewards)]) for a_r in infos["all_rewards"]])
-            rewards = all_rewards
+            rewards = np.array([np.array(a_r) if a_r is not None else np.array([0.0 for _ in range(n_rewards)]) for a_r in infos["all_rewards"]])
+        elif "final_info" in infos and "all_rewards" in infos["final_info"][0]:
+            all_rewards = np.zeros((args.num_envs, n_rewards))
+            for i, info in enumerate(infos["final_info"]):
+                if info and "all_rewards" in info:
+                    all_rewards[i] = info["all_rewards"]
+            rewards = all_rewards 
         else:
             raise ValueError("all_rewards not in infos")
 
@@ -317,7 +388,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     if episodic_return > highest_episodic_return:
                         highest_episodic_return = episodic_return
                         save_path = f"{model_save_dir}/best_return.pt"
-                        save(save_path, q_networks, optimizers, global_step, args, hackatari_args)
+                        save(save_path, q_networks, optimizers, global_step, args)
                         print(f"New highest episodic return: {episodic_return}. Model saved to {save_path}")
                     if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
                         all_rewards = info["episode"]["all_rewards"]
@@ -326,7 +397,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         if (global_step // args.num_envs) % args.save_model_steps == 0:
             save_path = f"{model_save_dir}/step_{global_step}.pt"
-            save(save_path, q_networks, optimizers, global_step, args, hackatari_args)
+            save(save_path, q_networks, optimizers, global_step, args)
             print(f"Model saved at step {global_step} to {save_path}")
 
 
@@ -370,7 +441,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     loss.backward()
                     optimizers[i].step()
 
-                print("SPS:", int(global_step / (time.time() - start_time)))
                 writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
             # update target network
