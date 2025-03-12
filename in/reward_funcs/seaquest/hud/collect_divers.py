@@ -33,6 +33,7 @@ def reward_function(self) -> float:
         elif player.y == 46 and not ON_SURFACE:
             # punish dying and surfacing
             ON_SURFACE = True
+            print("dead collect divers")
             reward = -2.0
 
     prev_divers = len(divers)

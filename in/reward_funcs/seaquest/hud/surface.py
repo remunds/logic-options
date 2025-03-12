@@ -27,12 +27,13 @@ def reward_function(self) -> float:
                 # moved up
                 reward = 0.01 #small reward for moving up
         elif player.y == 46 and not ON_SURFACE:
-            # surfaced by itself (not drown/collide) 
+            # surfaced by itself or died
             if PREV_PLAYER_POS <= 48:
                 reward = 1.0 # big reward for surfacing
             else:
                 reward = -1.0 # big punishment for drowning/colliding 
             ON_SURFACE = True
+            print("dead surface")
 
         PREV_PLAYER_POS = player.y
 

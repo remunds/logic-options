@@ -120,6 +120,7 @@ def reward_function(self) -> float:
         elif player.y == 46 and not ON_SURFACE: # Player surfaces
             # punish dying 
             ON_SURFACE = True
+            print("dead fight")
             reward = -2.0 # big punishment for dying/surfacing
     if score:
         prev_score = score

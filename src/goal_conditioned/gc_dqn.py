@@ -57,8 +57,10 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "ALE/Seaquest-v5"
     """the id of the environment"""
-    total_timesteps: int = 20_000_000
+    total_timesteps: int = 10_000_000
     """total timesteps of the experiments"""
+    max_env_steps: int = 10_000
+    """max timesteps of the environment"""
     learning_rate: float = 1e-4
     """the learning rate of the optimizer"""
     num_envs: int = 1
@@ -167,10 +169,10 @@ def make_env(env_id, idx, capture_video, run_dir):
 
         # Apply standard Atari environment wrappers
         env = TrainMonitor(env)
-        env = NoopResetEnv(env, noop_max=30)
-        env = EpisodicLifeEnv(env)
-        if "FIRE" in env.unwrapped.get_action_meanings():
-            env = FireResetEnv(env)
+        # env = NoopResetEnv(env, noop_max=30)
+        # env = EpisodicLifeEnv(env)
+        # if "FIRE" in env.unwrapped.get_action_meanings():
+        #     env = FireResetEnv(env)
         return env
 
     return thunk
@@ -330,31 +332,38 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     highest_episodic_return = float('-inf')
     obs, _ = envs.reset(seed=args.seed)
 
+    curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
+    curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+
     rtpt = RTPT(name_initials='RE', experiment_name='gc_dqn', max_iterations=args.total_timesteps)
     rtpt.start()
     # for global_step in range(args.total_timesteps):
+    episode_step = 0
     for global_step in range(0, args.total_timesteps, args.num_envs):
+        episode_step += 1
         rtpt.step()
         # global_step
         # ALGO LOGIC: put action logic here
+        #TODO: torch.no_grad()?
+        if meta_policy_q is not None:
+            q_values = meta_policy_q(torch.Tensor(obs).to(device))
+            option_choices = torch.argmax(q_values, dim=1).cpu().numpy()
+        elif meta_policy_func is not None:
+            option_choices = meta_policy_func(obs)
+        else:
+            raise ValueError("Either neural_meta_policy or meta_policy_path must be specified")
+        # option_choices now contains the currently active subpolicy for each env
+        curr_episode_choices[episode_step] = option_choices
+        # obs is shape (num_envs, obs_dim)
+
+        # greedy action (using the current Q-network)
+        # for us this means: select subpolicy (sub-q_network) greedily using meta-policy (meta-q_network/func)
+        # then select action greedily using the subpolicy
         epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_timesteps, global_step)
         if random.random() < epsilon:
             # exploration
             actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
         else:
-            #TODO: torch.no_grad()?
-            # greedy action (using the current Q-network)
-            # for us this means: select subpolicy (sub-q_network) greedily using meta-policy (meta-q_network/func)
-            # then select action greedily using the subpolicy
-            if meta_policy_q is not None:
-                q_values = meta_policy_q(torch.Tensor(obs).to(device))
-                option_choices = torch.argmax(q_values, dim=1).cpu().numpy()
-            elif meta_policy_func is not None:
-                option_choices = meta_policy_func(obs)
-            else:
-                raise ValueError("Either neural_meta_policy or meta_policy_path must be specified")
-            # option_choices now contains the currently active subpolicy for each env
-            # obs is shape (num_envs, obs_dim)
             actions = np.zeros(envs.num_envs)
             for i, q_net in enumerate(q_networks):
                 # get obs of envs, where current subpolicy is active
@@ -364,8 +373,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     l_actions = torch.argmax(q_values, dim=1).cpu().numpy()
                     actions[option_choices == i] = l_actions
 
+
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions.astype(np.int32))
+        if (terminations or truncations).any():
+            print(terminations, truncations)
+
         if "all_rewards" in infos:
             rewards = np.array([np.array(a_r) if a_r is not None else np.array([0.0 for _ in range(n_rewards)]) for a_r in infos["all_rewards"]])
         elif "final_info" in infos and "all_rewards" in infos["final_info"][0]:
@@ -376,6 +389,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             rewards = all_rewards 
         else:
             raise ValueError("all_rewards not in infos")
+        
+        curr_episode_rewards[episode_step] = rewards
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
@@ -392,8 +407,26 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                         print(f"New highest episodic return: {episodic_return}. Model saved to {save_path}")
                     if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
                         all_rewards = info["episode"]["all_rewards"]
+                        # problem: these are the returns 'as if subpolicies were always active'
                         for i, r in enumerate(all_rewards):
                             writer.add_scalar(f"charts/episodic_return_{i}", r, global_step)
+                        # TODO: add one return where only the subpolicy that was active is considered
+                        #TODO: only works with n_envs=1
+                        import ipdb; ipdb.set_trace()
+                        curr_episode_rewards[np.arange(episode_step), np.arange(args.num_envs), curr_episode_choices.squeeze().astype(int)] = all_rewards
+
+                        # TODO: add return for each subpolicy, where we only consider rewards when they were active
+                    episode_step = 0
+                    curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
+                    curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+
+        elif episode_step >= args.max_env_steps:
+            #TODO: reset env etc.
+            raise ValueError("Episode step exceeded max env steps")
+            episode_step = 0
+            curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
+            curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+                        
 
         if (global_step // args.num_envs) % args.save_model_steps == 0:
             save_path = f"{model_save_dir}/step_{global_step}.pt"
