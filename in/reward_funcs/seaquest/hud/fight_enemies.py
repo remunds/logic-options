@@ -81,7 +81,7 @@
 
     # return reward
 
-from ocatari.ram.seaquest import Player, PlayerScore
+from ocatari.ram.seaquest import Player, PlayerScore, OxygenBar
 
 prev_score = 0
 ON_SURFACE = True
@@ -97,6 +97,7 @@ def reward_function(self) -> float:
     player = None
     score = 0
     found = False
+    oxygen = None
 
     # Classify objects
     for obj in game_objects:
@@ -105,14 +106,15 @@ def reward_function(self) -> float:
         elif isinstance(obj, PlayerScore):
             score = obj.value
             found = True
-
+        elif isinstance(obj, OxygenBar):
+            oxygen = obj.value
 
     if not found:
         raise ValueError("No score object found")
 
-    if player:
+    if player and oxygen:
         # if player.y > 46:
-        if player.y > 52:
+        if player.y > 52 and oxygen < 64:
             ON_SURFACE = False
             # between 46 and 52 is between the surface and the water
             reward = 0.001 # small reward for being alive underwater
@@ -122,11 +124,8 @@ def reward_function(self) -> float:
             if score > prev_score: # reward killing enemies
                 reward = 1.0
         elif player.y == 46 and not ON_SURFACE: # Player surfaces
-            #TODO: this can be falsely activated if moved just a little bit down, but not fully underwater
-
             # punish dying 
             ON_SURFACE = True
-            print("dead fight")
             reward = -2.0 # big punishment for dying/surfacing
     if score:
         prev_score = score

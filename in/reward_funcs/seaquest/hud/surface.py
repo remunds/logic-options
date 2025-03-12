@@ -14,15 +14,18 @@ def reward_function(self) -> float:
 
     # Define categories for easy identification
     player = None
+    oxygen = None
 
     # Classify objects
     for obj in game_objects:
         if isinstance(obj, Player):
             player = obj
+        elif isinstance(obj, OxygenBar):
+            oxygen = obj.value
 
-    if player:
+    if player and oxygen:
         if player.y > 46:
-            if player.y > 52:
+            if player.y > 52 and oxygen < 64:
                 ON_SURFACE = False
             if PREV_PLAYER_POS > player.y:
                 # moved up
@@ -34,7 +37,6 @@ def reward_function(self) -> float:
             else:
                 reward = -1.0 # big punishment for drowning/colliding 
             ON_SURFACE = True
-            print("dead surface")
 
         PREV_PLAYER_POS = player.y
 

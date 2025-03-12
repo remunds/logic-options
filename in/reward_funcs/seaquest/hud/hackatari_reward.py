@@ -1,4 +1,4 @@
-from ocatari.ram.seaquest import Player, CollectedDiver, PlayerScore 
+from ocatari.ram.seaquest import Player, CollectedDiver, PlayerScore, OxygenBar
 
 ON_SURFACE = True
 prev_divers = 0
@@ -16,6 +16,7 @@ def reward_function(self) -> float:
     player = None
     divers = []
     score = 0
+    oxygen = None
 
     # Classify objects
     for obj in game_objects:
@@ -25,13 +26,15 @@ def reward_function(self) -> float:
             divers.append(obj)
         elif isinstance(obj, PlayerScore):
             score = obj.value 
+        elif isinstance(obj, OxygenBar):
+            oxygen = obj.value 
     
     if len(divers) > prev_divers:
         reward += 0.5 # reward collecting a diver
 
     if player:
         # if player.y > 46:
-        if player.y > 52:
+        if player.y > 52 and oxygen < 64:
             ON_SURFACE = False
             # between 46 and 52 is between the surface and the water
             # if reward == 0.0 and player.y > 52:

@@ -45,7 +45,7 @@ class Args:
     """the wandb's project name"""
     wandb_entity: str = None
     """the entity (team) of wandb's project"""
-    capture_video: bool = False
+    capture_video: bool = True
     """whether to capture videos of the agent performances (check out `videos` folder)"""
     save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
@@ -169,10 +169,10 @@ def make_env(env_id, idx, capture_video, run_dir):
 
         # Apply standard Atari environment wrappers
         env = TrainMonitor(env)
-        # env = NoopResetEnv(env, noop_max=30)
-        # env = EpisodicLifeEnv(env)
-        # if "FIRE" in env.unwrapped.get_action_meanings():
-        #     env = FireResetEnv(env)
+        env = NoopResetEnv(env, noop_max=30)
+        env = EpisodicLifeEnv(env)
+        if "FIRE" in env.unwrapped.get_action_meanings():
+            env = FireResetEnv(env)
         return env
 
     return thunk
@@ -333,7 +333,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     obs, _ = envs.reset(seed=args.seed)
 
     curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
-    curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+    curr_episode_choices = np.ones((args.max_env_steps, args.num_envs), dtype=int) * -1
 
     rtpt = RTPT(name_initials='RE', experiment_name='gc_dqn', max_iterations=args.total_timesteps)
     rtpt.start()
@@ -359,6 +359,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         # greedy action (using the current Q-network)
         # for us this means: select subpolicy (sub-q_network) greedily using meta-policy (meta-q_network/func)
         # then select action greedily using the subpolicy
+        #TODO: this could be adapted to allow exploration of subpolicies even if they become active towards the end of the training (e.g. because their precondition was not met for a long time)
         epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_timesteps, global_step)
         if random.random() < epsilon:
             # exploration
@@ -376,12 +377,11 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions.astype(np.int32))
-        if (terminations or truncations).any():
-            print(terminations, truncations)
 
         if "all_rewards" in infos:
             rewards = np.array([np.array(a_r) if a_r is not None else np.array([0.0 for _ in range(n_rewards)]) for a_r in infos["all_rewards"]])
         elif "final_info" in infos and "all_rewards" in infos["final_info"][0]:
+            # makes sure that we do not use all_rewards from train_monitor (which is actually return if finished)
             all_rewards = np.zeros((args.num_envs, n_rewards))
             for i, info in enumerate(infos["final_info"]):
                 if info and "all_rewards" in info:
@@ -407,25 +407,41 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                         print(f"New highest episodic return: {episodic_return}. Model saved to {save_path}")
                     if "all_rewards" in info["episode"] and isinstance(info["episode"]["all_rewards"], list):
                         all_rewards = info["episode"]["all_rewards"]
-                        # problem: these are the returns 'as if subpolicies were always active'
+
+                        # these are the returns 'as if subpolicies were always active'
                         for i, r in enumerate(all_rewards):
                             writer.add_scalar(f"charts/episodic_return_{i}", r, global_step)
-                        # TODO: add one return where only the subpolicy that was active is considered
-                        #TODO: only works with n_envs=1
-                        import ipdb; ipdb.set_trace()
-                        curr_episode_rewards[np.arange(episode_step), np.arange(args.num_envs), curr_episode_choices.squeeze().astype(int)] = all_rewards
+
+                        # these are original env returns
+                        if "org_return" in info["episode"]:
+                            writer.add_scalar("charts/episodic_env_return", info["episode"]["org_return"], global_step)
+                        
+                        # return of the actual chosen subpolicy
+                        active_rewards = curr_episode_rewards[np.arange(args.max_env_steps), np.arange(args.num_envs), curr_episode_choices.squeeze()]
+                        active_return = active_rewards.sum()
+                        writer.add_scalar("charts/active_episodic_return", active_return, global_step)
+                        for r_idx in range(n_rewards):
+                            curr_reward = active_rewards[curr_episode_choices.squeeze() == r_idx]
+                            curr_return = curr_reward.sum()
+                            curr_len = len(curr_reward)
+                            writer.add_scalar(f"charts/active_episodic_return_{r_idx}", curr_return, global_step)
+                            writer.add_scalar(f"charts/activity_{r_idx}", curr_len/episode_step, global_step)
+
+
 
                         # TODO: add return for each subpolicy, where we only consider rewards when they were active
                     episode_step = 0
                     curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
-                    curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+                    # curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+                    curr_episode_choices = np.ones((args.max_env_steps, args.num_envs), dtype=int) * -1
 
         elif episode_step >= args.max_env_steps:
             #TODO: reset env etc.
             raise ValueError("Episode step exceeded max env steps")
             episode_step = 0
             curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
-            curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+            # curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+            curr_episode_choices = np.ones((args.max_env_steps, args.num_envs)) * -1
                         
 
         if (global_step // args.num_envs) % args.save_model_steps == 0:
