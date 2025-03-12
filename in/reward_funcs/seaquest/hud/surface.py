@@ -22,7 +22,8 @@ def reward_function(self) -> float:
 
     if player:
         if player.y > 46:
-            ON_SURFACE = False
+            if player.y > 52:
+                ON_SURFACE = False
             if PREV_PLAYER_POS > player.y:
                 # moved up
                 reward = 0.01 #small reward for moving up

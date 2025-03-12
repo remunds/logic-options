@@ -30,10 +30,12 @@ def reward_function(self) -> float:
         reward += 0.5 # reward collecting a diver
 
     if player:
-        if player.y > 46:
+        # if player.y > 46:
+        if player.y > 52:
             ON_SURFACE = False
             # between 46 and 52 is between the surface and the water
-            if reward == 0.0 and player.y > 52:
+            # if reward == 0.0 and player.y > 52:
+            if reward == 0.0:
                 reward += 0.001 # small reward for being alive underwater
                 if score > prev_score: # reward killing enemies
                     reward += 0.3
