@@ -341,7 +341,16 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     episode_step = 0
     for global_step in range(0, args.total_timesteps, args.num_envs):
         episode_step += 1
+
         rtpt.step()
+
+        if episode_step >= args.max_env_steps:
+            obs, _ = envs.reset(seed=args.seed)
+            episode_step = 1
+            curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
+            # curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
+            curr_episode_choices = np.ones((args.max_env_steps, args.num_envs)) * -1
+
         # global_step
         # ALGO LOGIC: put action logic here
         #TODO: torch.no_grad()?
@@ -429,19 +438,11 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
 
 
-                        # TODO: add return for each subpolicy, where we only consider rewards when they were active
                     episode_step = 0
                     curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
                     # curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
                     curr_episode_choices = np.ones((args.max_env_steps, args.num_envs), dtype=int) * -1
 
-        elif episode_step >= args.max_env_steps:
-            #TODO: reset env etc.
-            raise ValueError("Episode step exceeded max env steps")
-            episode_step = 0
-            curr_episode_rewards = np.zeros((args.max_env_steps, args.num_envs, n_rewards))
-            # curr_episode_choices = np.zeros((args.max_env_steps, args.num_envs))
-            curr_episode_choices = np.ones((args.max_env_steps, args.num_envs)) * -1
                         
 
         if (global_step // args.num_envs) % args.save_model_steps == 0:
