@@ -81,7 +81,7 @@
 
     # return reward
 
-from ocatari.ram.seaquest import Player, PlayerScore 
+from ocatari.ram.seaquest import Player, PlayerScore
 
 prev_score = 0
 ON_SURFACE = True
@@ -106,18 +106,24 @@ def reward_function(self) -> float:
             score = obj.value
             found = True
 
+
     if not found:
         raise ValueError("No score object found")
 
     if player:
-        if player.y > 46:
+        # if player.y > 46:
+        if player.y > 52:
             ON_SURFACE = False
             # between 46 and 52 is between the surface and the water
-            if reward != 1.0 and player.y > 52:
-                reward = 0.001 # small reward for being alive underwater
-                if score > prev_score: # reward killing enemies
-                    reward = 1.0
+            reward = 0.001 # small reward for being alive underwater
+            #note: this is also activated if killed by collision 
+            #reason: this also kills the enemy lol 
+            # not a problem, as dying is punished later anyway 
+            if score > prev_score: # reward killing enemies
+                reward = 1.0
         elif player.y == 46 and not ON_SURFACE: # Player surfaces
+            #TODO: this can be falsely activated if moved just a little bit down, but not fully underwater
+
             # punish dying 
             ON_SURFACE = True
             print("dead fight")
